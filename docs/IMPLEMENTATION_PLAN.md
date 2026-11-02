@@ -146,3 +146,25 @@ The `ProcessManager` trait has `terminate`, `force_kill`, `suspend`, `resume`, `
 | Phase 7 | Notifications, autostart, window-state and save dialogs used only from Rust                                                                               | The capability file stays at `core:default`; the frontend cannot trigger these directly.                                                                                                                                      |
 | Phase 7 | Exports and diagnostics generated in Rust behind a native save dialog                                                                                     | There is no "write this text to this path" command; command lines are opt-in.                                                                                                                                                 |
 | Phase 7 | Alerts evaluated on the engine thread; the engine skips JSON serialization while the window is hidden                                                     | Alerts work from the tray, and a hidden window costs no IPC; the UI backfills history when shown.                                                                                                                             |
+
+## Status (2026-11-02)
+
+| Phase                                         | Status                                                                                       |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 1 Shell                                       | Done                                                                                         |
+| 2 System metrics                              | Done                                                                                         |
+| 3 Processes                                   | Done                                                                                         |
+| 4 Details and tree                            | Done                                                                                         |
+| 5 Process control                             | Done                                                                                         |
+| 6 Performance                                 | Done                                                                                         |
+| 7 Alerts, settings, tray, export, diagnostics | Done                                                                                         |
+| 8 Optimize                                    | Done; measurements in `PERFORMANCE.md`                                                       |
+| 9 Hardening and packaging                     | Windows installers built locally; Linux bundles are built by CI (`.github/workflows/ci.yml`) |
+
+Not done:
+
+- Playwright end-to-end tests. UI flows are covered by React Testing Library
+  plus scripted checks against the running app over WebView2 remote
+  debugging.
+- macOS implementation.
+- Elevation helper.
