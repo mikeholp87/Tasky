@@ -61,3 +61,7 @@ pub fn is_critical(_pid: u32) -> Option<bool> {
 pub fn system_root() -> Option<String> {
     None
 }
+
+pub fn disk_io_counters(_disks: &[(String, String)]) -> HashMap<String, super::DiskIoCounters> {
+    HashMap::new()
+}

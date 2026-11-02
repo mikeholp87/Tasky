@@ -61,3 +61,30 @@ pub fn process_architecture(pid: u32) -> Option<String> {
         .ok()?;
     procfs::elf_architecture(&header).map(str::to_owned)
 }
+
+/// Operation counts and busy time per mounted device from `/proc/diskstats`.
+/// Device-mapper names (e.g. `/dev/mapper/root`) are resolved to `dm-N`.
+pub fn disk_io_counters(disks: &[(String, String)]) -> HashMap<String, super::DiskIoCounters> {
+    let Ok(text) = std::fs::read_to_string("/proc/diskstats") else {
+        return HashMap::new();
+    };
+    let stats = procfs::parse_diskstats(&text);
+    disks
+        .iter()
+        .filter_map(|(device, mount)| {
+            let resolved = std::fs::canonicalize(device).ok()?;
+            let name = resolved.file_name()?.to_str()?;
+            let s = stats.get(name)?;
+            Some((
+                mount.clone(),
+                super::DiskIoCounters {
+                    reads: s.reads_completed,
+                    writes: s.writes_completed,
+                    busy_ns: Some(s.io_ms.saturating_mul(1_000_000)),
+                    idle_ns: None,
+                    clock_ns: None,
+                },
+            ))
+        })
+        .collect()
+}

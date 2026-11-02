@@ -6,6 +6,7 @@ import type {
   MonitoringState,
   StaticSystemInfo,
 } from "@/types";
+import { recordDevices } from "./deviceHistory";
 import { HistoryBuffer } from "./historyBuffer";
 
 export type ConnectionStatus = "connecting" | "live" | "unavailable" | "error";
@@ -42,6 +43,7 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   setMonitoring: (monitoring) => set({ monitoring }),
   ingestTick: (tick) => {
     history.push(tick.point);
+    recordDevices(tick);
     set((s) => ({ tick, status: "live", error: null, historyVersion: s.historyVersion + 1 }));
   },
   backfillHistory: (points) => {

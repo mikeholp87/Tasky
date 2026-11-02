@@ -86,3 +86,24 @@ pub fn is_critical(pid: u32) -> Option<bool> {
 pub fn system_root() -> Option<String> {
     imp::system_root()
 }
+
+// ---------------------------------------------------------------- disk I/O
+
+/// Cumulative per-volume I/O counters. Busy time comes either directly
+/// (`busy_ns`, Linux) or as idle time plus a clock (`idle_ns`/`clock_ns`,
+/// Windows), matching what each OS reports.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DiskIoCounters {
+    pub reads: u64,
+    pub writes: u64,
+    pub busy_ns: Option<u64>,
+    pub idle_ns: Option<u64>,
+    pub clock_ns: Option<u64>,
+}
+
+/// Counters keyed by mount point for the given `(device name, mount point)` pairs.
+pub fn disk_io_counters(
+    disks: &[(String, String)],
+) -> std::collections::HashMap<String, DiskIoCounters> {
+    imp::disk_io_counters(disks)
+}

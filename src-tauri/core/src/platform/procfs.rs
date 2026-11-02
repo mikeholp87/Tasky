@@ -140,9 +140,56 @@ pub fn elf_architecture(header: &[u8]) -> Option<&'static str> {
     })
 }
 
+/// Cumulative counters for one block device from `/proc/diskstats`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiskStat {
+    pub reads_completed: u64,
+    pub writes_completed: u64,
+    /// Milliseconds the device spent doing I/O (field 13).
+    pub io_ms: u64,
+}
+
+/// Parses `/proc/diskstats` into device name → counters.
+/// Line format: `major minor name reads merged sectors ms writes merged sectors ms in_flight io_ms ...`.
+pub fn parse_diskstats(text: &str) -> std::collections::HashMap<String, DiskStat> {
+    text.lines()
+        .filter_map(|line| {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            if f.len() < 13 {
+                return None;
+            }
+            Some((
+                f[2].to_owned(),
+                DiskStat {
+                    reads_completed: f[3].parse().ok()?,
+                    writes_completed: f[7].parse().ok()?,
+                    io_ms: f[12].parse().ok()?,
+                },
+            ))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_diskstats() {
+        let text = " 259       0 nvme0n1 120 3 9000 50 300 7 4000 80 0 210 130 0 0 0 0\n\
+                    259       2 nvme0n1p2 100 1 8000 40 250 5 3500 70 2 190 110\n\
+                    garbage";
+        let stats = parse_diskstats(text);
+        assert_eq!(
+            stats.get("nvme0n1p2"),
+            Some(&DiskStat {
+                reads_completed: 100,
+                writes_completed: 250,
+                io_ms: 190
+            })
+        );
+        assert_eq!(stats.len(), 2);
+    }
 
     #[test]
     fn parses_ipv4_tcp_line() {

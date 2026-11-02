@@ -81,6 +81,11 @@ pub struct DiskSnapshot {
     pub used_percent: f64,
     pub read_bytes_per_sec: Option<f64>,
     pub write_bytes_per_sec: Option<f64>,
+    /// Completed read/write operations per second (IOPS).
+    pub read_ops_per_sec: Option<f64>,
+    pub write_ops_per_sec: Option<f64>,
+    /// Share of time the disk was busy, like Task Manager's "Active time".
+    pub active_percent: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

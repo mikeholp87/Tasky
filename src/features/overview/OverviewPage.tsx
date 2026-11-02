@@ -8,6 +8,7 @@ import {
   NETWORK_SERIES,
   percentAxis,
   rateAxis,
+  RATE_MIN_Y,
 } from "@/components/charts/series";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList } from "@/components/ui/KeyValueList";
@@ -221,6 +222,7 @@ function NetworkCard() {
           seconds={CHART_SECONDS}
           height={CHART_HEIGHT}
           formatValue={rateAxis}
+          minYMax={RATE_MIN_Y}
           sparkline
           ariaLabel="Network throughput over the last minute"
         />

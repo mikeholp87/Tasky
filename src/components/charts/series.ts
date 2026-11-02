@@ -35,3 +35,6 @@ export function coreSeries(index: number): readonly ChartSeries[] {
   }
   return s;
 }
+
+/** Byte-rate charts never scale below 1 KB/s, so idle devices read "0 B/s – 1 KB/s". */
+export const RATE_MIN_Y = 1024;

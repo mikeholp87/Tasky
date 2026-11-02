@@ -14,6 +14,7 @@ interface TimeSeriesChartProps {
   seconds: number;
   height: number;
   yMax?: number;
+  minYMax?: number;
   formatValue: (value: number) => string;
   sparkline?: boolean;
   ariaLabel: string;

@@ -5,7 +5,7 @@ import type uPlot from "uplot";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { LineChart, type LineSeries } from "@/components/charts/LineChart";
-import { percentAxis, rateAxis } from "@/components/charts/series";
+import { percentAxis, rateAxis, RATE_MIN_Y } from "@/components/charts/series";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList, Unavailable } from "@/components/ui/KeyValueList";
 import { childrenOf } from "@/features/processes/tree";
@@ -222,6 +222,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
           history={history}
           pick={(p) => [p.read, p.write]}
           format={rateAxis}
+          minYMax={RATE_MIN_Y}
           label="Disk I/O of this process"
           footer={
             details?.totalReadBytes != null || details?.totalWrittenBytes != null
@@ -273,6 +274,7 @@ function MetricCard({
   history,
   pick,
   yMax,
+  minYMax,
   format,
   label,
   footer,
@@ -283,6 +285,7 @@ function MetricCard({
   history: ProcessPoint[];
   pick: (p: ProcessPoint) => number[];
   yMax?: number;
+  minYMax?: number;
   format: (v: number) => string;
   label: string;
   footer?: string;
@@ -308,6 +311,7 @@ function MetricCard({
           xRange={xRange}
           height={150}
           yMax={yMax}
+          minYMax={minYMax}
           formatValue={format}
           ariaLabel={label}
         />

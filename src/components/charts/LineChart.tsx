@@ -19,6 +19,8 @@ export interface LineChartProps {
   height: number;
   /** Fixed upper bound (e.g. 100 for percentages). Omit for auto-scaling. */
   yMax?: number;
+  /** Smallest auto-scaled upper bound, so idle series keep a sensible axis. */
+  minYMax?: number;
   formatValue: (value: number) => string;
   /** Hide axes/grid for compact sparklines. */
   sparkline?: boolean;
@@ -53,6 +55,7 @@ export const LineChart = memo(function LineChart({
   xRange,
   height,
   yMax,
+  minYMax = 1,
   formatValue,
   sparkline = false,
   ariaLabel,
@@ -91,7 +94,7 @@ export const LineChart = memo(function LineChart({
         y:
           yMax != null
             ? { range: [0, yMax] }
-            : { range: (_u, _min, max) => [0, Math.max(max * 1.1, 1)] },
+            : { range: (_u, _min, max) => [0, Math.max(max * 1.1, minYMax)] },
       },
       axes: sparkline
         ? [{ show: false }, { show: false }]
@@ -140,7 +143,7 @@ export const LineChart = memo(function LineChart({
       plot.destroy();
       plotRef.current = null;
     };
-  }, [seriesKey, height, yMax, sparkline, theme]);
+  }, [seriesKey, height, yMax, minYMax, sparkline, theme]);
 
   const [xMin, xMax] = xRange;
   useEffect(() => {
