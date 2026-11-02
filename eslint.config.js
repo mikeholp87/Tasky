@@ -17,7 +17,7 @@ export default tseslint.config(
       // Advisory for React Compiler, which this project does not use.
       "react-hooks/incompatible-library": "off",
       "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", ignoreRestSiblings: true }],
     },
   },
 );

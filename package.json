@@ -19,12 +19,8 @@
     "check:all": "npm run typecheck && npm run lint && npm run test && cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.12.4",
-    "@tauri-apps/plugin-autostart": "^2.7.0",
-    "@tauri-apps/plugin-notification": "^2.8.0",
-    "@tauri-apps/plugin-store": "^2.5.0",
-    "@tauri-apps/plugin-window-state": "^2.5.0",
     "@tanstack/react-virtual": "^3.14.25",
+    "@tauri-apps/api": "^2.12.4",
     "clsx": "^2.1.1",
     "lucide-react": "^1.66.0",
     "radix-ui": "^1.8.1",

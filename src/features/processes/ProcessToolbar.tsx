@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn";
 import { useProcessStore } from "@/stores/processStore";
 import type { ProcessRow } from "@/types";
 import { COLUMNS, FILTER_PRESETS } from "./logic";
+import { ExportMenu } from "./ExportMenu";
 import { parentPids } from "./tree";
 
 export function ProcessToolbar({
@@ -30,6 +31,7 @@ export function ProcessToolbar({
         {mode === "tree" && <TreeButtons rows={rows} />}
         <ModeToggle />
         <ColumnMenu />
+        <ExportMenu />
       </div>
     </div>
   );

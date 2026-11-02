@@ -45,3 +45,14 @@ describe("HistoryBuffer", () => {
     expect(buf.window(1e9, 6000).map((p) => p.t)).toEqual([3000, 4000, 5000, 6000]);
   });
 });
+
+describe("HistoryBuffer gap filling", () => {
+  it("merges points into a gap in the middle", () => {
+    const buf = new HistoryBuffer(100);
+    [1000, 2000, 6000, 7000].forEach((t) => buf.push(pt(t)));
+    buf.backfill([pt(2000), pt(3000), pt(4000), pt(5000), pt(6000)]);
+    expect(buf.window(1e9, 7000).map((p) => p.t)).toEqual([
+      1000, 2000, 3000, 4000, 5000, 6000, 7000,
+    ]);
+  });
+});

@@ -1,5 +1,8 @@
 // Re-exports of types generated from the Rust models (`npm run gen:types`).
 export type { ActionOutcome } from "./generated/ActionOutcome";
+export type { AlertEvent } from "./generated/AlertEvent";
+export type { AlertMetric } from "./generated/AlertMetric";
+export type { AlertRule } from "./generated/AlertRule";
 export type { AppError } from "./generated/AppError";
 export type { Connection } from "./generated/Connection";
 export type { CpuSnapshot } from "./generated/CpuSnapshot";
@@ -23,5 +26,7 @@ export type { ProcessState } from "./generated/ProcessState";
 export type { ProtectionAssessment } from "./generated/ProtectionAssessment";
 export type { ProtectionLevel } from "./generated/ProtectionLevel";
 export type { Protocol } from "./generated/Protocol";
+export type { Settings } from "./generated/Settings";
 export type { StaticSystemInfo } from "./generated/StaticSystemInfo";
+export type { ThemePreference } from "./generated/ThemePreference";
 export type { TcpState } from "./generated/TcpState";

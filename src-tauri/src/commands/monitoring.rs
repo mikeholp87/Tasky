@@ -3,8 +3,9 @@
 use std::sync::Arc;
 
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{State, Webview};
+use tauri::{AppHandle, Runtime, State, Webview};
 
+use crate::desktop::{WindowVisibility, update_pause_label};
 use crate::state::AppState;
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::{
@@ -15,13 +16,26 @@ use tm_core::monitoring::TickSink;
 /// Longest history window the UI can request.
 const MAX_HISTORY_SECONDS: u32 = 3_600;
 
-struct ChannelSink(Channel);
+/// Streams ticks to a webview. While the window is hidden or minimized the
+/// engine skips serializing for it; the UI backfills history when shown.
+struct ChannelSink {
+    channel: Channel,
+    visibility: Arc<WindowVisibility>,
+}
 
 impl TickSink for ChannelSink {
-    fn deliver(&self, json: &str) -> bool {
-        self.0
-            .send(InvokeResponseBody::Json(json.to_owned()))
-            .is_ok()
+    fn wants_json(&self) -> bool {
+        self.visibility.get()
+    }
+
+    fn deliver(&self, _tick: &MetricsTick, json: Option<&str>) -> bool {
+        match json {
+            Some(json) => self
+                .channel
+                .send(InvokeResponseBody::Json(json.to_owned()))
+                .is_ok(),
+            None => true,
+        }
     }
 }
 
@@ -39,9 +53,13 @@ pub fn subscribe_metrics(
     state: State<'_, AppState>,
     on_tick: Channel,
 ) -> Option<MetricsTick> {
-    state
-        .engine
-        .subscribe(webview.label().to_owned(), Arc::new(ChannelSink(on_tick)));
+    state.engine.subscribe(
+        webview.label().to_owned(),
+        Arc::new(ChannelSink {
+            channel: on_tick,
+            visibility: Arc::clone(&state.visibility),
+        }),
+    );
     state.engine.latest().map(|t| (*t).clone())
 }
 
@@ -61,16 +79,28 @@ pub fn get_monitoring_state(state: State<'_, AppState>) -> MonitoringState {
 }
 
 #[tauri::command]
-pub fn set_monitoring_state(
+pub fn set_monitoring_state<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     paused: bool,
     interval_ms: u32,
 ) -> AppResult<MonitoringState> {
     let interval_ms = validate_interval(interval_ms)?;
-    state.engine.set_state(MonitoringState {
+    let result = state.engine.set_state(MonitoringState {
         paused,
         interval_ms,
-    })
+    })?;
+    // The interval is a persisted setting; pausing is per session.
+    let mut settings = state.settings.get();
+    if settings.refresh_interval_ms != interval_ms {
+        settings.refresh_interval_ms = interval_ms;
+        let saved = state.settings.save(settings)?;
+        state
+            .engine
+            .set_history_capacity(crate::commands::settings::history_points(&saved));
+    }
+    update_pause_label(&app, paused);
+    Ok(result)
 }
 
 #[tauri::command]

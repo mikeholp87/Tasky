@@ -25,11 +25,26 @@ export class HistoryBuffer {
     if (overflow > 0) this.points.splice(0, overflow);
   }
 
-  /** Replaces contents with a backfill from the backend, keeping newer live points. */
+  /**
+   * Merges points from the backend (e.g. a startup backfill, or the gap left
+   * while the window was hidden) into the buffer, keeping time order and
+   * dropping duplicates.
+   */
   backfill(points: readonly HistoryPoint[]): void {
-    const firstLive = this.points[0]?.t ?? Number.POSITIVE_INFINITY;
-    const older = points.filter((p) => p.t < firstLive);
-    this.points = [...older, ...this.points].slice(-this.capacity);
+    const merged: HistoryPoint[] = [];
+    let i = 0;
+    let j = 0;
+    const a = this.points;
+    while (i < a.length || j < points.length) {
+      const next =
+        j >= points.length ||
+        (i < a.length && (a[i] as HistoryPoint).t <= (points[j] as HistoryPoint).t)
+          ? (a[i++] as HistoryPoint)
+          : (points[j++] as HistoryPoint);
+      const last = merged[merged.length - 1];
+      if (!last || next.t > last.t) merged.push(next);
+    }
+    this.points = merged.slice(-this.capacity);
   }
 
   /** Points with `t >= nowMs - seconds * 1000`, oldest first. */

@@ -13,6 +13,8 @@ import type {
   ProcessAction,
   ProcessDetails,
   ProtectionAssessment,
+  AlertEvent,
+  Settings,
   StaticSystemInfo,
 } from "@/types";
 
@@ -90,6 +92,18 @@ export const backend = {
     call<ActionOutcome>("perform_process_action", { pid, startTime, action, acknowledgeWarnings }),
 
   revealExecutable: (pid: number) => call<void>("reveal_executable", { pid }),
+
+  getSettings: () => call<Settings>("get_settings"),
+  updateSettings: (settings: Settings) => call<Settings>("update_settings", { settings }),
+  resetSettings: () => call<Settings>("reset_settings"),
+  getRecentAlerts: () => call<AlertEvent[]>("get_recent_alerts"),
+
+  /** Each export opens a native save dialog; resolves to the path, or null if cancelled. */
+  exportProcesses: (format: "csv" | "json", includeCommandLines: boolean) =>
+    call<string | null>("export_processes", { format, includeCommandLines }),
+  exportSystemSummary: () => call<string | null>("export_system_summary"),
+  exportDiagnostics: (includeProcesses: boolean, includeCommandLines: boolean) =>
+    call<string | null>("export_diagnostics", { includeProcesses, includeCommandLines }),
 
   /**
    * Streams metrics ticks to `onTick`. Resolves with the latest tick already

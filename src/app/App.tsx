@@ -3,6 +3,7 @@ import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { startMonitoring } from "@/services/monitoring";
 import { Toaster } from "@/components/Toaster";
 import { ConfirmActionDialog } from "@/features/processes/ConfirmActionDialog";
+import { CommandPalette } from "./CommandPalette";
 import { useUiStore } from "@/stores/uiStore";
 import { AlertsPage } from "@/features/alerts/AlertsPage";
 import { CpuPage } from "@/features/cpu/CpuPage";
@@ -53,6 +54,7 @@ export function App() {
         </main>
       </div>
       <ConfirmActionDialog />
+      <CommandPalette />
       <Toaster />
     </div>
   );

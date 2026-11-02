@@ -1,3 +1,6 @@
+import { Download } from "lucide-react";
+import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
+import { toast } from "@/stores/toastStore";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -12,7 +15,20 @@ export function SystemInfoPage() {
 
   return (
     <>
-      <PageHeader title="System Information" description="Operating system and hardware." />
+      <PageHeader
+        title="System Information"
+        description="Operating system and hardware."
+        actions={
+          <button
+            type="button"
+            disabled={!isBackendAvailable()}
+            onClick={() => void exportSummary()}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50"
+          >
+            <Download size={14} aria-hidden /> Export summary…
+          </button>
+        }
+      />
       {!info || now == null ? (
         <ConnectionNotice />
       ) : (
@@ -82,4 +98,13 @@ export function SystemInfoPage() {
       )}
     </>
   );
+}
+
+async function exportSummary() {
+  try {
+    const path = await backend.exportSystemSummary();
+    if (path) toast.success(`System summary saved to ${path}`);
+  } catch (e) {
+    toast.error(toAppError(e).message);
+  }
 }

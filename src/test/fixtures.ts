@@ -26,6 +26,7 @@ export function makeTick(
     disks: [],
     networks: [],
     processes,
+    alerts: [],
     point: {
       t: NOW_MS,
       cpu: 12,

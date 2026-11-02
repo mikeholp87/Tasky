@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use super::ProcessRow;
+use super::{AlertEvent, ProcessRow};
 
 /// One sample of all dynamic metrics, emitted to the frontend on every tick.
 ///
@@ -21,6 +21,8 @@ pub struct MetricsTick {
     pub disks: Vec<DiskSnapshot>,
     pub networks: Vec<NetworkInterfaceSnapshot>,
     pub processes: Vec<ProcessRow>,
+    /// Alerts that fired on this tick (usually empty).
+    pub alerts: Vec<AlertEvent>,
     /// Compact summary of this tick, appended to history buffers.
     pub point: HistoryPoint,
     pub engine: EngineStats,

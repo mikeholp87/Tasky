@@ -103,6 +103,7 @@ impl Collector {
             disks,
             networks,
             processes,
+            alerts: Vec::new(),
             point,
             engine: EngineStats {
                 poll_duration_ms: duration_ms(started.elapsed()),

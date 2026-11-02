@@ -2,9 +2,12 @@
  * Monitoring lifecycle and controls. Keeps backend coordination out of React
  * components: components call these functions and read the stores.
  */
+import { useAlertStore } from "@/stores/alertStore";
 import { useMetricsStore } from "@/stores/metricsStore";
-import type { MonitoringState } from "@/types";
+import { toast } from "@/stores/toastStore";
+import type { MetricsTick, MonitoringState } from "@/types";
 import { backend, isBackendAvailable, toAppError } from "./ipc";
+import { loadSettings } from "./settings";
 
 /** Seconds of history fetched at startup (the longest chart range). */
 const BACKFILL_SECONDS = 3_600;
@@ -23,6 +26,7 @@ export async function startMonitoring(): Promise<void> {
   }
 
   try {
+    await loadSettings();
     const [info, state] = await Promise.all([
       backend.getStaticInfo(),
       backend.getMonitoringState(),
@@ -30,17 +34,43 @@ export async function startMonitoring(): Promise<void> {
     store.setStaticInfo(info);
     store.setMonitoring(state);
 
-    const latest = await backend.subscribeMetrics((tick) =>
-      useMetricsStore.getState().ingestTick(tick),
-    );
+    const latest = await backend.subscribeMetrics(onTick);
     if (latest) store.ingestTick(latest);
 
     // Backfill after subscribing so no tick falls into a gap.
     store.backfillHistory(await backend.getHistory(BACKFILL_SECONDS));
+    useAlertStore.getState().replace(await backend.getRecentAlerts());
+    watchVisibility();
   } catch (error) {
     started = false;
     store.setStatus("error", toAppError(error));
   }
+}
+
+function onTick(tick: MetricsTick): void {
+  useMetricsStore.getState().ingestTick(tick);
+  if (tick.alerts.length > 0) {
+    useAlertStore.getState().add(tick.alerts);
+    for (const alert of tick.alerts) toast.info(`${alert.ruleName}: ${alert.message}`);
+  }
+}
+
+/**
+ * While the window is hidden the backend stops streaming to it; when it
+ * becomes visible again, fill the gap from the backend's history.
+ */
+function watchVisibility(): void {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    void backend
+      .getHistory(BACKFILL_SECONDS)
+      .then((points) => useMetricsStore.getState().backfillHistory(points))
+      .catch(() => {});
+    void backend
+      .getRecentAlerts()
+      .then((events) => useAlertStore.getState().replace(events))
+      .catch(() => {});
+  });
 }
 
 async function applyState(next: MonitoringState): Promise<void> {

@@ -2,8 +2,9 @@
 //!
 //! ```text
 //! control (mpsc) ──► engine thread ──► Collector::sample()
-//!                                   ──► serialize once ──► every TickSink
-//!                                   ──► Shared { latest, history }  (short write locks)
+//!                                   ──► AlertEvaluator
+//!                                   ──► Shared { latest, history, alerts }  (short write locks)
+//!                                   ──► every TickSink (JSON serialized once, only if needed)
 //! ```
 //!
 //! While paused the thread blocks on the control channel and uses no CPU.
@@ -16,20 +17,30 @@ use std::time::{Duration, Instant};
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    HistoryPoint, MetricsTick, MonitoringState, ProcessPoint, ProcessRow, ProcessState,
-    StaticSystemInfo,
+    AlertEvent, AlertRule, HistoryPoint, MetricsTick, MonitoringState, ProcessPoint, ProcessRow,
+    ProcessState, StaticSystemInfo,
 };
+use crate::monitoring::alerts::AlertEvaluator;
 use crate::monitoring::collector::{Collector, unix_millis};
 use crate::monitoring::history::RingBuffer;
 use crate::monitoring::process_history::ProcessHistory;
 
 /// One hour of history at the fastest (500 ms) interval.
 pub const MAX_HISTORY_POINTS: usize = 7_200;
+/// Fired alerts kept for the Alerts page.
+const ALERT_LOG_LEN: usize = 100;
 
-/// Receives serialized ticks. Returns `false` when the receiver is gone so the
+/// Receives each tick. Returns `false` when the receiver is gone so the
 /// engine can drop it.
 pub trait TickSink: Send + Sync {
-    fn deliver(&self, json: &str) -> bool;
+    /// Whether this sink currently needs the serialized tick. When no sink
+    /// does (e.g. the window is hidden), serialization is skipped entirely.
+    fn wants_json(&self) -> bool {
+        true
+    }
+
+    /// `json` is present whenever [`TickSink::wants_json`] returned true.
+    fn deliver(&self, tick: &MetricsTick, json: Option<&str>) -> bool;
 }
 
 enum Control {
@@ -48,7 +59,19 @@ struct Shared {
     /// Windows has no documented per-process "suspended" status, so the
     /// engine reports the state it caused.
     suspended: Mutex<HashSet<(u32, u64)>>,
+    alert_rules: RwLock<Vec<AlertRule>>,
+    alert_log: Mutex<RingBuffer<AlertEvent>>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+fn read<T>(l: &RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {
+    l.read().unwrap_or_else(PoisonError::into_inner)
+}
+fn write<T>(l: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
+    l.write().unwrap_or_else(PoisonError::into_inner)
 }
 
 pub struct Engine {
@@ -67,13 +90,20 @@ impl Engine {
             history: RwLock::new(RingBuffer::new(MAX_HISTORY_POINTS)),
             process_history: RwLock::new(ProcessHistory::default()),
             suspended: Mutex::new(HashSet::new()),
+            alert_rules: RwLock::new(Vec::new()),
+            alert_log: Mutex::new(RingBuffer::new(ALERT_LOG_LEN)),
             sinks: Mutex::new(HashMap::new()),
         });
         let (tx, rx) = mpsc::channel();
-        let thread_shared = Arc::clone(&shared);
+        let worker = Worker {
+            collector,
+            alerts: AlertEvaluator::default(),
+            shared: Arc::clone(&shared),
+            last_payload: 0,
+        };
         let handle = thread::Builder::new()
             .name("monitoring-engine".into())
-            .spawn(move || run(collector, rx, thread_shared, initial))
+            .spawn(move || worker.run(rx, initial))
             .map_err(|e| AppError::SystemQueryFailed(format!("cannot start engine: {e}")))?;
         Ok(Self {
             control: tx,
@@ -87,19 +117,11 @@ impl Engine {
     }
 
     pub fn state(&self) -> MonitoringState {
-        *self
-            .shared
-            .state
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
+        *read(&self.shared.state)
     }
 
     pub fn set_state(&self, state: MonitoringState) -> AppResult<MonitoringState> {
-        *self
-            .shared
-            .state
-            .write()
-            .unwrap_or_else(PoisonError::into_inner) = state;
+        *write(&self.shared.state) = state;
         self.send(Control::SetState(state))?;
         Ok(state)
     }
@@ -109,22 +131,22 @@ impl Engine {
     }
 
     pub fn latest(&self) -> Option<Arc<MetricsTick>> {
-        self.shared
-            .latest
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        read(&self.shared.latest).clone()
     }
 
     /// History points newer than `seconds` ago, oldest first.
     pub fn history(&self, seconds: u32) -> Vec<HistoryPoint> {
         let cutoff = unix_millis().saturating_sub(u64::from(seconds) * 1_000);
-        let history = self
-            .shared
-            .history
-            .read()
-            .unwrap_or_else(PoisonError::into_inner);
-        history.iter().filter(|p| p.t >= cutoff).cloned().collect()
+        read(&self.shared.history)
+            .iter()
+            .filter(|p| p.t >= cutoff)
+            .cloned()
+            .collect()
+    }
+
+    /// Resizes the system history buffer (e.g. from the "history length" setting).
+    pub fn set_history_capacity(&self, points: usize) {
+        write(&self.shared.history).set_capacity(points.clamp(60, MAX_HISTORY_POINTS));
     }
 
     /// The latest row for `pid`, if it is still running.
@@ -138,20 +160,12 @@ impl Engine {
 
     /// Recent samples for the process instance `(pid, start_time)`.
     pub fn process_history(&self, pid: u32, start_time: u64) -> Vec<ProcessPoint> {
-        self.shared
-            .process_history
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(pid, start_time)
+        read(&self.shared.process_history).get(pid, start_time)
     }
 
     /// Records that this app suspended or resumed a process.
     pub fn set_suspended(&self, pid: u32, start_time: u64, suspended: bool) {
-        let mut set = self
-            .shared
-            .suspended
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut set = lock(&self.shared.suspended);
         if suspended {
             set.insert((pid, start_time));
         } else {
@@ -159,24 +173,25 @@ impl Engine {
         }
     }
 
+    /// Replaces the alert rules; takes effect on the next tick.
+    pub fn set_alert_rules(&self, rules: Vec<AlertRule>) {
+        *write(&self.shared.alert_rules) = rules;
+    }
+
+    /// Recently fired alerts, newest last.
+    pub fn recent_alerts(&self) -> Vec<AlertEvent> {
+        lock(&self.shared.alert_log).iter().cloned().collect()
+    }
+
     /// Registers (or replaces) the sink with the given key. Re-subscribing
     /// after a webview reload replaces the stale channel instead of leaking it.
     pub fn subscribe(&self, key: String, sink: Arc<dyn TickSink>) {
-        self.shared
-            .sinks
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key, sink);
+        lock(&self.shared.sinks).insert(key, sink);
     }
 
     pub fn shutdown(&self) {
         let _ = self.control.send(Control::Shutdown);
-        if let Some(handle) = self
-            .thread
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+        if let Some(handle) = lock(&self.thread).take() {
             let _ = handle.join();
         }
     }
@@ -188,51 +203,113 @@ impl Engine {
     }
 }
 
-fn run(
-    mut collector: Collector,
-    rx: mpsc::Receiver<Control>,
+/// State owned by the engine thread; never shared, so never locked.
+struct Worker {
+    collector: Collector,
+    alerts: AlertEvaluator,
     shared: Arc<Shared>,
-    mut state: MonitoringState,
-) {
-    let mut next_due = Instant::now() + interval(&state);
-    let mut last_payload = 0u32;
-    loop {
-        let msg = if state.paused {
-            rx.recv().map_err(|_| RecvTimeoutError::Disconnected)
-        } else {
-            rx.recv_timeout(next_due.saturating_duration_since(Instant::now()))
-        };
-        match msg {
-            Ok(Control::SetState(new_state)) => {
-                let resumed = state.paused && !new_state.paused;
-                state = new_state;
-                if resumed {
-                    last_payload = tick(&mut collector, &shared, &state, last_payload);
+    last_payload: u32,
+}
+
+impl Worker {
+    fn run(mut self, rx: mpsc::Receiver<Control>, mut state: MonitoringState) {
+        let mut next_due = Instant::now() + interval(&state);
+        loop {
+            let msg = if state.paused {
+                rx.recv().map_err(|_| RecvTimeoutError::Disconnected)
+            } else {
+                rx.recv_timeout(next_due.saturating_duration_since(Instant::now()))
+            };
+            match msg {
+                Ok(Control::SetState(new_state)) => {
+                    let resumed = state.paused && !new_state.paused;
+                    state = new_state;
+                    if resumed {
+                        self.tick(&state);
+                    }
+                    next_due = Instant::now() + interval(&state);
                 }
-                next_due = Instant::now() + interval(&state);
+                Ok(Control::RefreshNow) => {
+                    self.tick(&state);
+                    next_due = Instant::now() + interval(&state);
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    self.tick(&state);
+                    // Schedule from the previous deadline to avoid drift, but
+                    // never try to "catch up" a backlog after a stall.
+                    next_due = (next_due + interval(&state)).max(Instant::now());
+                }
+                Ok(Control::Shutdown) | Err(RecvTimeoutError::Disconnected) => break,
             }
-            Ok(Control::RefreshNow) => {
-                last_payload = tick(&mut collector, &shared, &state, last_payload);
-                next_due = Instant::now() + interval(&state);
+        }
+        tracing::info!("monitoring engine stopped");
+    }
+
+    /// Collects, evaluates, publishes and delivers one sample.
+    fn tick(&mut self, state: &MonitoringState) {
+        let shared = &*self.shared;
+        let mut sample = self.collector.sample(state.interval_ms, self.last_payload);
+        apply_suspended(shared, &mut sample.processes);
+
+        let rules = read(&shared.alert_rules).clone();
+        sample.alerts = self.alerts.evaluate(&rules, &sample);
+        if !sample.alerts.is_empty() {
+            let mut log = lock(&shared.alert_log);
+            for event in &sample.alerts {
+                tracing::info!(rule = %event.rule_id, "alert fired");
+                log.push(event.clone());
             }
-            Err(RecvTimeoutError::Timeout) => {
-                last_payload = tick(&mut collector, &shared, &state, last_payload);
-                // Schedule from the previous deadline to avoid drift, but
-                // never try to "catch up" a backlog after a stall.
-                next_due = (next_due + interval(&state)).max(Instant::now());
+        }
+
+        write(&shared.history).push(sample.point.clone());
+        write(&shared.process_history).record(sample.timestamp_ms, &sample.processes);
+        let sample = Arc::new(sample);
+        *write(&shared.latest) = Some(Arc::clone(&sample));
+
+        // Deliver outside the sinks lock; a slow webview must not block subscribe().
+        let sinks: Vec<(String, Arc<dyn TickSink>)> = lock(&shared.sinks)
+            .iter()
+            .map(|(k, s)| (k.clone(), Arc::clone(s)))
+            .collect();
+        let json = if sinks.iter().any(|(_, s)| s.wants_json()) {
+            match serde_json::to_string(&*sample) {
+                Ok(json) => {
+                    self.last_payload = u32::try_from(json.len()).unwrap_or(u32::MAX);
+                    Some(json)
+                }
+                Err(e) => {
+                    tracing::error!("failed to serialize metrics: {e}");
+                    None
+                }
             }
-            Ok(Control::Shutdown) | Err(RecvTimeoutError::Disconnected) => break,
+        } else {
+            None
+        };
+        let dead: Vec<String> = sinks
+            .into_iter()
+            .filter(|(_, sink)| {
+                let payload = if sink.wants_json() {
+                    json.as_deref()
+                } else {
+                    None
+                };
+                !sink.deliver(&sample, payload)
+            })
+            .map(|(k, _)| k)
+            .collect();
+        if !dead.is_empty() {
+            let mut map = lock(&shared.sinks);
+            for key in dead {
+                tracing::debug!("dropping disconnected metrics subscriber {key}");
+                map.remove(&key);
+            }
         }
     }
-    tracing::info!("monitoring engine stopped");
 }
 
 /// Marks processes this app suspended, and forgets ones that have exited.
 fn apply_suspended(shared: &Shared, rows: &mut [ProcessRow]) {
-    let mut set = shared
-        .suspended
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
+    let mut set = lock(&shared.suspended);
     if set.is_empty() {
         return;
     }
@@ -251,73 +328,41 @@ fn interval(state: &MonitoringState) -> Duration {
     Duration::from_millis(u64::from(state.interval_ms))
 }
 
-/// Collects, publishes and delivers one sample. Returns the payload size.
-fn tick(
-    collector: &mut Collector,
-    shared: &Shared,
-    state: &MonitoringState,
-    last_payload: u32,
-) -> u32 {
-    let mut sample = collector.sample(state.interval_ms, last_payload);
-    apply_suspended(shared, &mut sample.processes);
-    let json = match serde_json::to_string(&sample) {
-        Ok(json) => json,
-        Err(e) => {
-            tracing::error!("failed to serialize metrics: {e}");
-            return last_payload;
-        }
-    };
-    let payload_bytes = u32::try_from(json.len()).unwrap_or(u32::MAX);
-
-    shared
-        .history
-        .write()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push(sample.point.clone());
-    shared
-        .process_history
-        .write()
-        .unwrap_or_else(PoisonError::into_inner)
-        .record(sample.timestamp_ms, &sample.processes);
-    *shared
-        .latest
-        .write()
-        .unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(sample));
-
-    // Deliver outside the sinks lock; a slow webview must not block subscribe().
-    let sinks: Vec<(String, Arc<dyn TickSink>)> = shared
-        .sinks
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .map(|(k, s)| (k.clone(), Arc::clone(s)))
-        .collect();
-    let dead: Vec<String> = sinks
-        .into_iter()
-        .filter(|(_, sink)| !sink.deliver(&json))
-        .map(|(k, _)| k)
-        .collect();
-    if !dead.is_empty() {
-        let mut map = shared.sinks.lock().unwrap_or_else(PoisonError::into_inner);
-        for key in dead {
-            tracing::debug!("dropping disconnected metrics subscriber {key}");
-            map.remove(&key);
-        }
-    }
-    payload_bytes
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use crate::models::AlertMetric;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-    struct CountingSink(AtomicUsize, Mutex<Option<String>>);
+    struct CountingSink {
+        count: AtomicUsize,
+        last_json: Mutex<Option<String>>,
+        alerts: Mutex<Vec<AlertEvent>>,
+        wants_json: AtomicBool,
+    }
+
+    impl CountingSink {
+        fn new(wants_json: bool) -> Arc<Self> {
+            Arc::new(Self {
+                count: AtomicUsize::new(0),
+                last_json: Mutex::new(None),
+                alerts: Mutex::new(Vec::new()),
+                wants_json: AtomicBool::new(wants_json),
+            })
+        }
+    }
 
     impl TickSink for CountingSink {
-        fn deliver(&self, json: &str) -> bool {
-            self.0.fetch_add(1, Ordering::SeqCst);
-            *self.1.lock().unwrap() = Some(json.to_owned());
+        fn wants_json(&self) -> bool {
+            self.wants_json.load(Ordering::SeqCst)
+        }
+        fn deliver(&self, tick: &MetricsTick, json: Option<&str>) -> bool {
+            self.count.fetch_add(1, Ordering::SeqCst);
+            *self.last_json.lock().unwrap() = json.map(str::to_owned);
+            self.alerts
+                .lock()
+                .unwrap()
+                .extend(tick.alerts.iter().cloned());
             true
         }
     }
@@ -333,18 +378,22 @@ mod tests {
         false
     }
 
+    fn engine(paused: bool) -> Engine {
+        Engine::start(MonitoringState {
+            paused,
+            interval_ms: 500,
+        })
+        .expect("engine starts")
+    }
+
     /// Integration: the real engine produces well-formed snapshots on this OS.
     #[test]
     fn engine_emits_valid_snapshots() {
-        let engine = Engine::start(MonitoringState {
-            paused: false,
-            interval_ms: 500,
-        })
-        .expect("engine starts");
-        let sink = Arc::new(CountingSink(AtomicUsize::new(0), Mutex::new(None)));
+        let engine = engine(false);
+        let sink = CountingSink::new(true);
         engine.subscribe("test".into(), sink.clone());
 
-        assert!(wait_for(|| sink.0.load(Ordering::SeqCst) >= 2));
+        assert!(wait_for(|| sink.count.load(Ordering::SeqCst) >= 2));
         let tick = engine.latest().expect("has a tick");
         assert!(tick.memory.total_bytes > 0);
         assert!(tick.memory.used_bytes <= tick.memory.total_bytes);
@@ -354,7 +403,7 @@ mod tests {
         assert!(!engine.history(60).is_empty());
 
         let json: serde_json::Value =
-            serde_json::from_str(sink.1.lock().unwrap().as_deref().unwrap()).unwrap();
+            serde_json::from_str(sink.last_json.lock().unwrap().as_deref().unwrap()).unwrap();
         assert!(json["cpu"]["perCore"].is_array());
         assert!(json["memory"]["totalBytes"].as_u64().unwrap() > 0);
 
@@ -366,23 +415,51 @@ mod tests {
 
     #[test]
     fn pause_stops_ticks_and_refresh_now_still_works() {
-        let engine = Engine::start(MonitoringState {
-            paused: true,
-            interval_ms: 500,
-        })
-        .expect("engine starts");
-        let sink = Arc::new(CountingSink(AtomicUsize::new(0), Mutex::new(None)));
+        let engine = engine(true);
+        let sink = CountingSink::new(true);
         engine.subscribe("test".into(), sink.clone());
 
         thread::sleep(Duration::from_millis(1_200));
         assert_eq!(
-            sink.0.load(Ordering::SeqCst),
+            sink.count.load(Ordering::SeqCst),
             0,
             "paused engine must not poll"
         );
 
         engine.refresh_now().unwrap();
-        assert!(wait_for(|| sink.0.load(Ordering::SeqCst) == 1));
+        assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
+        engine.shutdown();
+    }
+
+    #[test]
+    fn skips_serialization_when_no_sink_wants_json() {
+        let engine = engine(true);
+        let sink = CountingSink::new(false);
+        engine.subscribe("hidden".into(), sink.clone());
+        engine.refresh_now().unwrap();
+        assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
+        assert!(sink.last_json.lock().unwrap().is_none());
+        engine.shutdown();
+    }
+
+    #[test]
+    fn evaluates_alert_rules_and_logs_events() {
+        let engine = engine(true);
+        let sink = CountingSink::new(false);
+        engine.subscribe("alerts".into(), sink.clone());
+        // Memory use is always above 0%, so this fires on the first tick.
+        engine.set_alert_rules(vec![AlertRule {
+            id: "always".into(),
+            name: "Always".into(),
+            enabled: true,
+            metric: AlertMetric::SystemMemory,
+            threshold: 0.0,
+            duration_secs: 0,
+            process_name: None,
+        }]);
+        engine.refresh_now().unwrap();
+        assert!(wait_for(|| !sink.alerts.lock().unwrap().is_empty()));
+        assert_eq!(engine.recent_alerts()[0].rule_id, "always");
         engine.shutdown();
     }
 }

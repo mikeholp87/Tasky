@@ -25,6 +25,15 @@ impl<T> RingBuffer<T> {
         self.items.push_back(item);
     }
 
+    /// Changes capacity, discarding the oldest items if it shrinks.
+    pub fn set_capacity(&mut self, capacity: usize) {
+        let capacity = capacity.max(1);
+        while self.items.len() > capacity {
+            self.items.pop_front();
+        }
+        self.capacity = capacity;
+    }
+
     /// Items oldest first.
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &T> + ExactSizeIterator {
         self.items.iter()
@@ -50,6 +59,16 @@ mod tests {
         (0..6).for_each(|i| rb.push(i));
         assert_eq!(rb.iter().len(), 6);
         assert_eq!(rb.iter().next_back(), Some(&5));
+    }
+
+    #[test]
+    fn shrinking_capacity_drops_oldest() {
+        let mut rb = RingBuffer::new(5);
+        (0..5).for_each(|i| rb.push(i));
+        rb.set_capacity(2);
+        assert_eq!(rb.iter().copied().collect::<Vec<_>>(), vec![3, 4]);
+        rb.push(9);
+        assert_eq!(rb.iter().copied().collect::<Vec<_>>(), vec![4, 9]);
     }
 
     #[test]
