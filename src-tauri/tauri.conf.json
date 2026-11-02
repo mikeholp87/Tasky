@@ -29,7 +29,7 @@
     "active": true,
     "targets": "all",
     "publisher": "Task Manager contributors",
-    "copyright": "Copyright © 2026 Task Manager contributors. MIT License.",
+    "copyright": "Copyright © 2026 Mike Holp. MIT License.",
     "category": "Utility",
     "shortDescription": "Cross-platform task manager and system monitor",
     "longDescription": "Monitor processes, CPU, memory, storage and network in real time, and safely end, suspend or reprioritize processes. All data stays on your computer.",
