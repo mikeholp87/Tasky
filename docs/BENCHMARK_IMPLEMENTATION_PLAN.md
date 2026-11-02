@@ -258,7 +258,7 @@ bytes. Exports exclude process lists and personal files.
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | 0     | Baseline gates, commit WIP, this plan                                                                                                   | done   |
 | 1     | Models, errors, cancellation, progress throttle, statistics, coordinator, Benchmark Mode, history store, mocks, IPC, UI shell, settings | done   |
-| 2     | CPU workloads, single/multi/sustained, temps/frequency                                                                                  |        |
+| 2     | CPU workloads, single/multi/sustained, temps/frequency                                                                                  | done   |
 | 3     | GPU (wgpu) detection, compute, memory, timing, fallback                                                                                 |        |
 | 4     | Disk: validation, RAII files, direct I/O, seq/random/latency, limits                                                                    |        |
 | 5     | Internet: provider trait, Cloudflare provider, privacy, loaded latency, jitter                                                          |        |

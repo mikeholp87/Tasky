@@ -39,9 +39,13 @@ fn run_id(raw: &str) -> AppResult<&str> {
     Ok(raw)
 }
 
+/// Async because the first call probes temperature sensors.
 #[tauri::command]
-pub fn get_benchmark_capabilities(state: State<'_, AppState>) -> BenchmarkCapabilities {
-    state.benchmarks.capabilities()
+pub async fn get_benchmark_capabilities(
+    state: State<'_, AppState>,
+) -> AppResult<BenchmarkCapabilities> {
+    let benchmarks = Arc::clone(&state.benchmarks);
+    blocking(move || Ok(benchmarks.capabilities())).await
 }
 
 #[tauri::command]

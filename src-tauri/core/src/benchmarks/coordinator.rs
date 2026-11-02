@@ -13,7 +13,7 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -48,6 +48,9 @@ pub struct BenchmarkCoordinator {
     simulation_enabled: bool,
     save_history: AtomicBool,
     active: Mutex<Option<ActiveRun>>,
+    /// Whether any CPU temperature sensor is readable (probed once; sensor
+    /// enumeration can be slow on Windows).
+    temperature_available: OnceLock<bool>,
 }
 
 struct Outcome {
@@ -72,6 +75,7 @@ impl BenchmarkCoordinator {
             simulation_enabled,
             save_history: AtomicBool::new(true),
             active: Mutex::new(None),
+            temperature_available: OnceLock::new(),
         })
     }
 
@@ -102,7 +106,9 @@ impl BenchmarkCoordinator {
             logical_cores: info.logical_core_count,
             physical_cores: info.physical_core_count,
             simulation_available: self.simulation_enabled,
-            temperature_available: false,
+            temperature_available: *self
+                .temperature_available
+                .get_or_init(|| super::thermal::ThermalProbe::new().cpu().is_some()),
             power_available: self.probe.power().source != super::models::PowerSource::Unknown,
             running_run_id: self.running_run_id(),
         }

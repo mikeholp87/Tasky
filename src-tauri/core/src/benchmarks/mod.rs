@@ -7,6 +7,7 @@
 pub mod cancellation;
 pub mod confidence;
 pub mod coordinator;
+pub mod cpu;
 pub mod environment;
 pub mod history;
 pub mod mock;
@@ -15,6 +16,7 @@ pub mod progress;
 pub mod scoring;
 pub mod statistics;
 pub mod suite;
+pub mod thermal;
 
 use std::time::Duration;
 
@@ -123,11 +125,34 @@ impl BenchmarkFactory for HardwareFactory {
         kind: BenchmarkKind,
         _request: &BenchmarkRequest,
     ) -> AppResult<Box<dyn CategoryBenchmark>> {
-        Ok(Box::new(NotAvailable(kind)))
+        Ok(match kind {
+            BenchmarkKind::Cpu => Box::new(cpu::CpuBenchmark),
+            _ => Box::new(NotAvailable(kind)),
+        })
     }
 
-    fn estimate_secs(&self, _kind: BenchmarkKind, _request: &BenchmarkRequest) -> u32 {
-        0
+    fn estimate_secs(&self, kind: BenchmarkKind, request: &BenchmarkRequest) -> u32 {
+        match kind {
+            BenchmarkKind::Cpu => cpu::estimate_secs(request),
+            _ => 0,
+        }
+    }
+}
+
+/// A minimal valid request for unit tests.
+#[cfg(test)]
+pub fn coordinator_test_request() -> BenchmarkRequest {
+    BenchmarkRequest {
+        kinds: vec![BenchmarkKind::Cpu],
+        profile: models::BenchmarkProfile::Quick,
+        cpu_workers: None,
+        gpu_adapter_id: None,
+        disk_mount_point: None,
+        disk_allow_write: false,
+        network_data_profile: models::NetworkDataProfile::DataSaver,
+        sustained_secs: None,
+        cooldown: false,
+        simulate: false,
     }
 }
 

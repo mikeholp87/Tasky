@@ -17,10 +17,11 @@
 //! * **Internet** results are deliberately excluded from the system score:
 //!   they describe the path to a remote server, not this computer.
 //!
-//! Reference values are fixed constants per score version. They were chosen
-//! as round numbers near a mid-range 2024 desktop so typical scores land in
-//! the hundreds-to-low-thousands; they are not derived from, and must not be
-//! compared with, any other benchmark product. Changing any constant or the
+//! Reference values are fixed constants per score version: round numbers
+//! close to what the development machine (a 2024 mid-range laptop, Intel
+//! Core 7 150U, 10 cores / 12 threads, on AC power) measured, so a score of
+//! about 1000 means "comparable to that laptop". They are arbitrary anchors,
+//! not derived from and not comparable with any other benchmark product. Changing any constant or the
 //! formula requires bumping [`SCORE_VERSION`].
 
 use super::models::{BenchmarkKind, CategoryResult, CategoryStatus, Metric, SystemScore};
@@ -37,16 +38,16 @@ pub const REFERENCE_SCORE: f64 = 1_000.0;
 /// as a raw measurement only.
 pub const REFERENCES: &[(&str, f64)] = &[
     // CPU (Mops/s, Mflop/s, MB/s)
-    ("cpu.single.integer", 2_000.0),
+    ("cpu.single.integer", 3_500.0),
     ("cpu.multi.integer", 16_000.0),
-    ("cpu.single.float", 4_000.0),
-    ("cpu.multi.float", 32_000.0),
-    ("cpu.single.sha256", 1_500.0),
+    ("cpu.single.float", 12_000.0),
+    ("cpu.multi.float", 40_000.0),
+    ("cpu.single.sha256", 2_000.0),
     ("cpu.multi.sha256", 12_000.0),
-    ("cpu.single.lz4.compress", 500.0),
-    ("cpu.multi.lz4.compress", 4_000.0),
-    ("cpu.single.lz4.decompress", 3_000.0),
-    ("cpu.multi.lz4.decompress", 24_000.0),
+    ("cpu.single.lz4.compress", 600.0),
+    ("cpu.multi.lz4.compress", 2_500.0),
+    ("cpu.single.lz4.decompress", 2_500.0),
+    ("cpu.multi.lz4.decompress", 9_000.0),
     // GPU (GFLOP/s, GB/s)
     ("gpu.compute.fma", 5_000.0),
     ("gpu.memory.copy", 200.0),
@@ -152,10 +153,15 @@ mod tests {
 
     #[test]
     fn reference_value_scores_exactly_1000() {
-        let m = metric("cpu.single.integer", 2_000.0, true);
-        assert_eq!(metric_score(&m), Some(1_000.0));
-        let m = metric("cpu.single.integer", 4_000.0, true);
-        assert_eq!(metric_score(&m), Some(2_000.0));
+        let r = reference("cpu.single.integer").unwrap();
+        assert_eq!(
+            metric_score(&metric("cpu.single.integer", r, true)),
+            Some(1_000.0)
+        );
+        assert_eq!(
+            metric_score(&metric("cpu.single.integer", r * 2.0, true)),
+            Some(2_000.0)
+        );
     }
 
     #[test]
@@ -179,7 +185,7 @@ mod tests {
     fn category_score_is_geometric_mean() {
         let mut c = CategoryResult {
             metrics: vec![
-                metric("cpu.single.integer", 1_000.0, true), // 500
+                metric("cpu.single.integer", 1_750.0, true), // 500
                 metric("cpu.multi.integer", 32_000.0, true), // 2000
                 metric("not.scored", 1.0, true),
             ],

@@ -13,6 +13,7 @@ import {
   PROFILE_LABELS,
   STATUS_LABELS,
   formatMetric,
+  formatMetricText,
   formatScore,
 } from "../format";
 import { secondaryButton } from "./styles";
@@ -64,6 +65,16 @@ function CategoryBlock({ category, showRaw }: { category: CategoryResult; showRa
           <MetricRow key={m.id} metric={m} showRaw={showRaw} />
         ))}
         {category.error && <p className="py-2 text-crit">{category.error.message}</p>}
+        {category.thermal?.peakCelsius != null && (
+          <dl className="num grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 py-2">
+            <dt className="text-fg-muted">Temperature before</dt>
+            <dd>{formatMetricText(category.thermal.beforeCelsius, "celsius")}</dd>
+            <dt className="text-fg-muted">Peak temperature</dt>
+            <dd>{formatMetricText(category.thermal.peakCelsius, "celsius")}</dd>
+            <dt className="text-fg-muted">Temperature after</dt>
+            <dd>{formatMetricText(category.thermal.afterCelsius, "celsius")}</dd>
+          </dl>
+        )}
         {category.confidence && (
           <p className="py-2 text-fg-muted">
             Result stability: <strong>{CONFIDENCE_LABELS[category.confidence]}</strong>
