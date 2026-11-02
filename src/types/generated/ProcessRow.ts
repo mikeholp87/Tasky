@@ -26,4 +26,9 @@ priority: number | null, exe: string | null,
  * Command line joined with spaces. May contain sensitive arguments; never
  * logged and excluded from exports unless the user opts in.
  */
-cmd: string | null, sessionId: number | null, };
+cmd: string | null, sessionId: number | null, 
+/**
+ * The OS refused per-process queries (protected process, other user,
+ * no elevation). CPU and disk values are unknown, not zero.
+ */
+restricted: boolean, };

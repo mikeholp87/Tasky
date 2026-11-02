@@ -1,6 +1,11 @@
 //! Linux implementation, backed by `/proc`.
 
+mod connections;
+
 use std::collections::HashMap;
+use std::io::Read;
+
+pub use connections::connections;
 
 use super::{MemoryExtras, ProcessExtras, procfs};
 
@@ -32,6 +37,8 @@ pub fn process_extras(pids: &[u32]) -> HashMap<u32, ProcessExtras> {
                 ProcessExtras {
                     threads: Some(stat.num_threads),
                     priority: Some(stat.nice),
+                    memory_bytes: None,
+                    virtual_memory_bytes: None,
                 },
             ))
         })
@@ -41,4 +48,14 @@ pub fn process_extras(pids: &[u32]) -> HashMap<u32, ProcessExtras> {
 /// sysinfo's user list resolves Unix uids via the passwd database already.
 pub fn account_name(_uid: &sysinfo::Uid) -> Option<String> {
     None
+}
+
+/// Reads the ELF header of `/proc/[pid]/exe`.
+pub fn process_architecture(pid: u32) -> Option<String> {
+    let mut header = [0u8; 20];
+    std::fs::File::open(format!("/proc/{pid}/exe"))
+        .ok()?
+        .read_exact(&mut header)
+        .ok()?;
+    procfs::elf_architecture(&header).map(str::to_owned)
 }

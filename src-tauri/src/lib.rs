@@ -2,18 +2,16 @@
 //! command logic live in their own modules.
 
 mod commands;
-mod errors;
 mod logging;
-mod models;
-mod monitoring;
-mod platform;
 mod state;
+
+use std::sync::Arc;
 
 use tauri::{Manager, RunEvent};
 
-use crate::models::MonitoringState;
-use crate::monitoring::Engine;
 use crate::state::AppState;
+use tm_core::models::MonitoringState;
+use tm_core::monitoring::Engine;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,7 +20,9 @@ pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
             let engine = Engine::start(MonitoringState::default())?;
-            app.manage(AppState { engine });
+            app.manage(AppState {
+                engine: Arc::new(engine),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -32,6 +32,7 @@ pub fn run() {
             commands::monitoring::get_monitoring_state,
             commands::monitoring::set_monitoring_state,
             commands::monitoring::refresh_now,
+            commands::processes::get_process_details,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

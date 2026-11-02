@@ -1,19 +1,33 @@
-import { Columns3, List, ListTree, Search, X } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Columns3, List, ListTree, Search, X } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/cn";
 import { useProcessStore } from "@/stores/processStore";
+import type { ProcessRow } from "@/types";
 import { COLUMNS, FILTER_PRESETS } from "./logic";
+import { parentPids } from "./tree";
 
-export function ProcessToolbar({ shown, total }: { shown: number; total: number }) {
+export function ProcessToolbar({
+  shown,
+  total,
+  rows,
+}: {
+  shown: number;
+  total: number;
+  rows: readonly ProcessRow[];
+}) {
+  const mode = useProcessStore((s) => s.mode);
   return (
     <div className="flex flex-wrap items-center gap-2 pb-3">
       <SearchBox />
       <PresetSelect />
       <span className="num text-fg-muted" aria-live="polite">
-        {shown === total ? `${total} processes` : `${shown} of ${total} processes`}
+        {mode === "tree" || shown === total
+          ? `${total} processes`
+          : `${shown} of ${total} processes`}
       </span>
       <div className="ml-auto flex items-center gap-1">
+        {mode === "tree" && <TreeButtons rows={rows} />}
         <ModeToggle />
         <ColumnMenu />
       </div>
@@ -166,5 +180,24 @@ function ColumnMenu() {
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
+  );
+}
+
+function TreeButtons({ rows }: { rows: readonly ProcessRow[] }) {
+  const expandAll = useProcessStore((s) => s.expandAll);
+  const collapseAll = useProcessStore((s) => s.collapseAll);
+  const cls =
+    "flex h-8 items-center gap-1.5 rounded-md px-2 text-fg-muted hover:bg-surface-2 hover:text-fg";
+  return (
+    <>
+      <button type="button" className={cls} onClick={expandAll}>
+        <ChevronsUpDown size={14} aria-hidden />
+        Expand all
+      </button>
+      <button type="button" className={cls} onClick={() => collapseAll(parentPids(rows))}>
+        <ChevronsDownUp size={14} aria-hidden />
+        Collapse all
+      </button>
+    </>
   );
 }

@@ -28,6 +28,9 @@ pub struct ProcessRow {
     /// logged and excluded from exports unless the user opts in.
     pub cmd: Option<String>,
     pub session_id: Option<u32>,
+    /// The OS refused per-process queries (protected process, other user,
+    /// no elevation). CPU and disk values are unknown, not zero.
+    pub restricted: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

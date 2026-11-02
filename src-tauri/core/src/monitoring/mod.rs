@@ -3,11 +3,13 @@
 
 mod collector;
 mod cpu;
+pub mod details;
 mod disks;
 pub mod engine;
 pub mod history;
 mod memory;
 mod network;
+mod process_history;
 mod processes;
 pub mod rates;
 

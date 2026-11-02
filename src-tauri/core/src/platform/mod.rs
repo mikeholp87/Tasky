@@ -42,6 +42,9 @@ pub struct ProcessExtras {
     pub threads: Option<u32>,
     /// Linux nice value or Windows base priority.
     pub priority: Option<i32>,
+    /// Resident memory from a source that does not need a process handle.
+    pub memory_bytes: Option<u64>,
+    pub virtual_memory_bytes: Option<u64>,
 }
 
 /// Extras for the given PIDs (Windows returns all processes from one snapshot).
@@ -57,3 +60,13 @@ pub fn account_name(uid: &sysinfo::Uid) -> Option<String> {
 
 /// Whether the OS reports load averages. Windows has no equivalent.
 pub const HAS_LOAD_AVERAGE: bool = cfg!(unix);
+
+/// TCP/UDP sockets owned by `pid`; `None` when the OS will not say.
+pub fn connections(pid: u32) -> Option<Vec<crate::models::Connection>> {
+    imp::connections(pid)
+}
+
+/// Instruction set a process runs as, e.g. "x64" or "x86_64".
+pub fn process_architecture(pid: u32) -> Option<String> {
+    imp::process_architecture(pid)
+}

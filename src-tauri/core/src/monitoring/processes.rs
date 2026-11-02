@@ -53,6 +53,10 @@ impl ProcessTracker {
             .map(|p| {
                 let pid = p.pid().as_u32();
                 let extra = extras.get(&pid).copied().unwrap_or_default();
+                // Per-process reads fail for protected processes when unelevated
+                // and sysinfo reports zeros; a handle-free snapshot still has
+                // their real memory. CPU and I/O stay unknown for them.
+                let restricted = p.memory() == 0 && extra.memory_bytes.is_some_and(|m| m > 0);
                 let disk = p.disk_usage();
                 ProcessRow {
                     pid,
@@ -60,8 +64,17 @@ impl ProcessTracker {
                     name: p.name().to_string_lossy().into_owned(),
                     status: ProcessState::from(p.status()),
                     cpu_percent: normalize_cpu(p.cpu_usage(), cores),
-                    memory_bytes: p.memory(),
-                    virtual_memory_bytes: p.virtual_memory(),
+                    memory_bytes: if restricted {
+                        extra.memory_bytes.unwrap_or(0)
+                    } else {
+                        p.memory()
+                    },
+                    virtual_memory_bytes: if restricted {
+                        extra.virtual_memory_bytes.unwrap_or(0)
+                    } else {
+                        p.virtual_memory()
+                    },
+                    restricted,
                     disk_read_per_sec: delta_rate(disk.read_bytes, elapsed),
                     disk_write_per_sec: delta_rate(disk.written_bytes, elapsed),
                     user: p.user_id().and_then(|uid| self.users.name(uid)),
@@ -190,13 +203,15 @@ mod tests {
             .map(String::len)
             .sum();
         println!(
-            "processes={} first_sample={:?} steady_avg={:?} json_bytes={} cmd_bytes={} unresolved_users={}",
+            "processes={} first_sample={:?} steady_avg={:?} json_bytes={} cmd_bytes={} unresolved_users={} restricted={} zero_memory={}",
             rows.len(),
             first,
             steady / 5,
             json.len(),
             cmd_bytes,
             rows.iter().filter(|r| r.user.is_none()).count(),
+            rows.iter().filter(|r| r.restricted).count(),
+            rows.iter().filter(|r| r.memory_bytes == 0).count(),
         );
     }
 

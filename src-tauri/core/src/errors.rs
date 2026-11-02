@@ -19,10 +19,6 @@ pub enum ErrorKind {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[expect(
-    dead_code,
-    reason = "process-control variants are constructed once process control lands"
-)]
 pub enum AppError {
     #[error("{0}")]
     PermissionDenied(String),

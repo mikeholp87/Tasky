@@ -35,6 +35,7 @@ function row(overrides: Partial<ProcessRow>): ProcessRow {
     exe: null,
     cmd: null,
     sessionId: null,
+    restricted: false,
     ...overrides,
   };
 }
@@ -196,5 +197,21 @@ describe("performance with large process lists", () => {
     expect(view.length).toBeGreaterThan(0);
     // Generous bound for slow CI machines; typical is a few ms for 5,000 rows.
     expect(elapsed).toBeLessThan(250);
+  });
+});
+
+describe("restricted processes", () => {
+  it("sort below every known CPU value instead of pretending to be 0%", () => {
+    const list = [
+      row({ pid: 1, cpuPercent: 0 }),
+      row({ pid: 2, cpuPercent: 0, restricted: true }),
+      row({ pid: 3, cpuPercent: 0.1 }),
+    ];
+    const view = processView(
+      list,
+      { search: "", preset: "all", sort: { column: "cpu", direction: "desc" } },
+      ctx,
+    );
+    expect(view.map((r) => r.pid)).toEqual([3, 1, 2]);
   });
 });

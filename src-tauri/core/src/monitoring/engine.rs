@@ -15,9 +15,12 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{HistoryPoint, MetricsTick, MonitoringState, StaticSystemInfo};
+use crate::models::{
+    HistoryPoint, MetricsTick, MonitoringState, ProcessPoint, ProcessRow, StaticSystemInfo,
+};
 use crate::monitoring::collector::{Collector, unix_millis};
 use crate::monitoring::history::RingBuffer;
+use crate::monitoring::process_history::ProcessHistory;
 
 /// One hour of history at the fastest (500 ms) interval.
 pub const MAX_HISTORY_POINTS: usize = 7_200;
@@ -39,6 +42,7 @@ struct Shared {
     state: RwLock<MonitoringState>,
     latest: RwLock<Option<Arc<MetricsTick>>>,
     history: RwLock<RingBuffer<HistoryPoint>>,
+    process_history: RwLock<ProcessHistory>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
 }
 
@@ -56,6 +60,7 @@ impl Engine {
             state: RwLock::new(initial),
             latest: RwLock::new(None),
             history: RwLock::new(RingBuffer::new(MAX_HISTORY_POINTS)),
+            process_history: RwLock::new(ProcessHistory::default()),
             sinks: Mutex::new(HashMap::new()),
         });
         let (tx, rx) = mpsc::channel();
@@ -114,6 +119,24 @@ impl Engine {
             .read()
             .unwrap_or_else(PoisonError::into_inner);
         history.iter().filter(|p| p.t >= cutoff).cloned().collect()
+    }
+
+    /// The latest row for `pid`, if it is still running.
+    pub fn process(&self, pid: u32) -> Option<ProcessRow> {
+        self.latest()?
+            .processes
+            .iter()
+            .find(|p| p.pid == pid)
+            .cloned()
+    }
+
+    /// Recent samples for the process instance `(pid, start_time)`.
+    pub fn process_history(&self, pid: u32, start_time: u64) -> Vec<ProcessPoint> {
+        self.shared
+            .process_history
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(pid, start_time)
     }
 
     /// Registers (or replaces) the sink with the given key. Re-subscribing
@@ -210,6 +233,11 @@ fn tick(
         .write()
         .unwrap_or_else(PoisonError::into_inner)
         .push(sample.point.clone());
+    shared
+        .process_history
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .record(sample.timestamp_ms, &sample.processes);
     *shared
         .latest
         .write()

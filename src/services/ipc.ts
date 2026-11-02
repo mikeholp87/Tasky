@@ -9,6 +9,7 @@ import type {
   HistoryPoint,
   MetricsTick,
   MonitoringState,
+  ProcessDetails,
   StaticSystemInfo,
 } from "@/types";
 
@@ -69,6 +70,8 @@ export const backend = {
     }),
 
   refreshNow: () => call<void>("refresh_now"),
+
+  getProcessDetails: (pid: number) => call<ProcessDetails>("get_process_details", { pid }),
 
   /**
    * Streams metrics ticks to `onTick`. Resolves with the latest tick already

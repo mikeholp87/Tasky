@@ -61,6 +61,7 @@ export function mockProcesses(count: number, nowSecs: number, seed = 42): Proces
       exe: `/usr/bin/${name}`,
       cmd: `${name} --flag-${i} --config /etc/${name}/${i}.conf`,
       sessionId: 1,
+      restricted: false,
     });
   }
   return rows;

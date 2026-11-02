@@ -2,7 +2,15 @@ import { useMemo } from "react";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useProcessStore } from "@/stores/processStore";
 import type { ProcessRow } from "@/types";
-import { type ProcessContext, processView, userOf } from "./logic";
+import {
+  type ProcessContext,
+  compareRows,
+  isUnfiltered,
+  makeMatcher,
+  processView,
+  userOf,
+} from "./logic";
+import { type TableItem, flattenTree } from "./tree";
 
 const EMPTY: readonly ProcessRow[] = [];
 
@@ -23,16 +31,31 @@ export function useProcessContext(rows: readonly ProcessRow[]): ProcessContext {
   );
 }
 
-/** Filtered and sorted rows for the process table. Recomputed once per tick. */
+/**
+ * Items for the process table in the current mode. List mode filters and
+ * sorts; tree mode keeps hierarchy, sorts siblings and shows matches with
+ * their ancestors. Recomputed once per tick.
+ */
 export function useProcessView() {
   const rows = useProcessRows();
   const ctx = useProcessContext(rows);
   const search = useProcessStore((s) => s.search);
   const preset = useProcessStore((s) => s.preset);
   const sort = useProcessStore((s) => s.sort);
-  const view = useMemo(
-    () => processView(rows, { search, preset, sort }, ctx),
-    [rows, search, preset, sort, ctx],
-  );
-  return { rows, view, ctx };
+  const mode = useProcessStore((s) => s.mode);
+  const collapsed = useProcessStore((s) => s.collapsed);
+
+  const items = useMemo((): TableItem[] => {
+    if (mode === "list") {
+      return processView(rows, { search, preset, sort }, ctx).map((row) => ({ row }));
+    }
+    const options = { search, preset };
+    return flattenTree(rows, {
+      collapsed,
+      compare: (a, b) => compareRows(a, b, sort, ctx),
+      matches: isUnfiltered(options) ? undefined : makeMatcher(options, ctx),
+    });
+  }, [rows, search, preset, sort, ctx, mode, collapsed]);
+
+  return { rows, items, ctx };
 }

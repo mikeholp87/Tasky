@@ -1,5 +1,6 @@
 // Re-exports of types generated from the Rust models (`npm run gen:types`).
 export type { AppError } from "./generated/AppError";
+export type { Connection } from "./generated/Connection";
 export type { CpuSnapshot } from "./generated/CpuSnapshot";
 export type { DiskKind } from "./generated/DiskKind";
 export type { DiskSnapshot } from "./generated/DiskSnapshot";
@@ -12,6 +13,10 @@ export type { MetricsTick } from "./generated/MetricsTick";
 export type { MonitoringState } from "./generated/MonitoringState";
 export type { NetworkInterfaceSnapshot } from "./generated/NetworkInterfaceSnapshot";
 export type { Platform } from "./generated/Platform";
+export type { ProcessDetails } from "./generated/ProcessDetails";
+export type { ProcessPoint } from "./generated/ProcessPoint";
 export type { ProcessRow } from "./generated/ProcessRow";
 export type { ProcessState } from "./generated/ProcessState";
+export type { Protocol } from "./generated/Protocol";
 export type { StaticSystemInfo } from "./generated/StaticSystemInfo";
+export type { TcpState } from "./generated/TcpState";

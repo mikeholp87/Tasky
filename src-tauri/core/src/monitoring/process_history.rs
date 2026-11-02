@@ -1,0 +1,99 @@
+//! Short per-process history so the details page can show a graph the
+//! moment it opens. Bounded per process; entries for exited processes are
+//! dropped on the next tick.
+
+use std::collections::HashMap;
+
+use crate::models::{ProcessPoint, ProcessRow};
+use crate::monitoring::history::RingBuffer;
+
+/// Five minutes at 1 s, 2.5 minutes at 500 ms.
+pub const PROCESS_HISTORY_POINTS: usize = 300;
+
+/// Keyed by (pid, start time) so a reused PID never inherits another
+/// process's history.
+type Key = (u32, u64);
+
+#[derive(Default)]
+pub struct ProcessHistory {
+    map: HashMap<Key, RingBuffer<ProcessPoint>>,
+}
+
+impl ProcessHistory {
+    pub fn record(&mut self, t: u64, rows: &[ProcessRow]) {
+        let mut next = HashMap::with_capacity(rows.len());
+        for row in rows {
+            let key = (row.pid, row.start_time);
+            let mut buf = self
+                .map
+                .remove(&key)
+                .unwrap_or_else(|| RingBuffer::new(PROCESS_HISTORY_POINTS));
+            buf.push(ProcessPoint {
+                t,
+                cpu: row.cpu_percent,
+                memory: row.memory_bytes,
+                read: row.disk_read_per_sec,
+                write: row.disk_write_per_sec,
+            });
+            next.insert(key, buf);
+        }
+        // Anything not seen this tick has exited.
+        self.map = next;
+    }
+
+    pub fn get(&self, pid: u32, start_time: u64) -> Vec<ProcessPoint> {
+        self.map
+            .get(&(pid, start_time))
+            .map(|b| b.iter().copied().collect())
+            .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ProcessState;
+
+    fn row(pid: u32, start: u64, cpu: f32) -> ProcessRow {
+        ProcessRow {
+            pid,
+            parent_pid: None,
+            name: "p".into(),
+            status: ProcessState::Running,
+            cpu_percent: cpu,
+            memory_bytes: 1,
+            virtual_memory_bytes: 1,
+            disk_read_per_sec: 0.0,
+            disk_write_per_sec: 0.0,
+            user: None,
+            start_time: start,
+            threads: None,
+            priority: None,
+            exe: None,
+            cmd: None,
+            session_id: None,
+            restricted: false,
+        }
+    }
+
+    #[test]
+    fn accumulates_and_prunes_exited_processes() {
+        let mut h = ProcessHistory::default();
+        h.record(1, &[row(10, 100, 1.0), row(20, 100, 2.0)]);
+        h.record(2, &[row(10, 100, 3.0)]);
+        assert_eq!(
+            h.get(10, 100).iter().map(|p| p.cpu).collect::<Vec<_>>(),
+            [1.0, 3.0]
+        );
+        assert!(h.get(20, 100).is_empty(), "exited process is pruned");
+    }
+
+    #[test]
+    fn reused_pid_starts_fresh() {
+        let mut h = ProcessHistory::default();
+        h.record(1, &[row(10, 100, 50.0)]);
+        h.record(2, &[row(10, 999, 1.0)]);
+        assert_eq!(h.get(10, 999).len(), 1);
+        assert!(h.get(10, 100).is_empty());
+    }
+}

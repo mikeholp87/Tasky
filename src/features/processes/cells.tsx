@@ -20,11 +20,18 @@ export const STATUS_LABEL: Record<ProcessState, string> = {
   unknown: "Unknown",
 };
 
+/** Values the OS withholds for restricted processes. */
+const RESTRICTED_COLUMNS: ReadonlySet<ColumnId> = new Set(["cpu", "diskRead", "diskWrite"]);
+
+const RESTRICTED_HINT =
+  "Restricted: the operating system does not share this process's CPU and disk activity unless Task Manager runs with administrator/root rights.";
+
 const rate = (v: number) => (v > 0 ? formatBytesPerSecond(v) : "0 B/s");
 const opt = (v: number | null) => (v == null ? NOT_AVAILABLE : String(v));
 
 /** Display content for a cell. Kept separate from layout for reuse in exports/tree. */
 export function cellContent(column: ColumnId, row: ProcessRow, ctx: ProcessContext): ReactNode {
+  if (row.restricted && RESTRICTED_COLUMNS.has(column)) return NOT_AVAILABLE;
   switch (column) {
     case "name":
       return row.name;
@@ -69,6 +76,7 @@ export function cellContent(column: ColumnId, row: ProcessRow, ctx: ProcessConte
 
 /** Tooltip for cells whose value may need explanation. */
 export function cellTitle(column: ColumnId, row: ProcessRow): string | undefined {
+  if (row.restricted && RESTRICTED_COLUMNS.has(column)) return RESTRICTED_HINT;
   switch (column) {
     case "user":
       return row.user == null

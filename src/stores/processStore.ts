@@ -21,6 +21,8 @@ interface ProcessState {
   selectedPid: number | null;
   /** Bumped to ask the search box to take focus (Ctrl/Cmd+F). */
   focusSearchToken: number;
+  /** Tree mode: PIDs whose children are hidden (everything else is expanded). */
+  collapsed: ReadonlySet<number>;
 
   setSearch: (search: string) => void;
   setPreset: (preset: FilterPreset) => void;
@@ -31,6 +33,10 @@ interface ProcessState {
   setColumnWidth: (column: ColumnId, width: number) => void;
   select: (pid: number | null) => void;
   requestSearchFocus: () => void;
+  toggleCollapsed: (pid: number) => void;
+  setCollapsed: (pid: number, collapsed: boolean) => void;
+  collapseAll: (pids: Iterable<number>) => void;
+  expandAll: () => void;
 }
 
 export const useProcessStore = create<ProcessState>((set) => ({
@@ -42,6 +48,7 @@ export const useProcessStore = create<ProcessState>((set) => ({
   columnWidths: {},
   selectedPid: null,
   focusSearchToken: 0,
+  collapsed: new Set(),
 
   setSearch: (search) => set({ search }),
   setPreset: (preset) => set({ preset }),
@@ -66,6 +73,23 @@ export const useProcessStore = create<ProcessState>((set) => ({
     })),
   select: (selectedPid) => set({ selectedPid }),
   requestSearchFocus: () => set((s) => ({ focusSearchToken: s.focusSearchToken + 1 })),
+  toggleCollapsed: (pid) =>
+    set((s) => {
+      const next = new Set(s.collapsed);
+      if (next.has(pid)) next.delete(pid);
+      else next.add(pid);
+      return { collapsed: next };
+    }),
+  setCollapsed: (pid, collapsed) =>
+    set((s) => {
+      if (s.collapsed.has(pid) === collapsed) return s;
+      const next = new Set(s.collapsed);
+      if (collapsed) next.add(pid);
+      else next.delete(pid);
+      return { collapsed: next };
+    }),
+  collapseAll: (pids) => set({ collapsed: new Set(pids) }),
+  expandAll: () => set({ collapsed: new Set() }),
 }));
 
 export function columnWidth(widths: Partial<Record<ColumnId, number>>, column: ColumnId): number {

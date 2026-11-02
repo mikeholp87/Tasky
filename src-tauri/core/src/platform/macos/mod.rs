@@ -16,3 +16,11 @@ pub fn process_extras(_pids: &[u32]) -> HashMap<u32, ProcessExtras> {
 pub fn account_name(_uid: &sysinfo::Uid) -> Option<String> {
     None
 }
+
+pub fn connections(_pid: u32) -> Option<Vec<crate::models::Connection>> {
+    None
+}
+
+pub fn process_architecture(_pid: u32) -> Option<String> {
+    None
+}

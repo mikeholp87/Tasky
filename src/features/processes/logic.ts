@@ -85,7 +85,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     minWidth: 60,
     defaultVisible: true,
     descendingFirst: true,
-    sortValue: (r) => r.cpuPercent,
+    sortValue: (r) => (r.restricted ? -1 : r.cpuPercent),
   },
   {
     id: "memory",
@@ -115,7 +115,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     minWidth: 70,
     defaultVisible: true,
     descendingFirst: true,
-    sortValue: (r) => r.diskReadPerSec,
+    sortValue: (r) => (r.restricted ? -1 : r.diskReadPerSec),
   },
   {
     id: "diskWrite",
@@ -125,7 +125,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     minWidth: 70,
     defaultVisible: true,
     descendingFirst: true,
-    sortValue: (r) => r.diskWritePerSec,
+    sortValue: (r) => (r.restricted ? -1 : r.diskWritePerSec),
   },
   {
     id: "user",
@@ -373,15 +373,28 @@ export interface ViewOptions {
   sort: SortState;
 }
 
+/** True when no search or preset narrows the list. */
+export function isUnfiltered(options: Pick<ViewOptions, "search" | "preset">): boolean {
+  return options.search.trim() === "" && options.preset === "all";
+}
+
+/** Predicate combining the search query and filter preset. */
+export function makeMatcher(
+  options: Pick<ViewOptions, "search" | "preset">,
+  ctx: ProcessContext,
+): (row: ProcessRow) => boolean {
+  const query = options.search.trim().toLowerCase();
+  const preset = PRESET_BY_ID[options.preset];
+  return (r) => preset.test(r, ctx) && matchesSearch(r, query);
+}
+
 /** Filter + sort in one pass over the rows. Returns a new array. */
 export function processView(
   rows: readonly ProcessRow[],
   options: ViewOptions,
   ctx: ProcessContext,
 ): ProcessRow[] {
-  const query = options.search.trim().toLowerCase();
-  const preset = PRESET_BY_ID[options.preset];
-  const out = rows.filter((r) => preset.test(r, ctx) && matchesSearch(r, query));
+  const out = rows.filter(makeMatcher(options, ctx));
   out.sort((a, b) => compareRows(a, b, options.sort, ctx));
   return out;
 }

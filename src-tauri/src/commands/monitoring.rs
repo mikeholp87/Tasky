@@ -5,12 +5,12 @@ use std::sync::Arc;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{State, Webview};
 
-use crate::errors::{AppError, AppResult};
-use crate::models::{
+use crate::state::AppState;
+use tm_core::errors::{AppError, AppResult};
+use tm_core::models::{
     HistoryPoint, MetricsTick, MonitoringState, StaticSystemInfo, validate_interval,
 };
-use crate::monitoring::TickSink;
-use crate::state::AppState;
+use tm_core::monitoring::TickSink;
 
 /// Longest history window the UI can request.
 const MAX_HISTORY_SECONDS: u32 = 3_600;

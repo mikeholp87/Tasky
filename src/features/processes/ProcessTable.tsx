@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight } from "lucide-react";
 import {
   type KeyboardEvent,
   type PointerEvent,
@@ -17,6 +17,7 @@ import type { ProcessRow } from "@/types";
 import { type HeatLevel, heatLevel, memoryHeatLevel } from "@/utils/levels";
 import { cellContent, cellTitle } from "./cells";
 import { COLUMN_BY_ID, type ColumnId, type ProcessContext, type SortState } from "./logic";
+import type { TableItem } from "./tree";
 
 const HEAT_BG: Record<HeatLevel, string | undefined> = {
   0: undefined,
@@ -25,23 +26,41 @@ const HEAT_BG: Record<HeatLevel, string | undefined> = {
   3: "var(--heat-3)",
 };
 
+/** Indentation per tree level, in pixels. */
+const INDENT = 16;
+
 interface ProcessTableProps {
-  rows: readonly ProcessRow[];
+  items: readonly TableItem[];
   ctx: ProcessContext;
   selfPid: number | undefined;
+  /** Renders tree affordances (indentation, expand/collapse). */
+  tree?: boolean;
+  /** Wraps each row, e.g. to attach a context menu. */
+  renderRow?: (row: ProcessRow, element: React.ReactElement) => React.ReactElement;
+  /** Delete key on the selected row; must ask for confirmation. */
+  onRequestTerminate?: (row: ProcessRow) => void;
 }
 
 /**
  * Virtualized process table: only visible rows are rendered, so thousands
  * of processes stay cheap. Rows are keyed by PID.
  */
-export function ProcessTable({ rows, ctx, selfPid }: ProcessTableProps) {
+export function ProcessTable({
+  items,
+  ctx,
+  selfPid,
+  tree = false,
+  renderRow,
+  onRequestTerminate,
+}: ProcessTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const visibleColumns = useProcessStore((s) => s.visibleColumns);
   const widths = useProcessStore((s) => s.columnWidths);
   const sort = useProcessStore((s) => s.sort);
   const selectedPid = useProcessStore((s) => s.selectedPid);
   const select = useProcessStore((s) => s.select);
+  const toggleCollapsed = useProcessStore((s) => s.toggleCollapsed);
+  const setCollapsed = useProcessStore((s) => s.setCollapsed);
   const openProcess = useUiStore((s) => s.openProcess);
   const compact = useSettingsStore((s) => s.compactTable);
   const heat = useSettingsStore((s) => s.heatMapping);
@@ -57,11 +76,11 @@ export function ProcessTable({ rows, ctx, selfPid }: ProcessTableProps) {
   );
 
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
     overscan: 12,
-    getItemKey: (index) => rows[index]?.pid ?? index,
+    getItemKey: (index) => items[index]?.row.pid ?? index,
     // Render a first screenful before layout is measured.
     initialRect: { width: 1200, height: 800 },
   });
@@ -71,13 +90,14 @@ export function ProcessTable({ rows, ctx, selfPid }: ProcessTableProps) {
   }, [rowHeight, virtualizer]);
 
   const selectedIndex = useMemo(
-    () => (selectedPid == null ? -1 : rows.findIndex((r) => r.pid === selectedPid)),
-    [rows, selectedPid],
+    () => (selectedPid == null ? -1 : items.findIndex((i) => i.row.pid === selectedPid)),
+    [items, selectedPid],
   );
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
-      if (rows.length === 0) return;
+      if (items.length === 0) return;
+      const current = items[selectedIndex];
       const page = Math.max(
         1,
         Math.floor((scrollRef.current?.clientHeight ?? 300) / rowHeight) - 1,
@@ -85,13 +105,13 @@ export function ProcessTable({ rows, ctx, selfPid }: ProcessTableProps) {
       let next: number;
       switch (e.key) {
         case "ArrowDown":
-          next = selectedIndex < 0 ? 0 : Math.min(rows.length - 1, selectedIndex + 1);
+          next = selectedIndex < 0 ? 0 : Math.min(items.length - 1, selectedIndex + 1);
           break;
         case "ArrowUp":
           next = selectedIndex < 0 ? 0 : Math.max(0, selectedIndex - 1);
           break;
         case "PageDown":
-          next = Math.min(rows.length - 1, Math.max(0, selectedIndex) + page);
+          next = Math.min(items.length - 1, Math.max(0, selectedIndex) + page);
           break;
         case "PageUp":
           next = Math.max(0, selectedIndex - page);
@@ -100,31 +120,54 @@ export function ProcessTable({ rows, ctx, selfPid }: ProcessTableProps) {
           next = 0;
           break;
         case "End":
-          next = rows.length - 1;
+          next = items.length - 1;
           break;
+        case "ArrowRight":
+        case "ArrowLeft":
+          if (tree && current?.hasChildren) {
+            e.preventDefault();
+            setCollapsed(current.row.pid, e.key === "ArrowLeft");
+          }
+          return;
         case "Enter":
-          if (selectedPid != null) openProcess(selectedPid);
+          if (current) openProcess(current.row.pid);
           e.preventDefault();
+          return;
+        case "Delete":
+          if (current && onRequestTerminate) {
+            e.preventDefault();
+            onRequestTerminate(current.row);
+          }
           return;
         default:
           return;
       }
       e.preventDefault();
-      const row = rows[next];
-      if (row) {
-        select(row.pid);
+      const item = items[next];
+      if (item) {
+        select(item.row.pid);
         virtualizer.scrollToIndex(next, { align: "auto" });
       }
     },
-    [rows, selectedIndex, selectedPid, rowHeight, select, openProcess, virtualizer],
+    [
+      items,
+      selectedIndex,
+      rowHeight,
+      tree,
+      select,
+      setCollapsed,
+      openProcess,
+      onRequestTerminate,
+      virtualizer,
+    ],
   );
 
   return (
     <div
       ref={scrollRef}
-      role="grid"
+      role={tree ? "treegrid" : "grid"}
       aria-label="Processes"
-      aria-rowcount={rows.length + 1}
+      aria-rowcount={items.length + 1}
       aria-colcount={visibleColumns.length}
       tabIndex={0}
       onKeyDown={onKeyDown}
@@ -133,29 +176,36 @@ export function ProcessTable({ rows, ctx, selfPid }: ProcessTableProps) {
       <div style={{ width: totalWidth, minWidth: "100%" }}>
         <HeaderRow columns={visibleColumns} template={template} sort={sort} />
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-          {virtualizer.getVirtualItems().map((item) => {
-            const row = rows[item.index];
-            if (!row) return null;
-            return (
+          {virtualizer.getVirtualItems().map((v) => {
+            const item = items[v.index];
+            if (!item) return null;
+            const element = (
               <Row
-                key={row.pid}
-                row={row}
-                index={item.index}
+                key={item.row.pid}
+                item={item}
+                index={v.index}
                 columns={visibleColumns}
                 template={template}
                 ctx={ctx}
                 heat={heat}
-                selected={row.pid === selectedPid}
-                isSelf={row.pid === selfPid}
-                offset={item.start}
+                tree={tree}
+                selected={item.row.pid === selectedPid}
+                isSelf={item.row.pid === selfPid}
+                offset={v.start}
                 height={rowHeight}
                 onSelect={select}
                 onOpen={openProcess}
+                onToggle={toggleCollapsed}
               />
+            );
+            return renderRow ? (
+              <RowSlot key={item.row.pid}>{renderRow(item.row, element)}</RowSlot>
+            ) : (
+              element
             );
           })}
         </div>
-        {rows.length === 0 && (
+        {items.length === 0 && (
           <div className="p-8 text-center text-fg-muted">
             No processes match the current filters.
           </div>
@@ -163,6 +213,11 @@ export function ProcessTable({ rows, ctx, selfPid }: ProcessTableProps) {
       </div>
     </div>
   );
+}
+
+/** Keyed wrapper so wrapped rows keep stable identity. */
+function RowSlot({ children }: { children: React.ReactElement }) {
+  return children;
 }
 
 const HeaderRow = memo(function HeaderRow({
@@ -245,43 +300,60 @@ function ResizeHandle({ column }: { column: ColumnId }) {
 }
 
 interface RowProps {
-  row: ProcessRow;
+  item: TableItem;
   index: number;
   columns: ColumnId[];
   template: string;
   ctx: ProcessContext;
   heat: boolean;
+  tree: boolean;
   selected: boolean;
   isSelf: boolean;
   offset: number;
   height: number;
   onSelect: (pid: number) => void;
   onOpen: (pid: number) => void;
+  onToggle: (pid: number) => void;
+  /** Injected by a wrapping context-menu trigger; composed with selection. */
+  onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
 }
 
 const Row = memo(function Row({
-  row,
+  item,
   index,
   columns,
   template,
   ctx,
   heat,
+  tree,
   selected,
   isSelf,
   offset,
   height,
   onSelect,
   onOpen,
+  onToggle,
+  onContextMenu,
+  ...rest
 }: RowProps) {
+  const { row } = item;
   const memPct = ctx.totalMemoryBytes > 0 ? (row.memoryBytes / ctx.totalMemoryBytes) * 100 : 0;
   return (
     <div
+      // Context-menu triggers inject handlers via props when wrapping.
+      {...rest}
       role="row"
       aria-rowindex={index + 2}
       aria-selected={selected}
+      aria-level={tree ? (item.depth ?? 0) + 1 : undefined}
+      aria-expanded={tree && item.hasChildren ? item.expanded : undefined}
       data-pid={row.pid}
       onClick={() => onSelect(row.pid)}
       onDoubleClick={() => onOpen(row.pid)}
+      onContextMenu={(e) => {
+        onSelect(row.pid);
+        onContextMenu?.(e);
+      }}
       className={cn(
         "absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[13px]",
         selected ? "bg-accent-soft" : "hover:bg-surface-2",
@@ -310,6 +382,28 @@ const Row = memo(function Row({
             )}
             style={{ background: HEAT_BG[level] }}
           >
+            {id === "name" && tree && (
+              <span
+                className="flex shrink-0 items-center"
+                style={{ width: (item.depth ?? 0) * INDENT + 18 }}
+              >
+                <span style={{ width: (item.depth ?? 0) * INDENT }} />
+                {item.hasChildren && (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label={item.expanded ? `Collapse ${row.name}` : `Expand ${row.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggle(row.pid);
+                    }}
+                    className="grid size-4 place-items-center rounded text-fg-muted hover:bg-border"
+                  >
+                    {item.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  </button>
+                )}
+              </span>
+            )}
             <span className="truncate">{cellContent(id, row, ctx)}</span>
             {id === "name" && isSelf && (
               <span className="ml-2 shrink-0 rounded bg-surface-2 px-1 text-[10px] font-normal text-fg-muted">
