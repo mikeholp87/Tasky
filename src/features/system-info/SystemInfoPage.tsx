@@ -1,4 +1,5 @@
 import { Download } from "lucide-react";
+import { DiagnosticsCard } from "./DiagnosticsCard";
 import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
 import { toast } from "@/stores/toastStore";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
@@ -94,6 +95,7 @@ export function SystemInfoPage() {
               />
             </div>
           </Card>
+          <DiagnosticsCard />
         </div>
       )}
     </>

@@ -4,6 +4,8 @@
  */
 import { useAlertStore } from "@/stores/alertStore";
 import { useMetricsStore } from "@/stores/metricsStore";
+import { mockProcesses } from "@/features/processes/mock";
+import { usePerfStore } from "@/stores/perfStore";
 import { toast } from "@/stores/toastStore";
 import type { MetricsTick, MonitoringState } from "@/types";
 import { backend, isBackendAvailable, toAppError } from "./ipc";
@@ -47,12 +49,27 @@ export async function startMonitoring(): Promise<void> {
   }
 }
 
-function onTick(tick: MetricsTick): void {
+function onTick(incoming: MetricsTick): void {
+  const start = performance.now();
+  const tick = withMockProcesses(incoming);
   useMetricsStore.getState().ingestTick(tick);
+  const ingested = performance.now();
+  requestAnimationFrame(() =>
+    usePerfStore.getState().record(ingested - start, performance.now() - start),
+  );
   if (tick.alerts.length > 0) {
     useAlertStore.getState().add(tick.alerts);
     for (const alert of tick.alerts) toast.info(`${alert.ruleName}: ${alert.message}`);
   }
+}
+
+/** Development-only stress test: swap in N deterministic mock processes. */
+function withMockProcesses(tick: MetricsTick): MetricsTick {
+  if (!import.meta.env.DEV) return tick;
+  const count = usePerfStore.getState().mockProcessCount;
+  if (count <= 0) return tick;
+  const rows = mockProcesses(count, Math.floor(tick.timestampMs / 1000), tick.seq);
+  return { ...tick, processes: rows };
 }
 
 /**
