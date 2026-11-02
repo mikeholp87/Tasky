@@ -1,0 +1,4 @@
+# TypeScript bindings are generated from Rust models by `cargo test` (ts-rs).
+[env]
+TS_RS_EXPORT_DIR = { value = "../src/types/generated", relative = true }
+TS_RS_LARGE_INT = "number"

@@ -1,9 +1,11 @@
 # Implementation Plan — Cross-platform Task Manager & System Monitor
 
 ## Context
+
 The user wants a production-quality desktop task manager (Windows 11 first-class, Debian/Ubuntu Linux, macOS-ready) built incrementally across 9 phases, with a written `docs/IMPLEMENTATION_PLAN.md` first and continuous implementation afterwards.
 
 **Environment findings (2026-11-02):**
+
 - `C:\Users\digit\Projects\TaskManager` is empty and not a git repo.
 - Windows 11 Pro 26300, Node 24.22, npm 11.19, git 2.56, winget available, WebView2 156 installed.
 - **Missing:** Rust toolchain and MSVC C++ Build Tools. User chose: I install them via winget.
@@ -11,12 +13,14 @@ The user wants a production-quality desktop task manager (Windows 11 first-class
 - User chose: `git init` + one local commit per verified phase (no push).
 
 ## Step 0: Environment setup
+
 1. `winget install Rustlang.Rustup`, then `rustup default stable` and `rustup component add clippy rustfmt`.
 2. `winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"`. This triggers a UAC prompt.
 3. Verify with `cargo --version` and `rustc --version`. Get crate versions from `cargo search` / crates.io for `sysinfo`, `windows`, `nix`, `thiserror`, `serde`, `ts-rs`, `tracing`, `tracing-appender`.
 4. Run `git init` and add a `.gitignore` covering node_modules, dist, and src-tauri/target.
 
 ## Key technology decisions (deviations from the brief, with reasons)
+
 - **Charts: uPlot instead of Recharts** for live time series. It draws on canvas and is about 50 KB. The Performance page draws one chart per core plus 4 large charts updating every second, and Recharts' SVG re-render cost is the biggest frontend CPU risk. Keep Recharts out unless a non-timeseries chart needs it.
 - **Generate TS types from Rust with `ts-rs`** into `src/types/generated/`. This gives one source of truth, so models can't drift.
 - **Process table: `@tanstack/react-virtual` plus our own column/sort/filter model.** Skip react-table: v9 is a new major, and our needs are narrow.
@@ -40,10 +44,13 @@ OS ─► platform/* (sysinfo + native APIs) ─► MonitoringEngine (1 dedicate
 - **Process refresh:** `ProcessRefreshKind` with cpu+memory+disk_usage every tick. exe, cmd, cwd, and user use `UpdateKind::OnlyIfNotSet` so they are read once per PID.
 
 ### Rust layout (`src-tauri/src/`)
+
 `lib.rs` (builder/plugins/setup only), `commands/{system,processes,control,settings,diagnostics,export}.rs`, `monitoring/{engine,cpu,memory,processes,disks,network,history,rates}.rs`, `process_control/{mod,protection}.rs`, `platform/{mod.rs (traits), linux/, windows/, macos/ (stubs)}`, `models/*.rs` (Serde + ts-rs), `errors.rs` (`AppError` via thiserror: PermissionDenied, ProcessNotFound, UnsupportedOperation, SystemQueryFailed, InvalidPid, ProcessProtected, serialized as `{kind, message}`), `state.rs`, `alerts/` (rule evaluation in Rust so alerts work while the window is hidden in the tray), `tray.rs`, `logging.rs`.
 
 ### Platform abstraction
+
 The `ProcessManager` trait has `terminate`, `force_kill`, `suspend`, `resume`, `set_priority`, `details_extra` (cwd, arch, priority/nice, session), and `protection_info(pid)`. `platform::current()` returns the impl, and `#[cfg]` appears only in `platform/mod.rs`.
+
 - **Windows** (`windows` crate):
   - Terminate: `WM_CLOSE` to top-level windows of the PID (graceful); `TerminateProcess` for force kill.
   - Suspend/resume: Toolhelp32 thread snapshot plus `SuspendThread`/`ResumeThread` (documented APIs, not `NtSuspendProcess`).
@@ -58,12 +65,14 @@ The `ProcessManager` trait has `terminate`, `force_kill`, `suspend`, `resume`, `
 - Metrics a platform can't report are `Option<T>` → the UI shows "Unavailable on this platform".
 
 ### IPC
+
 - Commands: `subscribe_metrics(channel)`, `get_static_info`, `get_history(range)`, `get_process_details(pid)`, `get_process_history(pid)`, `set_monitoring(interval|paused)`, `refresh_now`, `terminate/force_kill/suspend/resume/set_priority(pid,…)`, `reveal_executable(pid)`, `export_processes(format, include_cmdline)`, `export_diagnostics(opts)`, alert rule CRUD.
 - Every PID is validated as `u32 > 0`, must exist in the current snapshot, and goes through a protection check.
 - The capabilities file grants only the needed plugin permissions and the app's own commands.
 - `MetricsTick` = dynamic system metrics plus a lean process row list (no environment). Measure the payload in Phase 8 before considering diffs.
 
 ### Frontend layout (`src/`)
+
 - `app/` (shell, router, sidebar, top summary bar, theme provider)
 - `features/{overview,processes,performance,cpu,memory,storage,network,process-details,system-info,alerts,settings}/`, each with `components/`, `hooks/`, and pure `logic.ts` (filter/sort/search/tree building, tested with Vitest)
 - `stores/` (metrics, history, ui, settings; selectors keep re-renders scoped)
@@ -72,6 +81,7 @@ The `ProcessManager` trait has `terminate`, `force_kill`, `suspend`, `resume`, `
 - Routing uses a tiny internal state router with no react-router dependency.
 
 ## Phases (each ends with: cargo fmt/clippy/test, tsc, eslint, vitest, launch `tauri dev`, update the plan doc, git commit)
+
 1. **Shell.** Write `docs/IMPLEMENTATION_PLAN.md` first. Scaffold with `create-tauri-app` (react-ts), then add Tailwind v4, the sidebar with 11 sections, light/dark/system theme, placeholder dashboard, ESLint/Prettier, and the Vitest setup.
 2. **System metrics.** Engine thread, CPU (total, per-core, freq, model, load avg), memory/swap, static info, ring buffer, rates, format utils plus tests. Overview cards with uPlot sparklines.
 3. **Processes.** Enumeration, virtualized table, column visibility/resizing, sorting, instant search (name/PID/cmd/exe/user), filter presets, heat mapping, keyboard navigation, mock generator for 100/500/1k/5k processes (dev perf mode).
@@ -83,35 +93,40 @@ The `ProcessManager` trait has `terminate`, `force_kill`, `suspend`, `resume`, `
 9. **Harden & package.** Clippy `-D warnings`, `tauri build` → MSI/NSIS on Windows. Document Linux `.deb`/AppImage/`.rpm` builds; verify those via WSL if available, otherwise mark as documented and not verified locally. README plus `docs/{ARCHITECTURE,MONITORING,PLATFORM_SUPPORT,SECURITY,PERFORMANCE,ROADMAP}.md`.
 
 ## Known limitations to state honestly
+
 - Linux builds/runtime can't be tested natively on this Windows machine. Use WSL2 if present for `cargo check`/tests on Linux code, and keep CI config (GitHub Actions matrix) in the repo for real verification.
 - Windows per-process disk I/O comes from sysinfo (`GetProcessIoCounters`), which includes non-disk I/O. Label it "I/O" with a tooltip.
 - Elevated operations are never auto-elevated. PermissionDenied explains how to rerun as admin/root for that action. A narrow helper is a roadmap item.
 
 ## Verification
+
 - After each phase: `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`, `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`, `npm run tauri dev`, then confirm the window renders real data (spawn a throwaway `ping -t`/`timeout` process to test search, terminate, and suspend; never kill pre-existing processes).
 - Rust tests: rates, ring buffer, error mapping, protection rules, process conversion, engine produces a valid snapshot. Frontend tests: format, filter/sort/search, tree building, alert evaluation, settings store, IPC tick handling with mock data.
 - Phase 8: measure the app's own CPU/RAM in Task Manager / sysinfo self-stats and record the results in `docs/PERFORMANCE.md`.
 - Final: `npm run tauri build` produces an installer, and the installed app launches.
 
 ## Version pins (checked 2026-11-02)
+
 - Rust 1.99.1 stable (MSVC toolchain). Tauri **2.x stable**: crates.io's newest is `3.0.0-alpha`, which is not production-ready, so we stay on Tauri 2 and its 2.x plugins.
 - sysinfo 0.40, windows 0.62, nix 0.31, thiserror 2, ts-rs 12, tracing 0.1 / tracing-appender 0.2.
 
 ## Performance risks
-| Risk | Mitigation |
-|---|---|
-| Full process refresh every tick (1000+ PIDs) | Narrow `ProcessRefreshKind`; read static fields once per PID; measure poll ms in the diagnostics panel |
-| IPC payload size (~200 B × N processes per tick) | Lean rows, no environment; measure bytes per tick in Phase 8 before adding diffs |
-| React re-rendering the whole table each tick | Virtualized rows, memoized row components keyed by PID, store selectors |
-| Chart rendering cost (per-core charts) | uPlot canvas, `setData` in place, charts on hidden pages don't render |
-| Lock contention between engine and commands | Collect without locks; swap under a short `RwLock` write |
-| Background CPU while minimized to tray | Tray tooltip throttled to ≥2 s; when hidden, the engine keeps sampling only for alerts and skips history fan-out |
+
+| Risk                                             | Mitigation                                                                                                       |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Full process refresh every tick (1000+ PIDs)     | Narrow `ProcessRefreshKind`; read static fields once per PID; measure poll ms in the diagnostics panel           |
+| IPC payload size (~200 B × N processes per tick) | Lean rows, no environment; measure bytes per tick in Phase 8 before adding diffs                                 |
+| React re-rendering the whole table each tick     | Virtualized rows, memoized row components keyed by PID, store selectors                                          |
+| Chart rendering cost (per-core charts)           | uPlot canvas, `setData` in place, charts on hidden pages don't render                                            |
+| Lock contention between engine and commands      | Collect without locks; swap under a short `RwLock` write                                                         |
+| Background CPU while minimized to tray           | Tray tooltip throttled to ≥2 s; when hidden, the engine keeps sampling only for alerts and skips history fan-out |
 
 ## Security risks
-| Risk | Mitigation |
-|---|---|
-| Frontend abuse of process control | Typed commands only; PID validated (>0, exists); protection check in Rust, not just the UI |
-| Arbitrary path/shell execution | No shell plugin, no generic exec; reveal-executable resolves the path from the PID server-side |
-| Over-broad Tauri capabilities | Single capability file listing only needed plugin permissions |
-| Leaking sensitive data | No network calls; exports/diagnostics exclude command lines unless explicitly opted in; never log environments |
-| Privilege escalation | App runs unelevated; PermissionDenied surfaced with guidance instead of auto-elevation |
+
+| Risk                              | Mitigation                                                                                                     |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Frontend abuse of process control | Typed commands only; PID validated (>0, exists); protection check in Rust, not just the UI                     |
+| Arbitrary path/shell execution    | No shell plugin, no generic exec; reveal-executable resolves the path from the PID server-side                 |
+| Over-broad Tauri capabilities     | Single capability file listing only needed plugin permissions                                                  |
+| Leaking sensitive data            | No network calls; exports/diagnostics exclude command lines unless explicitly opted in; never log environments |
+| Privilege escalation              | App runs unelevated; PermissionDenied surfaced with guidance instead of auto-elevation                         |

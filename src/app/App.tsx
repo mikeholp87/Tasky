@@ -1,4 +1,5 @@
-import type { ComponentType } from "react";
+import { useEffect, type ComponentType } from "react";
+import { startMonitoring } from "@/services/monitoring";
 import { useUiStore } from "@/stores/uiStore";
 import { AlertsPage } from "@/features/alerts/AlertsPage";
 import { CpuPage } from "@/features/cpu/CpuPage";
@@ -32,6 +33,9 @@ const PAGES: Record<RouteId, ComponentType> = {
 
 export function App() {
   useApplyTheme();
+  useEffect(() => {
+    void startMonitoring();
+  }, []);
   const route = useUiStore((s) => s.route);
   const Page = PAGES[route];
 
