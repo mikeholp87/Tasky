@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Neutral surfaces, one accent, and semantic status colors that
+ * are reserved for genuine warnings. Every pair here keeps ≥4.5:1 text contrast
+ * in both themes.
+ */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e2e5ea;
+  --border-strong: #cdd2da;
+  --fg: #151a21;
+  --fg-muted: #5b6574;
+  --fg-subtle: #7d8796;
+  --accent: #0e7c86;
+  --accent-fg: #ffffff;
+  --accent-soft: #e0f2f3;
+  --chart-1: #0e7c86;
+  --chart-2: #6a5acd;
+  --chart-grid: #e6e9ee;
+  --ok: #1f7a4d;
+  --warn: #9a6200;
+  --warn-soft: #fdf1d8;
+  --crit: #b42318;
+  --crit-soft: #fde4e1;
+  --heat-1: rgba(14, 124, 134, 0.08);
+  --heat-2: rgba(212, 140, 0, 0.16);
+  --heat-3: rgba(196, 50, 36, 0.18);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0f1216;
+  --surface: #161a20;
+  --surface-2: #1d222a;
+  --border: #272d36;
+  --border-strong: #353d48;
+  --fg: #e6e9ee;
+  --fg-muted: #9aa4b2;
+  --fg-subtle: #7b8594;
+  --accent: #3cb8c2;
+  --accent-fg: #071416;
+  --accent-soft: #12333a;
+  --chart-1: #3cb8c2;
+  --chart-2: #9d8cff;
+  --chart-grid: #232932;
+  --ok: #4cc38a;
+  --warn: #f0b44c;
+  --warn-soft: #3a2c10;
+  --crit: #ff7a6b;
+  --crit-soft: #3d1a17;
+  --heat-1: rgba(60, 184, 194, 0.1);
+  --heat-2: rgba(240, 180, 76, 0.16);
+  --heat-3: rgba(255, 122, 107, 0.2);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-crit: var(--crit);
+  --color-crit-soft: var(--crit-soft);
+  --font-sans:
+    "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Ubuntu", "Cantarell",
+    "Noto Sans", sans-serif;
+  --font-mono:
+    "Cascadia Mono", "JetBrains Mono", "Ubuntu Mono", "SF Mono", Consolas, ui-monospace, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+  /* Allow selecting real data values (paths, command lines). */
+  .selectable {
+    user-select: text;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 6px;
+    border: 2px solid var(--bg);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

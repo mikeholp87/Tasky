@@ -1,0 +1,49 @@
+import type { ComponentType } from "react";
+import { useUiStore } from "@/stores/uiStore";
+import { AlertsPage } from "@/features/alerts/AlertsPage";
+import { CpuPage } from "@/features/cpu/CpuPage";
+import { MemoryPage } from "@/features/memory/MemoryPage";
+import { NetworkPage } from "@/features/network/NetworkPage";
+import { OverviewPage } from "@/features/overview/OverviewPage";
+import { PerformancePage } from "@/features/performance/PerformancePage";
+import { ProcessDetailsPage } from "@/features/process-details/ProcessDetailsPage";
+import { ProcessesPage } from "@/features/processes/ProcessesPage";
+import { SettingsPage } from "@/features/settings/SettingsPage";
+import { StoragePage } from "@/features/storage/StoragePage";
+import { SystemInfoPage } from "@/features/system-info/SystemInfoPage";
+import type { RouteId } from "./routes";
+import { Sidebar } from "./Sidebar";
+import { TopBar } from "./TopBar";
+import { useApplyTheme } from "./theme";
+
+const PAGES: Record<RouteId, ComponentType> = {
+  overview: OverviewPage,
+  processes: ProcessesPage,
+  performance: PerformancePage,
+  cpu: CpuPage,
+  memory: MemoryPage,
+  storage: StoragePage,
+  network: NetworkPage,
+  "process-details": ProcessDetailsPage,
+  system: SystemInfoPage,
+  alerts: AlertsPage,
+  settings: SettingsPage,
+};
+
+export function App() {
+  useApplyTheme();
+  const route = useUiStore((s) => s.route);
+  const Page = PAGES[route];
+
+  return (
+    <div className="flex h-full">
+      <Sidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar />
+        <main className="min-h-0 flex-1 overflow-auto p-5">
+          <Page />
+        </main>
+      </div>
+    </div>
+  );
+}
