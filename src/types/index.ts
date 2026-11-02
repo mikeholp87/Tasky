@@ -12,4 +12,6 @@ export type { MetricsTick } from "./generated/MetricsTick";
 export type { MonitoringState } from "./generated/MonitoringState";
 export type { NetworkInterfaceSnapshot } from "./generated/NetworkInterfaceSnapshot";
 export type { Platform } from "./generated/Platform";
+export type { ProcessRow } from "./generated/ProcessRow";
+export type { ProcessState } from "./generated/ProcessState";
 export type { StaticSystemInfo } from "./generated/StaticSystemInfo";

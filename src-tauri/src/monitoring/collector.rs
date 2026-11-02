@@ -7,13 +7,16 @@ use sysinfo::{CpuRefreshKind, System};
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{EngineStats, HistoryPoint, MetricsTick, Platform, StaticSystemInfo};
-use crate::monitoring::{cpu, disks::DiskTracker, memory, network::NetworkTracker};
+use crate::monitoring::{
+    cpu, disks::DiskTracker, memory, network::NetworkTracker, processes::ProcessTracker,
+};
 use crate::platform;
 
 pub struct Collector {
     sys: System,
     disks: DiskTracker,
     networks: NetworkTracker,
+    processes: ProcessTracker,
     last_sample: Instant,
     seq: u64,
 }
@@ -29,6 +32,7 @@ impl Collector {
             sys,
             disks: DiskTracker::new(),
             networks: NetworkTracker::new(),
+            processes: ProcessTracker::new(),
             last_sample: Instant::now(),
             seq: 0,
         })
@@ -61,7 +65,7 @@ impl Collector {
         }
     }
 
-    pub fn sample(&mut self, interval_ms: u32) -> MetricsTick {
+    pub fn sample(&mut self, interval_ms: u32, last_payload_bytes: u32) -> MetricsTick {
         let started = Instant::now();
         let elapsed = started.duration_since(self.last_sample);
         self.last_sample = started;
@@ -74,6 +78,8 @@ impl Collector {
         let memory = memory::snapshot(&self.sys, platform::memory_extras());
         let disks = self.disks.sample(started, elapsed);
         let networks = self.networks.sample(elapsed);
+        let processes = self.processes.sample(&mut self.sys, elapsed);
+        let process_count = u32::try_from(processes.len()).unwrap_or(u32::MAX);
 
         let point = HistoryPoint {
             t: unix_millis(),
@@ -96,11 +102,13 @@ impl Collector {
             memory,
             disks,
             networks,
+            processes,
             point,
             engine: EngineStats {
                 poll_duration_ms: duration_ms(started.elapsed()),
                 interval_ms,
-                process_count: 0,
+                process_count,
+                last_payload_bytes,
             },
         }
     }

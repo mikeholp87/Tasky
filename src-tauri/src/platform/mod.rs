@@ -36,5 +36,24 @@ pub fn memory_extras() -> MemoryExtras {
     imp::memory_extras()
 }
 
+/// Per-process details not exposed (cheaply) by sysinfo.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProcessExtras {
+    pub threads: Option<u32>,
+    /// Linux nice value or Windows base priority.
+    pub priority: Option<i32>,
+}
+
+/// Extras for the given PIDs (Windows returns all processes from one snapshot).
+pub fn process_extras(pids: &[u32]) -> std::collections::HashMap<u32, ProcessExtras> {
+    imp::process_extras(pids)
+}
+
+/// Account name for a user id that sysinfo's user list could not resolve
+/// (e.g. Windows service accounts). Callers should cache the result.
+pub fn account_name(uid: &sysinfo::Uid) -> Option<String> {
+    imp::account_name(uid)
+}
+
 /// Whether the OS reports load averages. Windows has no equivalent.
 pub const HAS_LOAD_AVERAGE: bool = cfg!(unix);

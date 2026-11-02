@@ -8,6 +8,7 @@ pub mod engine;
 pub mod history;
 mod memory;
 mod network;
+mod processes;
 pub mod rates;
 
 pub use engine::{Engine, TickSink};

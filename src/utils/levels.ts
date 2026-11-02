@@ -41,3 +41,14 @@ export function heatLevel(percent: number | null | undefined): HeatLevel {
   if (percent < 80) return 2;
   return 3;
 }
+
+/**
+ * Heat for a process's share of total RAM. A single process using 30% of
+ * memory is as notable as one using 80% CPU, so the bands are tighter.
+ */
+export function memoryHeatLevel(percentOfTotal: number | null | undefined): HeatLevel {
+  if (percentOfTotal == null || !Number.isFinite(percentOfTotal) || percentOfTotal < 5) return 0;
+  if (percentOfTotal < 15) return 1;
+  if (percentOfTotal < 30) return 2;
+  return 3;
+}

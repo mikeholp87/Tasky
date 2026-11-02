@@ -1,4 +1,5 @@
 import { useEffect, type ComponentType } from "react";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { startMonitoring } from "@/services/monitoring";
 import { useUiStore } from "@/stores/uiStore";
 import { AlertsPage } from "@/features/alerts/AlertsPage";
@@ -33,6 +34,7 @@ const PAGES: Record<RouteId, ComponentType> = {
 
 export function App() {
   useApplyTheme();
+  useGlobalShortcuts();
   useEffect(() => {
     void startMonitoring();
   }, []);

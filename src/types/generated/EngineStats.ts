@@ -4,4 +4,8 @@ export type EngineStats = {
 /**
  * Wall time spent collecting this sample.
  */
-pollDurationMs: number, intervalMs: number, processCount: number, };
+pollDurationMs: number, intervalMs: number, processCount: number, 
+/**
+ * Serialized size of the previous tick, to keep IPC cost visible.
+ */
+lastPayloadBytes: number, };

@@ -5,6 +5,7 @@ import type { EngineStats } from "./EngineStats";
 import type { HistoryPoint } from "./HistoryPoint";
 import type { MemorySnapshot } from "./MemorySnapshot";
 import type { NetworkInterfaceSnapshot } from "./NetworkInterfaceSnapshot";
+import type { ProcessRow } from "./ProcessRow";
 
 /**
  * One sample of all dynamic metrics, emitted to the frontend on every tick.
@@ -24,7 +25,7 @@ timestampMs: number,
 /**
  * Actual time since the previous sample, used for every rate.
  */
-elapsedMs: number, cpu: CpuSnapshot, memory: MemorySnapshot, disks: Array<DiskSnapshot>, networks: Array<NetworkInterfaceSnapshot>, 
+elapsedMs: number, cpu: CpuSnapshot, memory: MemorySnapshot, disks: Array<DiskSnapshot>, networks: Array<NetworkInterfaceSnapshot>, processes: Array<ProcessRow>, 
 /**
  * Compact summary of this tick, appended to history buffers.
  */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { heatLevel, levelLabel, usageLevel } from "./levels";
+import { heatLevel, levelLabel, memoryHeatLevel, usageLevel } from "./levels";
 
 describe("usageLevel", () => {
   it("reserves warnings for genuinely high usage", () => {
@@ -24,5 +24,14 @@ describe("heatLevel", () => {
     expect(heatLevel(50)).toBe(2);
     expect(heatLevel(80)).toBe(3);
     expect(heatLevel(100)).toBe(3);
+  });
+});
+
+describe("memoryHeatLevel", () => {
+  it("uses tighter bands for share of RAM", () => {
+    expect(memoryHeatLevel(2)).toBe(0);
+    expect(memoryHeatLevel(5)).toBe(1);
+    expect(memoryHeatLevel(20)).toBe(2);
+    expect(memoryHeatLevel(45)).toBe(3);
   });
 });

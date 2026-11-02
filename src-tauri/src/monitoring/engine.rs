@@ -152,6 +152,7 @@ fn run(
     mut state: MonitoringState,
 ) {
     let mut next_due = Instant::now() + interval(&state);
+    let mut last_payload = 0u32;
     loop {
         let msg = if state.paused {
             rx.recv().map_err(|_| RecvTimeoutError::Disconnected)
@@ -163,16 +164,16 @@ fn run(
                 let resumed = state.paused && !new_state.paused;
                 state = new_state;
                 if resumed {
-                    tick(&mut collector, &shared, &state);
+                    last_payload = tick(&mut collector, &shared, &state, last_payload);
                 }
                 next_due = Instant::now() + interval(&state);
             }
             Ok(Control::RefreshNow) => {
-                tick(&mut collector, &shared, &state);
+                last_payload = tick(&mut collector, &shared, &state, last_payload);
                 next_due = Instant::now() + interval(&state);
             }
             Err(RecvTimeoutError::Timeout) => {
-                tick(&mut collector, &shared, &state);
+                last_payload = tick(&mut collector, &shared, &state, last_payload);
                 // Schedule from the previous deadline to avoid drift, but
                 // never try to "catch up" a backlog after a stall.
                 next_due = (next_due + interval(&state)).max(Instant::now());
@@ -187,15 +188,22 @@ fn interval(state: &MonitoringState) -> Duration {
     Duration::from_millis(u64::from(state.interval_ms))
 }
 
-fn tick(collector: &mut Collector, shared: &Shared, state: &MonitoringState) {
-    let sample = collector.sample(state.interval_ms);
+/// Collects, publishes and delivers one sample. Returns the payload size.
+fn tick(
+    collector: &mut Collector,
+    shared: &Shared,
+    state: &MonitoringState,
+    last_payload: u32,
+) -> u32 {
+    let sample = collector.sample(state.interval_ms, last_payload);
     let json = match serde_json::to_string(&sample) {
         Ok(json) => json,
         Err(e) => {
             tracing::error!("failed to serialize metrics: {e}");
-            return;
+            return last_payload;
         }
     };
+    let payload_bytes = u32::try_from(json.len()).unwrap_or(u32::MAX);
 
     shared
         .history
@@ -227,6 +235,7 @@ fn tick(collector: &mut Collector, shared: &Shared, state: &MonitoringState) {
             map.remove(&key);
         }
     }
+    payload_bytes
 }
 
 #[cfg(test)]

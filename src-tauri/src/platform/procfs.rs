@@ -37,9 +37,56 @@ fn parse_kb(value: &str) -> Option<u64> {
     }
 }
 
+/// Selected fields of `/proc/[pid]/stat`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Stat {
+    pub state: char,
+    pub ppid: u32,
+    pub nice: i32,
+    pub num_threads: u32,
+}
+
+/// Parses `/proc/[pid]/stat`. The command name (field 2) is wrapped in
+/// parentheses and may itself contain spaces or `)`, so fields are counted
+/// from the *last* closing parenthesis.
+pub fn parse_stat(text: &str) -> Option<Stat> {
+    let rest = &text[text.rfind(')')? + 1..];
+    let fields: Vec<&str> = rest.split_whitespace().collect();
+    // After the comm field, index 0 is field 3 (state); field N is at N - 3.
+    let field = |n: usize| fields.get(n - 3).copied();
+    Some(Stat {
+        state: field(3)?.chars().next()?,
+        ppid: field(4)?.parse().ok()?,
+        nice: field(19)?.parse().ok()?,
+        num_threads: field(20)?.parse().ok()?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_stat_with_tricky_command_name() {
+        let text = "1234 (my (weird) proc) S 1 1234 1234 0 -1 4194560 100 0 0 0 \
+                    5 3 0 0 20 -5 7 0 12345 1000000 250 18446744073709551615";
+        let stat = parse_stat(text).unwrap();
+        assert_eq!(
+            stat,
+            Stat {
+                state: 'S',
+                ppid: 1,
+                nice: -5,
+                num_threads: 7
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_truncated_stat() {
+        assert_eq!(parse_stat("1 (init) S 0 1"), None);
+        assert_eq!(parse_stat("garbage"), None);
+    }
 
     const SAMPLE: &str = "MemTotal:       32765432 kB\n\
 MemFree:         1234567 kB\n\

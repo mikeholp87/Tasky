@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use super::ProcessRow;
+
 /// One sample of all dynamic metrics, emitted to the frontend on every tick.
 ///
 /// Values a platform cannot report reliably are `None`; the UI shows
@@ -18,6 +20,7 @@ pub struct MetricsTick {
     pub memory: MemorySnapshot,
     pub disks: Vec<DiskSnapshot>,
     pub networks: Vec<NetworkInterfaceSnapshot>,
+    pub processes: Vec<ProcessRow>,
     /// Compact summary of this tick, appended to history buffers.
     pub point: HistoryPoint,
     pub engine: EngineStats,
@@ -131,4 +134,6 @@ pub struct EngineStats {
     pub poll_duration_ms: f64,
     pub interval_ms: u32,
     pub process_count: u32,
+    /// Serialized size of the previous tick, to keep IPC cost visible.
+    pub last_payload_bytes: u32,
 }

@@ -3,8 +3,10 @@
 
 mod metrics;
 mod monitoring;
+mod process;
 mod system;
 
 pub use metrics::*;
 pub use monitoring::*;
+pub use process::*;
 pub use system::*;
