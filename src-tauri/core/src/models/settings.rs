@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::alerts::{AlertRule, MAX_ALERT_RULES, default_alert_rules};
 use super::monitoring::{DEFAULT_INTERVAL_MS, validate_interval};
+use crate::benchmarks::models::BenchmarkSettings;
 use crate::errors::{AppError, AppResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -42,6 +43,8 @@ pub struct Settings {
     // Alerts
     pub notifications_enabled: bool,
     pub alert_rules: Vec<AlertRule>,
+    // Benchmarks
+    pub benchmark: BenchmarkSettings,
     // Advanced
     pub debug_logging: bool,
 }
@@ -63,6 +66,7 @@ impl Default for Settings {
             column_widths: BTreeMap::new(),
             notifications_enabled: true,
             alert_rules: default_alert_rules(),
+            benchmark: BenchmarkSettings::default(),
             debug_logging: false,
         }
     }
@@ -92,6 +96,7 @@ impl Settings {
                 ));
             }
         }
+        self.benchmark.validate()?;
         if self.visible_columns.len() > 64 || self.column_widths.len() > 64 {
             return Err(AppError::InvalidArgument(
                 "Too many column settings.".into(),
@@ -115,6 +120,9 @@ impl Settings {
         self.alert_rules
             .retain(|r| r.validate().is_ok() && ids.insert(r.id.clone()));
         self.alert_rules.truncate(MAX_ALERT_RULES);
+        if self.benchmark.validate().is_err() {
+            self.benchmark = d.benchmark.clone();
+        }
         self.visible_columns.truncate(64);
         while self.column_widths.len() > 64 {
             self.column_widths.pop_last();

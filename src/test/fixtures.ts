@@ -44,6 +44,7 @@ export function makeTick(
       intervalMs: 1000,
       processCount: processes.length,
       lastPayloadBytes: 0,
+      benchmarkActive: false,
     },
     ...overrides,
   };

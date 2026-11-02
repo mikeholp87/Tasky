@@ -9,6 +9,12 @@ import { togglePaused } from "@/services/monitoring";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useSettingsStore, type ThemePreference } from "@/stores/settingsStore";
 import { toast } from "@/stores/toastStore";
+import type {
+  BenchmarkProfile,
+  BenchmarkSettings,
+  DiskWriteLimit,
+  NetworkDataProfile,
+} from "@/types";
 import { useUiStore } from "@/stores/uiStore";
 
 const THEMES: { id: ThemePreference; label: string; icon: typeof Sun }[] = [
@@ -174,6 +180,8 @@ export function SettingsPage() {
           </Field>
         </Section>
 
+        <BenchmarkSection />
+
         <Section title="Advanced">
           <Toggle
             label="Debug logging"
@@ -196,6 +204,137 @@ export function SettingsPage() {
         </Section>
       </div>
     </>
+  );
+}
+
+const BENCH_PROFILES: { id: BenchmarkProfile; label: string }[] = [
+  { id: "quick", label: "Quick" },
+  { id: "standard", label: "Standard" },
+  { id: "extended", label: "Extended" },
+];
+const WRITE_LIMITS: { id: DiskWriteLimit; label: string }[] = [
+  { id: "conservative", label: "Conservative (1 GiB)" },
+  { id: "standard", label: "Standard (4 GiB)" },
+  { id: "extended", label: "Extended (16 GiB)" },
+];
+const DATA_PROFILES: { id: NetworkDataProfile; label: string }[] = [
+  { id: "dataSaver", label: "Data Saver (≈25 MB)" },
+  { id: "standard", label: "Standard (≈200 MB)" },
+  { id: "maximum", label: "Maximum throughput (≈1 GB)" },
+];
+
+function BenchmarkSection() {
+  const b = useSettingsStore((s) => s.benchmark);
+  const update = useSettingsStore((s) => s.update);
+  const logical = useMetricsStore((m) => m.staticInfo?.logicalCoreCount ?? 0);
+  const set = (patch: Partial<BenchmarkSettings>) => update({ benchmark: { ...b, ...patch } });
+  const workerOptions = Array.from({ length: Math.min(logical, 256) }, (_, i) => i + 1);
+
+  return (
+    <Section title="Benchmarks">
+      <Field label="Default profile" htmlFor="bench-default-profile">
+        <select
+          id="bench-default-profile"
+          value={b.profile}
+          onChange={(e) => set({ profile: e.target.value as BenchmarkProfile })}
+          className={selectCls}
+        >
+          {BENCH_PROFILES.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field
+        label="CPU worker threads"
+        htmlFor="bench-workers"
+        description="Automatic uses one worker per logical processor."
+      >
+        <select
+          id="bench-workers"
+          value={b.cpuWorkers ?? "auto"}
+          onChange={(e) =>
+            set({ cpuWorkers: e.target.value === "auto" ? null : Number(e.target.value) })
+          }
+          className={selectCls}
+        >
+          <option value="auto">Automatic</option>
+          {workerOptions.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Toggle
+        label="Cooldown between heavy tests"
+        description="Pause briefly between CPU and GPU tests so heat from one does not affect the next."
+        checked={b.cooldown}
+        onChange={(v) => set({ cooldown: v })}
+      />
+      <Toggle
+        label="Allow disk write benchmark"
+        description="Write tests create a temporary file on the selected drive and delete it afterwards."
+        checked={b.diskAllowWrite}
+        onChange={(v) => set({ diskAllowWrite: v })}
+      />
+      <Field label="Disk benchmark write limit" htmlFor="bench-write-limit">
+        <select
+          id="bench-write-limit"
+          value={b.diskWriteLimit}
+          onChange={(e) => set({ diskWriteLimit: e.target.value as DiskWriteLimit })}
+          className={selectCls}
+        >
+          {WRITE_LIMITS.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Internet data usage" htmlFor="bench-data">
+        <select
+          id="bench-data"
+          value={b.networkDataProfile}
+          onChange={(e) => set({ networkDataProfile: e.target.value as NetworkDataProfile })}
+          className={selectCls}
+        >
+          {DATA_PROFILES.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Toggle
+        label="Share internet test results with the provider"
+        description="Off by default. When on, the test provider (Cloudflare) may keep anonymized measurements."
+        checked={b.networkShareResults}
+        onChange={(v) => set({ networkShareResults: v })}
+      />
+      <Toggle
+        label="Save benchmark history"
+        description="Results are stored on this computer only."
+        checked={b.saveHistory}
+        onChange={(v) => set({ saveHistory: v })}
+      />
+      <Toggle
+        label="Show raw measurements"
+        checked={b.showRawMeasurements}
+        onChange={(v) => set({ showRawMeasurements: v })}
+      />
+      <Toggle
+        label="Show methodology"
+        checked={b.showMethodology}
+        onChange={(v) => set({ showMethodology: v })}
+      />
+      <Toggle
+        label="Debug benchmark logging"
+        checked={b.debugLogging}
+        onChange={(v) => set({ debugLogging: v })}
+      />
+    </Section>
   );
 }
 

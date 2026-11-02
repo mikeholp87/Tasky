@@ -6,6 +6,7 @@ import { ConfirmActionDialog } from "@/features/processes/ConfirmActionDialog";
 import { CommandPalette } from "./CommandPalette";
 import { useUiStore } from "@/stores/uiStore";
 import { AlertsPage } from "@/features/alerts/AlertsPage";
+import { BenchmarksPage } from "@/features/benchmarks/BenchmarksPage";
 import { CpuPage } from "@/features/cpu/CpuPage";
 import { MemoryPage } from "@/features/memory/MemoryPage";
 import { NetworkPage } from "@/features/network/NetworkPage";
@@ -32,6 +33,7 @@ const PAGES: Record<RouteId, ComponentType> = {
   "process-details": ProcessDetailsPage,
   system: SystemInfoPage,
   alerts: AlertsPage,
+  benchmarks: BenchmarksPage,
   settings: SettingsPage,
 };
 

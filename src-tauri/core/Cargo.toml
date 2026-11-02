@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = { version = "0.40", default-features = false, features = ["disk", "network", "system", "user"] }
 thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 
 [dev-dependencies]
@@ -26,6 +27,7 @@ windows = { version = "0.62", features = [
   "Win32_Security_Authorization",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_ProcessStatus",
+  "Win32_System_Power",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
   "Win32_System_WindowsProgramming",

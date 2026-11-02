@@ -9,9 +9,16 @@ mod state;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
+use tm_core::benchmarks::environment::SystemProbe;
+use tm_core::benchmarks::history::HistoryStore;
+use tm_core::benchmarks::mock::MockFactory;
+use tm_core::benchmarks::{
+    BenchmarkCoordinator, HardwareFactory, SIMULATED_STEP, simulation_enabled,
+};
 use tm_core::models::MonitoringState;
 use tm_core::monitoring::Engine;
 
@@ -43,14 +50,30 @@ pub fn run() {
             let paths = app.path();
             let settings = SettingsStore::load(paths.app_config_dir().ok().as_deref());
             let s = settings.get();
-            let logging = logging::init(paths.app_log_dir().ok().as_deref(), s.debug_logging);
+            let logging = logging::init(
+                paths.app_log_dir().ok().as_deref(),
+                s.debug_logging,
+                s.benchmark.debug_logging,
+            );
 
             let engine = Arc::new(Engine::start(MonitoringState {
                 paused: false,
                 interval_ms: s.refresh_interval_ms,
             })?);
+            let history_dir = paths
+                .app_data_dir()
+                .ok()
+                .map(|d| d.join("benchmarks").join("results"));
+            let benchmarks = BenchmarkCoordinator::new(
+                Arc::clone(&engine) as Arc<dyn SystemProbe>,
+                Arc::new(HardwareFactory),
+                Arc::new(MockFactory::new(SIMULATED_STEP)),
+                Arc::new(HistoryStore::new(history_dir)),
+                simulation_enabled(),
+            );
             let state = AppState {
                 engine: Arc::clone(&engine),
+                benchmarks,
                 settings,
                 logging,
                 visibility: Arc::new(WindowVisibility::default()),
@@ -126,6 +149,14 @@ pub fn run() {
             commands::export::export_processes,
             commands::export::export_system_summary,
             commands::export::export_diagnostics,
+            commands::benchmarks::get_benchmark_capabilities,
+            commands::benchmarks::run_benchmark_preflight,
+            commands::benchmarks::start_benchmark,
+            commands::benchmarks::cancel_benchmark,
+            commands::benchmarks::skip_benchmark_cooldown,
+            commands::benchmarks::list_benchmark_history,
+            commands::benchmarks::get_benchmark_result,
+            commands::benchmarks::delete_benchmark_result,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -134,6 +165,9 @@ pub fn run() {
         if let RunEvent::Exit = event
             && let Some(state) = handle.try_state::<AppState>()
         {
+            // Stop a running benchmark first so its cleanup (temporary files,
+            // GPU resources) completes before the process exits.
+            state.benchmarks.shutdown(Duration::from_secs(5));
             state.engine.shutdown();
         }
     });

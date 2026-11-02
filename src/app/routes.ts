@@ -11,6 +11,7 @@ import {
   MemoryStick,
   Network,
   Settings,
+  Timer,
   type LucideIcon,
 } from "lucide-react";
 
@@ -25,6 +26,7 @@ export type RouteId =
   | "process-details"
   | "system"
   | "alerts"
+  | "benchmarks"
   | "settings";
 
 export interface RouteDef {
@@ -46,6 +48,7 @@ export const ROUTES: readonly RouteDef[] = [
   { id: "process-details", label: "Process Details", icon: FileSearch, group: "tools" },
   { id: "system", label: "System Information", icon: Info, group: "tools" },
   { id: "alerts", label: "Alerts", icon: Bell, group: "tools" },
+  { id: "benchmarks", label: "Benchmarks", icon: Timer, group: "tools" },
   { id: "settings", label: "Settings", icon: Settings, group: "tools" },
 ] as const;
 

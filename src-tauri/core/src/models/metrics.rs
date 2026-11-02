@@ -143,4 +143,7 @@ pub struct EngineStats {
     pub process_count: u32,
     /// Serialized size of the previous tick, to keep IPC cost visible.
     pub last_payload_bytes: u32,
+    /// A benchmark is running: polling is slowed and part of the load is the
+    /// benchmark itself.
+    pub benchmark_active: bool,
 }

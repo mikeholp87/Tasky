@@ -10,6 +10,7 @@
 //! While paused the thread blocks on the control channel and uses no CPU.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::thread::{self, JoinHandle};
@@ -29,6 +30,9 @@ use crate::monitoring::process_history::ProcessHistory;
 pub const MAX_HISTORY_POINTS: usize = 7_200;
 /// Fired alerts kept for the Alerts page.
 const ALERT_LOG_LEN: usize = 100;
+/// Slowest-of floor applied to the polling interval while a benchmark runs,
+/// so monitoring keeps working without competing with the workload.
+pub const BENCHMARK_MODE_MIN_INTERVAL_MS: u32 = 2_000;
 
 /// Receives each tick. Returns `false` when the receiver is gone so the
 /// engine can drop it.
@@ -62,6 +66,8 @@ struct Shared {
     alert_rules: RwLock<Vec<AlertRule>>,
     alert_log: Mutex<RingBuffer<AlertEvent>>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
+    /// Set while a benchmark runs; see [`Engine::set_benchmark_mode`].
+    benchmark_mode: AtomicBool,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -93,6 +99,7 @@ impl Engine {
             alert_rules: RwLock::new(Vec::new()),
             alert_log: Mutex::new(RingBuffer::new(ALERT_LOG_LEN)),
             sinks: Mutex::new(HashMap::new()),
+            benchmark_mode: AtomicBool::new(false),
         });
         let (tx, rx) = mpsc::channel();
         let worker = Worker {
@@ -128,6 +135,22 @@ impl Engine {
 
     pub fn refresh_now(&self) -> AppResult<()> {
         self.send(Control::RefreshNow)
+    }
+
+    /// Benchmark Mode: while active, polling runs no faster than
+    /// [`BENCHMARK_MODE_MIN_INTERVAL_MS`] and ticks are flagged so the UI can
+    /// attribute load. The user's configured state is left untouched, so
+    /// turning it off restores the previous behaviour exactly.
+    pub fn set_benchmark_mode(&self, active: bool) {
+        let was = self.shared.benchmark_mode.swap(active, Ordering::SeqCst);
+        if was != active {
+            // Wake the worker so the new interval applies immediately.
+            let _ = self.send(Control::SetState(self.state()));
+        }
+    }
+
+    pub fn benchmark_mode(&self) -> bool {
+        self.shared.benchmark_mode.load(Ordering::SeqCst)
     }
 
     pub fn latest(&self) -> Option<Arc<MetricsTick>> {
@@ -213,7 +236,7 @@ struct Worker {
 
 impl Worker {
     fn run(mut self, rx: mpsc::Receiver<Control>, mut state: MonitoringState) {
-        let mut next_due = Instant::now() + interval(&state);
+        let mut next_due = Instant::now() + self.interval(&state);
         loop {
             let msg = if state.paused {
                 rx.recv().map_err(|_| RecvTimeoutError::Disconnected)
@@ -227,17 +250,17 @@ impl Worker {
                     if resumed {
                         self.tick(&state);
                     }
-                    next_due = Instant::now() + interval(&state);
+                    next_due = Instant::now() + self.interval(&state);
                 }
                 Ok(Control::RefreshNow) => {
                     self.tick(&state);
-                    next_due = Instant::now() + interval(&state);
+                    next_due = Instant::now() + self.interval(&state);
                 }
                 Err(RecvTimeoutError::Timeout) => {
                     self.tick(&state);
                     // Schedule from the previous deadline to avoid drift, but
                     // never try to "catch up" a backlog after a stall.
-                    next_due = (next_due + interval(&state)).max(Instant::now());
+                    next_due = (next_due + self.interval(&state)).max(Instant::now());
                 }
                 Ok(Control::Shutdown) | Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -245,10 +268,18 @@ impl Worker {
         tracing::info!("monitoring engine stopped");
     }
 
+    fn interval(&self, state: &MonitoringState) -> Duration {
+        let active = self.shared.benchmark_mode.load(Ordering::SeqCst);
+        Duration::from_millis(u64::from(effective_interval_ms(state, active)))
+    }
+
     /// Collects, evaluates, publishes and delivers one sample.
     fn tick(&mut self, state: &MonitoringState) {
         let shared = &*self.shared;
-        let mut sample = self.collector.sample(state.interval_ms, self.last_payload);
+        let benchmark_active = shared.benchmark_mode.load(Ordering::SeqCst);
+        let interval_ms = effective_interval_ms(state, benchmark_active);
+        let mut sample = self.collector.sample(interval_ms, self.last_payload);
+        sample.engine.benchmark_active = benchmark_active;
         apply_suspended(shared, &mut sample.processes);
 
         let rules = read(&shared.alert_rules).clone();
@@ -324,8 +355,12 @@ fn apply_suspended(shared: &Shared, rows: &mut [ProcessRow]) {
     *set = alive;
 }
 
-fn interval(state: &MonitoringState) -> Duration {
-    Duration::from_millis(u64::from(state.interval_ms))
+fn effective_interval_ms(state: &MonitoringState, benchmark_active: bool) -> u32 {
+    if benchmark_active {
+        state.interval_ms.max(BENCHMARK_MODE_MIN_INTERVAL_MS)
+    } else {
+        state.interval_ms
+    }
 }
 
 #[cfg(test)]
@@ -428,6 +463,32 @@ mod tests {
 
         engine.refresh_now().unwrap();
         assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
+        engine.shutdown();
+    }
+
+    #[test]
+    fn benchmark_mode_slows_polling_and_restores_it() {
+        let engine = engine(true);
+        let sink = CountingSink::new(false);
+        engine.subscribe("bench".into(), sink.clone());
+
+        engine.set_benchmark_mode(true);
+        assert!(engine.benchmark_mode());
+        engine.refresh_now().unwrap();
+        assert!(wait_for(|| sink.count.load(Ordering::SeqCst) >= 1));
+        let tick = engine.latest().unwrap();
+        assert!(tick.engine.benchmark_active);
+        assert_eq!(tick.engine.interval_ms, BENCHMARK_MODE_MIN_INTERVAL_MS);
+        // The user's configured state is untouched.
+        assert_eq!(engine.state().interval_ms, 500);
+
+        engine.set_benchmark_mode(false);
+        let before = sink.count.load(Ordering::SeqCst);
+        engine.refresh_now().unwrap();
+        assert!(wait_for(|| sink.count.load(Ordering::SeqCst) > before));
+        let tick = engine.latest().unwrap();
+        assert!(!tick.engine.benchmark_active);
+        assert_eq!(tick.engine.interval_ms, 500);
         engine.shutdown();
     }
 

@@ -6,6 +6,7 @@ mod control;
 mod disk_io;
 mod handle;
 mod memory;
+mod power;
 mod process_info;
 
 pub use account::account_name;
@@ -14,4 +15,5 @@ pub use control::{force_kill, is_critical, resume, set_priority, suspend, system
 pub use disk_io::disk_io_counters;
 pub use handle::architecture as process_architecture;
 pub use memory::memory_extras;
+pub use power::power_state;
 pub use process_info::process_extras;

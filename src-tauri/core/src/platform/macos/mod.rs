@@ -65,3 +65,7 @@ pub fn system_root() -> Option<String> {
 pub fn disk_io_counters(_disks: &[(String, String)]) -> HashMap<String, super::DiskIoCounters> {
     HashMap::new()
 }
+
+pub fn power_state() -> crate::benchmarks::models::PowerState {
+    crate::benchmarks::models::PowerState::default()
+}

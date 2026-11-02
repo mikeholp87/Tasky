@@ -8,4 +8,9 @@ pollDurationMs: number, intervalMs: number, processCount: number,
 /**
  * Serialized size of the previous tick, to keep IPC cost visible.
  */
-lastPayloadBytes: number, };
+lastPayloadBytes: number, 
+/**
+ * A benchmark is running: polling is slowed and part of the load is the
+ * benchmark itself.
+ */
+benchmarkActive: boolean, };

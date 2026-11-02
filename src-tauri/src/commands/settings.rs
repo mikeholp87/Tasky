@@ -68,7 +68,10 @@ pub fn apply_runtime(state: &AppState, s: &Settings) {
     state
         .notifications_enabled
         .store(s.notifications_enabled, Ordering::Relaxed);
-    state.logging.set_debug(s.debug_logging);
+    state
+        .logging
+        .set_debug(s.debug_logging, s.benchmark.debug_logging);
+    state.benchmarks.set_save_history(s.benchmark.save_history);
 }
 
 /// Points needed to cover the configured history length at the configured

@@ -110,6 +110,7 @@ impl Collector {
                 interval_ms,
                 process_count,
                 last_payload_bytes,
+                benchmark_active: false,
             },
         }
     }

@@ -199,6 +199,7 @@ mod tests {
                 interval_ms: 1_000,
                 process_count: 0,
                 last_payload_bytes: 0,
+                benchmark_active: false,
             },
         }
     }

@@ -5,6 +5,12 @@
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import type {
   AppError,
+  BenchmarkCapabilities,
+  BenchmarkEvent,
+  BenchmarkRecord,
+  BenchmarkRequest,
+  BenchmarkSummary,
+  PreflightReport,
   ErrorKind,
   HistoryPoint,
   MetricsTick,
@@ -31,6 +37,19 @@ const ERROR_KINDS: Record<ErrorKind, true> = {
   processProtected: true,
   actionUnavailable: true,
   engineUnavailable: true,
+  benchmarkAlreadyRunning: true,
+  benchmarkCancelled: true,
+  gpuUnavailable: true,
+  gpuUnsupportedFeature: true,
+  gpuInitializationFailed: true,
+  insufficientDiskSpace: true,
+  diskPermissionDenied: true,
+  networkUnavailable: true,
+  networkTimeout: true,
+  providerUnavailable: true,
+  unsupportedPlatform: true,
+  invalidBenchmarkConfiguration: true,
+  thermalSensorUnavailable: true,
 };
 
 function isAppError(value: unknown): value is AppError {
@@ -114,4 +133,19 @@ export const backend = {
     channel.onmessage = onTick;
     return call<MetricsTick | null>("subscribe_metrics", { onTick: channel });
   },
+
+  getBenchmarkCapabilities: () => call<BenchmarkCapabilities>("get_benchmark_capabilities"),
+  runBenchmarkPreflight: (request: BenchmarkRequest) =>
+    call<PreflightReport>("run_benchmark_preflight", { request }),
+  /** Starts a run; events stream to `onEvent`. Resolves with the run id. */
+  startBenchmark: (request: BenchmarkRequest, onEvent: (event: BenchmarkEvent) => void) => {
+    const channel = new Channel<BenchmarkEvent>();
+    channel.onmessage = onEvent;
+    return call<string>("start_benchmark", { request, onEvent: channel });
+  },
+  cancelBenchmark: (runId: string) => call<boolean>("cancel_benchmark", { runId }),
+  skipBenchmarkCooldown: (runId: string) => call<boolean>("skip_benchmark_cooldown", { runId }),
+  listBenchmarkHistory: () => call<BenchmarkSummary[]>("list_benchmark_history"),
+  getBenchmarkResult: (id: string) => call<BenchmarkRecord>("get_benchmark_result", { id }),
+  deleteBenchmarkResult: (id: string) => call<void>("delete_benchmark_result", { id }),
 };

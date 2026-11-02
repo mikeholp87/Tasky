@@ -58,12 +58,14 @@ function MonitoringStatus() {
   const status = useMetricsStore((s) => s.status);
   const paused = useMetricsStore((s) => s.monitoring.paused);
   const live = status === "live";
+  const benchmarking = useMetricsStore((s) => s.tick?.engine.benchmarkActive ?? false);
 
   let text: string;
   if (status === "unavailable") text = "Not connected";
   else if (status === "error") text = "Monitoring error";
   else if (status === "connecting") text = "Connecting…";
-  else text = paused ? "Monitoring paused" : "Live";
+  else if (paused) text = "Monitoring paused";
+  else text = benchmarking ? "Live · benchmark mode (2 s)" : "Live";
 
   return (
     <>

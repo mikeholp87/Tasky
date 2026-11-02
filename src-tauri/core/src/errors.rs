@@ -2,9 +2,9 @@
 //! serialized as `{ kind, message }` so the frontend can show a friendly
 //! message without ever seeing a Rust backtrace.
 
-use serde::{Serialize, Serializer, ser::SerializeStruct};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum ErrorKind {
@@ -17,6 +17,19 @@ pub enum ErrorKind {
     ProcessProtected,
     ActionUnavailable,
     EngineUnavailable,
+    BenchmarkAlreadyRunning,
+    BenchmarkCancelled,
+    GpuUnavailable,
+    GpuUnsupportedFeature,
+    GpuInitializationFailed,
+    InsufficientDiskSpace,
+    DiskPermissionDenied,
+    NetworkUnavailable,
+    NetworkTimeout,
+    ProviderUnavailable,
+    UnsupportedPlatform,
+    InvalidBenchmarkConfiguration,
+    ThermalSensorUnavailable,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -41,6 +54,33 @@ pub enum AppError {
     ActionUnavailable(String),
     #[error("The monitoring engine is not running.")]
     EngineUnavailable,
+    // Benchmarks. Messages are shown to users as-is.
+    #[error("Another benchmark is already running.")]
+    BenchmarkAlreadyRunning,
+    #[error("The benchmark was cancelled.")]
+    BenchmarkCancelled,
+    #[error("{0}")]
+    GpuUnavailable(String),
+    #[error("{0}")]
+    GpuUnsupportedFeature(String),
+    #[error("GPU initialization failed: {0}")]
+    GpuInitializationFailed(String),
+    #[error("{0}")]
+    InsufficientDiskSpace(String),
+    #[error("{0}")]
+    DiskPermissionDenied(String),
+    #[error("{0}")]
+    NetworkUnavailable(String),
+    #[error("{0}")]
+    NetworkTimeout(String),
+    #[error("{0}")]
+    ProviderUnavailable(String),
+    #[error("{0}")]
+    UnsupportedPlatform(String),
+    #[error("{0}")]
+    InvalidBenchmarkConfiguration(String),
+    #[error("Temperature monitoring is unavailable on this system.")]
+    ThermalSensorUnavailable,
 }
 
 impl AppError {
@@ -55,6 +95,19 @@ impl AppError {
             Self::ProcessProtected(_) => ErrorKind::ProcessProtected,
             Self::ActionUnavailable(_) => ErrorKind::ActionUnavailable,
             Self::EngineUnavailable => ErrorKind::EngineUnavailable,
+            Self::BenchmarkAlreadyRunning => ErrorKind::BenchmarkAlreadyRunning,
+            Self::BenchmarkCancelled => ErrorKind::BenchmarkCancelled,
+            Self::GpuUnavailable(_) => ErrorKind::GpuUnavailable,
+            Self::GpuUnsupportedFeature(_) => ErrorKind::GpuUnsupportedFeature,
+            Self::GpuInitializationFailed(_) => ErrorKind::GpuInitializationFailed,
+            Self::InsufficientDiskSpace(_) => ErrorKind::InsufficientDiskSpace,
+            Self::DiskPermissionDenied(_) => ErrorKind::DiskPermissionDenied,
+            Self::NetworkUnavailable(_) => ErrorKind::NetworkUnavailable,
+            Self::NetworkTimeout(_) => ErrorKind::NetworkTimeout,
+            Self::ProviderUnavailable(_) => ErrorKind::ProviderUnavailable,
+            Self::UnsupportedPlatform(_) => ErrorKind::UnsupportedPlatform,
+            Self::InvalidBenchmarkConfiguration(_) => ErrorKind::InvalidBenchmarkConfiguration,
+            Self::ThermalSensorUnavailable => ErrorKind::ThermalSensorUnavailable,
         }
     }
 }

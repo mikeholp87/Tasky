@@ -43,22 +43,29 @@ pub struct Logging {
     _guard: Option<WorkerGuard>,
 }
 
-fn filter_for(debug: bool) -> EnvFilter {
+/// Benchmark lifecycle events (`benchmark_started`, …) are always kept at info
+/// level; "debug benchmark logging" raises only the benchmark module to debug.
+fn filter_for(debug: bool, benchmark_debug: bool) -> EnvFilter {
     if let Ok(env) = EnvFilter::try_from_default_env() {
         return env;
     }
-    EnvFilter::new(if debug || cfg!(debug_assertions) {
+    let base = if debug || cfg!(debug_assertions) {
         "warn,taskmanager_lib=debug,tm_core=debug"
     } else {
-        "warn"
-    })
+        "warn,tm_core::benchmarks=info"
+    };
+    if benchmark_debug {
+        EnvFilter::new(format!("{base},tm_core::benchmarks=debug"))
+    } else {
+        EnvFilter::new(base)
+    }
 }
 
 /// Installs the global subscriber. Safe to call once; a second call (e.g. in
 /// tests) leaves the existing subscriber in place.
-pub fn init(log_dir: Option<&Path>, debug: bool) -> Logging {
+pub fn init(log_dir: Option<&Path>, debug: bool, benchmark_debug: bool) -> Logging {
     let recent = Arc::new(Mutex::new(VecDeque::with_capacity(RECENT_LEN)));
-    let (filter, handle) = reload::Layer::new(filter_for(debug));
+    let (filter, handle) = reload::Layer::new(filter_for(debug, benchmark_debug));
 
     let (file_layer, guard) = match log_dir.and_then(|dir| file_appender(dir).ok()) {
         Some(appender) => {
@@ -100,9 +107,9 @@ fn file_appender(dir: &Path) -> Result<RollingFileAppender, Box<dyn std::error::
 }
 
 impl Logging {
-    pub fn set_debug(&self, debug: bool) {
+    pub fn set_debug(&self, debug: bool, benchmark_debug: bool) {
         if let Some(handle) = &self.filter
-            && let Err(e) = handle.reload(filter_for(debug))
+            && let Err(e) = handle.reload(filter_for(debug, benchmark_debug))
         {
             tracing::warn!("could not change log level: {e}");
         }

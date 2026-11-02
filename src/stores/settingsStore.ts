@@ -1,9 +1,29 @@
 import { create } from "zustand";
 import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
 import { toast } from "@/stores/toastStore";
-import type { Settings, ThemePreference as GeneratedTheme } from "@/types";
+import type { BenchmarkSettings, Settings, ThemePreference as GeneratedTheme } from "@/types";
 
 export type ThemePreference = GeneratedTheme;
+
+/** Mirrors `BenchmarkSettings::default()` in Rust. */
+export const DEFAULT_BENCHMARK_SETTINGS: BenchmarkSettings = {
+  profile: "standard",
+  cpuWorkers: null,
+  gpuAdapterId: null,
+  diskMountPoint: null,
+  diskAllowWrite: true,
+  diskWriteLimit: "standard",
+  networkProvider: "cloudflare",
+  networkDataProfile: "standard",
+  networkPrivacyAccepted: false,
+  networkShareResults: false,
+  saveHistory: true,
+  cooldown: true,
+  sustainedSecs: 60,
+  showRawMeasurements: false,
+  showMethodology: true,
+  debugLogging: false,
+};
 
 /** Mirrors `Settings::default()` in Rust; replaced by the stored values on load. */
 export const DEFAULT_SETTINGS: Settings = {
@@ -20,6 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
   columnWidths: {},
   notificationsEnabled: true,
   alertRules: [],
+  benchmark: DEFAULT_BENCHMARK_SETTINGS,
   debugLogging: false,
 };
 

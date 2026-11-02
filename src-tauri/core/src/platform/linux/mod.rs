@@ -88,3 +88,25 @@ pub fn disk_io_counters(disks: &[(String, String)]) -> HashMap<String, super::Di
         })
         .collect()
 }
+
+/// AC/battery state from `/sys/class/power_supply`.
+pub fn power_state() -> crate::benchmarks::models::PowerState {
+    use super::power_supply::{Supply, classify};
+    let read = |p: std::path::PathBuf| std::fs::read_to_string(p).ok();
+    let supplies: Vec<Supply> = std::fs::read_dir("/sys/class/power_supply")
+        .map(|dir| {
+            dir.flatten()
+                .filter_map(|e| {
+                    let path = e.path();
+                    Some(Supply {
+                        kind: read(path.join("type"))?,
+                        online: read(path.join("online")),
+                        capacity: read(path.join("capacity")),
+                        status: read(path.join("status")),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    classify(&supplies)
+}

@@ -13,6 +13,8 @@ mod windows;
 // Parsers for /proc files are plain functions, compiled on every platform in
 // tests so they are exercised by CI on Windows too.
 #[cfg(any(target_os = "linux", test))]
+pub mod power_supply;
+#[cfg(any(target_os = "linux", test))]
 pub mod procfs;
 
 #[cfg(target_os = "linux")]
@@ -29,6 +31,11 @@ pub struct MemoryExtras {
     pub buffers_bytes: Option<u64>,
     pub commit_used_bytes: Option<u64>,
     pub commit_limit_bytes: Option<u64>,
+}
+
+/// AC/battery state where the OS reports it; `Unknown` otherwise.
+pub fn power_state() -> crate::benchmarks::models::PowerState {
+    imp::power_state()
 }
 
 /// Best-effort memory extras; failures degrade to "unavailable".
