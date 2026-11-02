@@ -33,6 +33,9 @@ pub fn run() {
             commands::monitoring::set_monitoring_state,
             commands::monitoring::refresh_now,
             commands::processes::get_process_details,
+            commands::control::assess_process_action,
+            commands::control::perform_process_action,
+            commands::control::reveal_executable,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

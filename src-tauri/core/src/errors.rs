@@ -15,6 +15,7 @@ pub enum ErrorKind {
     InvalidPid,
     InvalidArgument,
     ProcessProtected,
+    ActionUnavailable,
     EngineUnavailable,
 }
 
@@ -34,6 +35,10 @@ pub enum AppError {
     InvalidArgument(String),
     #[error("{0}")]
     ProcessProtected(String),
+    /// The requested action cannot be applied to this process (e.g. a
+    /// graceful close for a process without windows).
+    #[error("{0}")]
+    ActionUnavailable(String),
     #[error("The monitoring engine is not running.")]
     EngineUnavailable,
 }
@@ -48,6 +53,7 @@ impl AppError {
             Self::InvalidPid(_) => ErrorKind::InvalidPid,
             Self::InvalidArgument(_) => ErrorKind::InvalidArgument,
             Self::ProcessProtected(_) => ErrorKind::ProcessProtected,
+            Self::ActionUnavailable(_) => ErrorKind::ActionUnavailable,
             Self::EngineUnavailable => ErrorKind::EngineUnavailable,
         }
     }

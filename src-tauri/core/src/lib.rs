@@ -6,3 +6,4 @@ pub mod errors;
 pub mod models;
 pub mod monitoring;
 pub mod platform;
+pub mod process_control;

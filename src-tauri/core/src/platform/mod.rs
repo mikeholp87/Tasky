@@ -70,3 +70,19 @@ pub fn connections(pid: u32) -> Option<Vec<crate::models::Connection>> {
 pub fn process_architecture(pid: u32) -> Option<String> {
     imp::process_architecture(pid)
 }
+
+// ---------------------------------------------------------------- control
+// Raw OS operations. Callers must go through `process_control`, which adds
+// validation, PID-reuse checks and protection rules.
+
+pub(crate) use imp::{force_kill, resume, set_priority, suspend, terminate};
+
+/// Windows `IsProcessCritical`; `None` elsewhere or when it cannot be read.
+pub fn is_critical(pid: u32) -> Option<bool> {
+    imp::is_critical(pid)
+}
+
+/// Windows `%SystemRoot%`; `None` elsewhere.
+pub fn system_root() -> Option<String> {
+    imp::system_root()
+}

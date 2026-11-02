@@ -24,3 +24,40 @@ pub fn connections(_pid: u32) -> Option<Vec<crate::models::Connection>> {
 pub fn process_architecture(_pid: u32) -> Option<String> {
     None
 }
+
+fn unsupported(what: &str) -> crate::errors::AppResult<()> {
+    Err(crate::errors::AppError::UnsupportedOperation(
+        what.to_owned(),
+    ))
+}
+
+pub fn terminate(_pid: u32) -> crate::errors::AppResult<()> {
+    unsupported("Ending processes")
+}
+
+pub fn force_kill(_pid: u32) -> crate::errors::AppResult<()> {
+    unsupported("Ending processes")
+}
+
+pub fn suspend(_pid: u32) -> crate::errors::AppResult<()> {
+    unsupported("Suspending processes")
+}
+
+pub fn resume(_pid: u32) -> crate::errors::AppResult<()> {
+    unsupported("Resuming processes")
+}
+
+pub fn set_priority(
+    _pid: u32,
+    _level: crate::models::PriorityLevel,
+) -> crate::errors::AppResult<()> {
+    unsupported("Changing priority")
+}
+
+pub fn is_critical(_pid: u32) -> Option<bool> {
+    None
+}
+
+pub fn system_root() -> Option<String> {
+    None
+}

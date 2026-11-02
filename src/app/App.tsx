@@ -1,6 +1,8 @@
 import { useEffect, type ComponentType } from "react";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { startMonitoring } from "@/services/monitoring";
+import { Toaster } from "@/components/Toaster";
+import { ConfirmActionDialog } from "@/features/processes/ConfirmActionDialog";
 import { useUiStore } from "@/stores/uiStore";
 import { AlertsPage } from "@/features/alerts/AlertsPage";
 import { CpuPage } from "@/features/cpu/CpuPage";
@@ -50,6 +52,8 @@ export function App() {
           <Page />
         </main>
       </div>
+      <ConfirmActionDialog />
+      <Toaster />
     </div>
   );
 }

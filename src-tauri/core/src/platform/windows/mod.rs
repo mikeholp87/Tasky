@@ -2,12 +2,14 @@
 
 mod account;
 mod connections;
+mod control;
 mod handle;
 mod memory;
 mod process_info;
 
 pub use account::account_name;
 pub use connections::connections;
+pub use control::{force_kill, is_critical, resume, set_priority, suspend, system_root, terminate};
 pub use handle::architecture as process_architecture;
 pub use memory::memory_extras;
 pub use process_info::process_extras;

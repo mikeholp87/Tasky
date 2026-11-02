@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMetricsStore } from "@/stores/metricsStore";
@@ -82,5 +82,23 @@ describe("ProcessesPage", () => {
     await userEvent.keyboard("{Enter}");
     expect(useUiStore.getState().route).toBe("process-details");
     expect(useUiStore.getState().selectedPid).toBe(processes[1]?.pid);
+  });
+});
+
+describe("Delete key", () => {
+  it("opens the confirmation instead of killing", async () => {
+    const actions = await import("./actions");
+    const spy = vi.spyOn(actions, "requestAction").mockResolvedValue();
+    useMetricsStore.setState({
+      staticInfo: STATIC_INFO,
+      tick: makeTick(processes),
+      status: "live",
+    });
+    useProcessStore.setState({ selectedPid: processes[0]?.pid ?? null });
+    render(<ProcessesPage />);
+    screen.getByRole("grid", { name: "Processes" }).focus();
+    await userEvent.keyboard("{Delete}");
+    expect(spy).toHaveBeenCalledWith(processes[0], { type: "terminate" });
+    spy.mockRestore();
   });
 });

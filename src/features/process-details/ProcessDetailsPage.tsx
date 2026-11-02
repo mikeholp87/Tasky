@@ -1,4 +1,5 @@
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, FolderOpen, OctagonX, Pause, Play, RefreshCw, Square } from "lucide-react";
+import { requestAction, revealExecutable } from "@/features/processes/actions";
 import { useMemo } from "react";
 import type uPlot from "uplot";
 import { EmptyState } from "@/components/EmptyState";
@@ -109,6 +110,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
             >
               <RefreshCw size={14} aria-hidden /> Refresh details
             </button>
+            {live && <ActionButtons row={live} />}
           </>
         }
       />
@@ -384,4 +386,45 @@ function ConnectionsCard({
 function endpoint(address: string, port: number | null): string {
   const host = address.includes(":") ? `[${address}]` : address;
   return port == null ? host : `${host}:${port}`;
+}
+
+const actionBtn =
+  "flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50";
+
+function ActionButtons({ row }: { row: ProcessRow }) {
+  const suspended = row.status === "stopped";
+  return (
+    <>
+      <button
+        type="button"
+        className={actionBtn}
+        disabled={!row.exe}
+        onClick={() => void revealExecutable(row)}
+      >
+        <FolderOpen size={14} aria-hidden /> Open location
+      </button>
+      <button
+        type="button"
+        className={actionBtn}
+        onClick={() => void requestAction(row, { type: suspended ? "resume" : "suspend" })}
+      >
+        {suspended ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />}
+        {suspended ? "Resume" : "Suspend"}
+      </button>
+      <button
+        type="button"
+        className={actionBtn}
+        onClick={() => void requestAction(row, { type: "terminate" })}
+      >
+        <Square size={13} aria-hidden /> End process
+      </button>
+      <button
+        type="button"
+        className={`${actionBtn} text-crit hover:text-crit`}
+        onClick={() => void requestAction(row, { type: "forceKill" })}
+      >
+        <OctagonX size={14} aria-hidden /> Force end
+      </button>
+    </>
+  );
 }

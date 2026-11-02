@@ -2,7 +2,15 @@ import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useProcessStore } from "@/stores/processStore";
+import { requestAction } from "./actions";
+import { ProcessContextMenu } from "./ProcessContextMenu";
 import { ProcessTable } from "./ProcessTable";
+import type { ProcessRow } from "@/types";
+
+const withContextMenu = (row: ProcessRow, element: React.ReactElement) => (
+  <ProcessContextMenu row={row}>{element}</ProcessContextMenu>
+);
+const requestTerminate = (row: ProcessRow) => void requestAction(row, { type: "terminate" });
 import { ProcessToolbar } from "./ProcessToolbar";
 import { useProcessView } from "./useProcessView";
 
@@ -20,7 +28,14 @@ export function ProcessesPage() {
       ) : (
         <>
           <ProcessToolbar shown={items.length} total={rows.length} rows={rows} />
-          <ProcessTable items={items} ctx={ctx} selfPid={selfPid} tree={mode === "tree"} />
+          <ProcessTable
+            items={items}
+            ctx={ctx}
+            selfPid={selfPid}
+            tree={mode === "tree"}
+            renderRow={withContextMenu}
+            onRequestTerminate={requestTerminate}
+          />
         </>
       )}
     </div>

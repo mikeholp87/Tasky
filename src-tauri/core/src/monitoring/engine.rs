@@ -8,7 +8,7 @@
 //!
 //! While paused the thread blocks on the control channel and uses no CPU.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::thread::{self, JoinHandle};
@@ -16,7 +16,8 @@ use std::time::{Duration, Instant};
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    HistoryPoint, MetricsTick, MonitoringState, ProcessPoint, ProcessRow, StaticSystemInfo,
+    HistoryPoint, MetricsTick, MonitoringState, ProcessPoint, ProcessRow, ProcessState,
+    StaticSystemInfo,
 };
 use crate::monitoring::collector::{Collector, unix_millis};
 use crate::monitoring::history::RingBuffer;
@@ -43,6 +44,10 @@ struct Shared {
     latest: RwLock<Option<Arc<MetricsTick>>>,
     history: RwLock<RingBuffer<HistoryPoint>>,
     process_history: RwLock<ProcessHistory>,
+    /// Processes suspended through this app, keyed by (pid, start time).
+    /// Windows has no documented per-process "suspended" status, so the
+    /// engine reports the state it caused.
+    suspended: Mutex<HashSet<(u32, u64)>>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
 }
 
@@ -61,6 +66,7 @@ impl Engine {
             latest: RwLock::new(None),
             history: RwLock::new(RingBuffer::new(MAX_HISTORY_POINTS)),
             process_history: RwLock::new(ProcessHistory::default()),
+            suspended: Mutex::new(HashSet::new()),
             sinks: Mutex::new(HashMap::new()),
         });
         let (tx, rx) = mpsc::channel();
@@ -139,6 +145,20 @@ impl Engine {
             .get(pid, start_time)
     }
 
+    /// Records that this app suspended or resumed a process.
+    pub fn set_suspended(&self, pid: u32, start_time: u64, suspended: bool) {
+        let mut set = self
+            .shared
+            .suspended
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if suspended {
+            set.insert((pid, start_time));
+        } else {
+            set.remove(&(pid, start_time));
+        }
+    }
+
     /// Registers (or replaces) the sink with the given key. Re-subscribing
     /// after a webview reload replaces the stale channel instead of leaking it.
     pub fn subscribe(&self, key: String, sink: Arc<dyn TickSink>) {
@@ -207,6 +227,26 @@ fn run(
     tracing::info!("monitoring engine stopped");
 }
 
+/// Marks processes this app suspended, and forgets ones that have exited.
+fn apply_suspended(shared: &Shared, rows: &mut [ProcessRow]) {
+    let mut set = shared
+        .suspended
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if set.is_empty() {
+        return;
+    }
+    let mut alive = HashSet::with_capacity(set.len());
+    for row in rows.iter_mut() {
+        let key = (row.pid, row.start_time);
+        if set.contains(&key) {
+            row.status = ProcessState::Stopped;
+            alive.insert(key);
+        }
+    }
+    *set = alive;
+}
+
 fn interval(state: &MonitoringState) -> Duration {
     Duration::from_millis(u64::from(state.interval_ms))
 }
@@ -218,7 +258,8 @@ fn tick(
     state: &MonitoringState,
     last_payload: u32,
 ) -> u32 {
-    let sample = collector.sample(state.interval_ms, last_payload);
+    let mut sample = collector.sample(state.interval_ms, last_payload);
+    apply_suspended(shared, &mut sample.processes);
     let json = match serde_json::to_string(&sample) {
         Ok(json) => json,
         Err(e) => {

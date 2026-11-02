@@ -27,6 +27,7 @@
   --warn-soft: #fdf1d8;
   --crit: #b42318;
   --crit-soft: #fde4e1;
+  --danger: #b42318;
   --heat-1: rgba(14, 124, 134, 0.08);
   --heat-2: rgba(212, 140, 0, 0.16);
   --heat-3: rgba(196, 50, 36, 0.18);
@@ -53,6 +54,7 @@
   --warn-soft: #3a2c10;
   --crit: #ff7a6b;
   --crit-soft: #3d1a17;
+  --danger: #c93a28;
   --heat-1: rgba(60, 184, 194, 0.1);
   --heat-2: rgba(240, 180, 76, 0.16);
   --heat-3: rgba(255, 122, 107, 0.2);
@@ -76,6 +78,7 @@
   --color-warn-soft: var(--warn-soft);
   --color-crit: var(--crit);
   --color-crit-soft: var(--crit-soft);
+  --color-danger: var(--danger);
   --font-sans:
     "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Ubuntu", "Cantarell",
     "Noto Sans", sans-serif;

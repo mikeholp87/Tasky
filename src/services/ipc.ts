@@ -9,22 +9,27 @@ import type {
   HistoryPoint,
   MetricsTick,
   MonitoringState,
+  ActionOutcome,
+  ProcessAction,
   ProcessDetails,
+  ProtectionAssessment,
   StaticSystemInfo,
 } from "@/types";
 
 export const isBackendAvailable = (): boolean => isTauri();
 
-const ERROR_KINDS: readonly ErrorKind[] = [
-  "permissionDenied",
-  "processNotFound",
-  "unsupportedOperation",
-  "systemQueryFailed",
-  "invalidPid",
-  "invalidArgument",
-  "processProtected",
-  "engineUnavailable",
-];
+// A Record (not an array) so adding a kind in Rust is a compile error here.
+const ERROR_KINDS: Record<ErrorKind, true> = {
+  permissionDenied: true,
+  processNotFound: true,
+  unsupportedOperation: true,
+  systemQueryFailed: true,
+  invalidPid: true,
+  invalidArgument: true,
+  processProtected: true,
+  actionUnavailable: true,
+  engineUnavailable: true,
+};
 
 function isAppError(value: unknown): value is AppError {
   if (typeof value !== "object" || value === null) return false;
@@ -32,7 +37,7 @@ function isAppError(value: unknown): value is AppError {
   return (
     typeof v.message === "string" &&
     typeof v.kind === "string" &&
-    (ERROR_KINDS as readonly string[]).includes(v.kind)
+    Object.hasOwn(ERROR_KINDS, v.kind)
   );
 }
 
@@ -72,6 +77,19 @@ export const backend = {
   refreshNow: () => call<void>("refresh_now"),
 
   getProcessDetails: (pid: number) => call<ProcessDetails>("get_process_details", { pid }),
+
+  assessProcessAction: (pid: number, action: ProcessAction) =>
+    call<ProtectionAssessment>("assess_process_action", { pid, action }),
+
+  performProcessAction: (
+    pid: number,
+    startTime: number,
+    action: ProcessAction,
+    acknowledgeWarnings: boolean,
+  ) =>
+    call<ActionOutcome>("perform_process_action", { pid, startTime, action, acknowledgeWarnings }),
+
+  revealExecutable: (pid: number) => call<void>("reveal_executable", { pid }),
 
   /**
    * Streams metrics ticks to `onTick`. Resolves with the latest tick already
