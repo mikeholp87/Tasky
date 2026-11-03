@@ -32,8 +32,19 @@ export function PreflightDialog() {
   return launch ? <PreflightContent key={launch.join(",")} kinds={launch} /> : null;
 }
 
-function PreflightContent({ kinds }: { kinds: BenchmarkKind[] }) {
+function PreflightContent({ kinds: requested }: { kinds: BenchmarkKind[] }) {
   const close = useBenchmarkStore((s) => s.closeLaunch);
+  const privacyAccepted = useSettingsStore((s) => s.benchmark.networkPrivacyAccepted);
+  const updateSettings = useSettingsStore((s) => s.update);
+  const isFull = requested.length > 1;
+  // The internet test never runs as part of a full benchmark unless ticked.
+  const [includeNetwork, setIncludeNetwork] = useState(false);
+  const [consent, setConsent] = useState(privacyAccepted);
+  const kinds: BenchmarkKind[] =
+    isFull && includeNetwork && !requested.includes("network")
+      ? [...requested, "network"]
+      : requested;
+  const hasNetwork = kinds.includes("network");
   const capabilities = useBenchmarkStore((s) => s.capabilities);
   const defaultProfile = useSettingsStore((s) => s.benchmark.profile);
   const [profile, setProfile] = useState<BenchmarkProfile>(defaultProfile);
@@ -66,6 +77,11 @@ function PreflightContent({ kinds }: { kinds: BenchmarkKind[] }) {
   useEffect(() => () => clearTimeout(waitTimer.current), []);
 
   const start = async () => {
+    if (hasNetwork && !consent) return;
+    if (hasNetwork && !privacyAccepted) {
+      const benchmark = useSettingsStore.getState().benchmark;
+      updateSettings({ benchmark: { ...benchmark, networkPrivacyAccepted: true } });
+    }
     setStarting(true);
     const ok = await startRun(request);
     setStarting(false);
@@ -172,9 +188,48 @@ function PreflightContent({ kinds }: { kinds: BenchmarkKind[] }) {
               </dl>
             )}
 
-            {report?.warnings.map((w) => (
+            {isFull && (
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={includeNetwork}
+                  onChange={(e) => setIncludeNetwork(e.target.checked)}
+                />
+                Include the internet test (uses internet data)
+              </label>
+            )}
+
+            {hasNetwork && (
+              <div className="space-y-2 rounded-md border border-border p-3">
+                <p className="font-medium">About the internet test</p>
+                <ul className="list-disc space-y-1 pl-5 text-fg-muted">
+                  <li>
+                    It connects to Cloudflare&apos;s speed test servers, which necessarily see this
+                    device&apos;s public IP address.
+                  </li>
+                  <li>
+                    It uses internet data (amount shown above) and is never run automatically.
+                  </li>
+                  <li>
+                    Cloudflare can keep anonymized measurements; this is off unless you enable it in
+                    Settings → Benchmarks.
+                  </li>
+                  <li>The test is optional. Results stay on this computer.</li>
+                </ul>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={consent}
+                    onChange={(e) => setConsent(e.target.checked)}
+                  />
+                  I understand and want to run the internet test
+                </label>
+              </div>
+            )}
+
+            {report?.warnings.map((w, i) => (
               <p
-                key={w.code}
+                key={`${w.code}-${i}`}
                 role="alert"
                 className={cn("flex gap-2 rounded-md bg-warn-soft p-3 text-warn")}
               >
@@ -206,7 +261,7 @@ function PreflightContent({ kinds }: { kinds: BenchmarkKind[] }) {
             <button
               type="button"
               className={primaryButton}
-              disabled={!report || starting || waiting}
+              disabled={!report || starting || waiting || (hasNetwork && !consent)}
               onClick={() => void start()}
             >
               {busy ? "Run anyway" : "Start benchmark"}

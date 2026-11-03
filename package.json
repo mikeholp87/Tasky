@@ -19,6 +19,7 @@
     "check:all": "npm run typecheck && npm run lint && npm run test && cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace"
   },
   "dependencies": {
+    "@cloudflare/speedtest": "1.15.0",
     "@tanstack/react-virtual": "^3.14.25",
     "@tauri-apps/api": "^2.12.4",
     "clsx": "^2.1.1",

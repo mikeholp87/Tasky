@@ -114,6 +114,43 @@ describe("BenchmarksPage", () => {
     expect(request.simulate).toBe(false);
   });
 
+  it("requires privacy consent before the internet test", async () => {
+    const user = userEvent.setup();
+    backend.runBenchmarkPreflight.mockResolvedValue({
+      ...PREFLIGHT,
+      loadLevel: "idle",
+      warnings: [],
+      estimatedNetworkBytes: 200_000_000,
+    });
+    render(<BenchmarksPage />);
+    await user.click(screen.getByRole("button", { name: "Run Internet test" }));
+    expect(await screen.findByText(/public IP address/)).toBeInTheDocument();
+    const start = await screen.findByRole("button", { name: "Start benchmark" });
+    expect(start).toBeDisabled();
+    await user.click(screen.getByLabelText(/I understand/));
+    expect(start).toBeEnabled();
+    await user.click(start);
+    await waitFor(() => expect(backend.startBenchmark).toHaveBeenCalledTimes(1));
+    const request = backend.startBenchmark.mock.calls[0]?.[0] as BenchmarkRequest;
+    expect(request.kinds).toEqual(["network"]);
+    expect(request.networkShareResults).toBe(false);
+  });
+
+  it("never adds the internet test to a full benchmark unless ticked", async () => {
+    const user = userEvent.setup();
+    backend.runBenchmarkPreflight.mockResolvedValue({
+      ...PREFLIGHT,
+      loadLevel: "idle",
+      warnings: [],
+    });
+    render(<BenchmarksPage />);
+    await user.click(screen.getByRole("button", { name: "Run full benchmark" }));
+    await user.click(await screen.findByRole("button", { name: "Start benchmark" }));
+    await waitFor(() => expect(backend.startBenchmark).toHaveBeenCalledTimes(1));
+    const request = backend.startBenchmark.mock.calls[0]?.[0] as BenchmarkRequest;
+    expect(request.kinds).toEqual(["cpu", "gpu", "disk"]);
+  });
+
   it("shows accessible progress and cancels the active run", async () => {
     const user = userEvent.setup();
     render(<BenchmarksPage />);

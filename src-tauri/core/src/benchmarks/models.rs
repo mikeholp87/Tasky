@@ -151,6 +151,9 @@ pub struct BenchmarkRequest {
     #[serde(default)]
     pub disk_write_limit: DiskWriteLimit,
     pub network_data_profile: NetworkDataProfile,
+    /// Let the internet-test provider keep anonymized results.
+    #[serde(default)]
+    pub network_share_results: bool,
     /// Extended-profile sustained phase length; `None` = default.
     pub sustained_secs: Option<u32>,
     /// Pause between heavy categories (skippable while it runs).
@@ -216,6 +219,7 @@ pub enum BenchmarkEvent {
         token: String,
         max_bytes: u64,
         share_results: bool,
+        measurements: Vec<NetworkMeasurementSpec>,
     },
     #[serde(rename_all = "camelCase")]
     Finished {
@@ -878,4 +882,78 @@ pub struct DiskLocation {
     pub available_bytes: u64,
     /// Holds this app's data folder (the default location).
     pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum NetworkMeasurementKind {
+    Latency,
+    Download,
+    Upload,
+}
+
+/// One step of the internet-test plan, decided in Rust (so the data limit
+/// is enforced here) and executed by the provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkMeasurementSpec {
+    pub kind: NetworkMeasurementKind,
+    /// Payload bytes per request (0 for latency).
+    pub bytes: u64,
+    /// Requests (or pings) in this step.
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct TransferSample {
+    pub bytes: f64,
+    /// Transfer duration as measured by the provider (ms).
+    pub duration_ms: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PacketLossSample {
+    pub sent: u32,
+    pub lost: u32,
+}
+
+/// Raw measurements a WebView provider submits. Rust validates every value
+/// and computes all statistics itself.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", default)]
+pub struct NetworkSubmission {
+    pub download: Vec<TransferSample>,
+    pub upload: Vec<TransferSample>,
+    pub idle_latency_ms: Vec<f64>,
+    pub download_loaded_latency_ms: Vec<f64>,
+    pub upload_loaded_latency_ms: Vec<f64>,
+    pub packet_loss: Option<PacketLossSample>,
+    /// Set when the provider failed; nothing else is used then.
+    pub error: Option<String>,
+    pub provider_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkLiveValue {
+    pub series: String,
+    pub value: f64,
+}
+
+/// Progress from a WebView provider while it runs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkProgress {
+    pub fraction: f32,
+    pub label: String,
+    pub live: Vec<NetworkLiveValue>,
 }

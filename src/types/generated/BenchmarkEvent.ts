@@ -2,8 +2,9 @@
 import type { BenchmarkPhase } from "./BenchmarkPhase";
 import type { BenchmarkProgress } from "./BenchmarkProgress";
 import type { FailureInfo } from "./FailureInfo";
+import type { NetworkMeasurementSpec } from "./NetworkMeasurementSpec";
 
 /**
  * Messages streamed to the UI over the progress channel.
  */
-export type BenchmarkEvent = { "type": "progress" } & BenchmarkProgress | { "type": "networkProviderRequest", runId: string, token: string, maxBytes: number, shareResults: boolean, } | { "type": "finished", runId: string, phase: BenchmarkPhase, resultId: string | null, error: FailureInfo | null, };
+export type BenchmarkEvent = { "type": "progress" } & BenchmarkProgress | { "type": "networkProviderRequest", runId: string, token: string, maxBytes: number, shareResults: boolean, measurements: Array<NetworkMeasurementSpec>, } | { "type": "finished", runId: string, phase: BenchmarkPhase, resultId: string | null, error: FailureInfo | null, };

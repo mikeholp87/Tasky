@@ -16,6 +16,7 @@ use tauri_plugin_window_state::{StateFlags, WindowExt};
 use tm_core::benchmarks::environment::SystemProbe;
 use tm_core::benchmarks::history::HistoryStore;
 use tm_core::benchmarks::mock::MockFactory;
+use tm_core::benchmarks::network::inbox::NetworkInbox;
 use tm_core::benchmarks::{
     BenchmarkCoordinator, HardwareFactory, SIMULATED_STEP, simulation_enabled,
 };
@@ -66,10 +67,12 @@ pub fn run() {
                 .map(|d| d.join("benchmarks").join("results"));
             // Default storage-test folder: inside the app cache, on the app's volume.
             let disk_dir = paths.app_cache_dir().ok().map(|d| d.join("benchmark"));
+            let network_inbox = Arc::new(NetworkInbox::default());
             let benchmarks = BenchmarkCoordinator::new(
                 Arc::clone(&engine) as Arc<dyn SystemProbe>,
                 Arc::new(HardwareFactory {
                     disk_dir: disk_dir.clone(),
+                    network_inbox: Arc::clone(&network_inbox),
                 }),
                 Arc::new(MockFactory::new(SIMULATED_STEP)),
                 Arc::new(HistoryStore::new(history_dir)),
@@ -96,6 +99,7 @@ pub fn run() {
             let state = AppState {
                 engine: Arc::clone(&engine),
                 benchmarks,
+                network_inbox,
                 settings,
                 logging,
                 visibility: Arc::new(WindowVisibility::default()),
@@ -179,6 +183,8 @@ pub fn run() {
             commands::benchmarks::list_benchmark_history,
             commands::benchmarks::get_benchmark_result,
             commands::benchmarks::delete_benchmark_result,
+            commands::benchmarks::report_network_progress,
+            commands::benchmarks::submit_network_samples,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

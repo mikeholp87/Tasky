@@ -16,6 +16,7 @@ const REQUEST: BenchmarkRequest = {
   diskMountPoint: null,
   diskAllowWrite: false,
   diskWriteLimit: "standard",
+  networkShareResults: false,
   networkDataProfile: "standard",
   sustainedSecs: 60,
   cooldown: true,

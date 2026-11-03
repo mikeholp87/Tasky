@@ -16,6 +16,7 @@ mod hardware_tests;
 pub mod history;
 pub mod mock;
 pub mod models;
+pub mod network;
 pub mod progress;
 pub mod scoring;
 pub mod statistics;
@@ -28,8 +29,8 @@ pub use coordinator::BenchmarkCoordinator;
 pub use scoring::SCORE_VERSION;
 
 use crate::errors::{AppError, AppResult};
-use models::{BenchmarkKind, BenchmarkRequest, CategoryResult, CategoryStatus, Detail};
-use suite::{BenchmarkFactory, CategoryBenchmark, RunContext};
+use models::{BenchmarkKind, BenchmarkRequest};
+use suite::{BenchmarkFactory, CategoryBenchmark};
 
 /// Stored-record layout version.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -98,34 +99,15 @@ pub fn validate_request(
     Ok(request)
 }
 
-/// Real-hardware benchmarks. Categories not implemented on this platform
-/// report `Unsupported` rather than inventing results.
+/// Real-hardware benchmarks. A category the hardware cannot run reports
+/// `Unsupported` rather than inventing results.
 #[derive(Default)]
 pub struct HardwareFactory {
     /// App-owned benchmark folder on the app's own volume (the default
     /// storage-test location).
     pub disk_dir: Option<std::path::PathBuf>,
-}
-
-struct NotAvailable(BenchmarkKind);
-
-impl CategoryBenchmark for NotAvailable {
-    fn kind(&self) -> BenchmarkKind {
-        self.0
-    }
-
-    fn run(&mut self, _ctx: &mut RunContext<'_, '_>) -> AppResult<CategoryResult> {
-        let mut r = CategoryResult::empty(self.0, CategoryStatus::Unsupported);
-        r.details.push(Detail::new(
-            "reason",
-            "Status",
-            format!(
-                "{} benchmark is not available in this build.",
-                self.0.label()
-            ),
-        ));
-        Ok(r)
-    }
+    /// Where the WebView internet-test provider delivers its results.
+    pub network_inbox: std::sync::Arc<network::inbox::NetworkInbox>,
 }
 
 impl BenchmarkFactory for HardwareFactory {
@@ -140,7 +122,11 @@ impl BenchmarkFactory for HardwareFactory {
             BenchmarkKind::Disk => Box::new(disk::DiskBenchmark {
                 app_dir: self.disk_dir.clone(),
             }),
-            _ => Box::new(NotAvailable(kind)),
+            BenchmarkKind::Network => Box::new(network::NetworkBenchmark {
+                provider: Box::new(network::WebViewCloudflareProvider {
+                    inbox: std::sync::Arc::clone(&self.network_inbox),
+                }),
+            }),
         })
     }
 
@@ -149,7 +135,7 @@ impl BenchmarkFactory for HardwareFactory {
             BenchmarkKind::Cpu => cpu::estimate_secs(request),
             BenchmarkKind::Gpu => gpu::estimate_secs(request),
             BenchmarkKind::Disk => disk::estimate_secs(request),
-            _ => 0,
+            BenchmarkKind::Network => network::estimate_secs(request.network_data_profile),
         }
     }
 }
@@ -166,6 +152,7 @@ pub fn coordinator_test_request() -> BenchmarkRequest {
         disk_allow_write: false,
         disk_write_limit: models::DiskWriteLimit::default(),
         network_data_profile: models::NetworkDataProfile::DataSaver,
+        network_share_results: false,
         sustained_secs: None,
         cooldown: false,
         simulate: false,
@@ -191,6 +178,7 @@ mod tests {
             disk_allow_write: false,
             disk_write_limit: models::DiskWriteLimit::default(),
             network_data_profile: NetworkDataProfile::Standard,
+            network_share_results: false,
             sustained_secs: None,
             cooldown: true,
             simulate: false,

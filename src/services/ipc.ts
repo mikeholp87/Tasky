@@ -10,6 +10,8 @@ import type {
   BenchmarkRecord,
   BenchmarkRequest,
   BenchmarkSummary,
+  NetworkProgress,
+  NetworkSubmission,
   PreflightReport,
   ErrorKind,
   HistoryPoint,
@@ -148,4 +150,8 @@ export const backend = {
   listBenchmarkHistory: () => call<BenchmarkSummary[]>("list_benchmark_history"),
   getBenchmarkResult: (id: string) => call<BenchmarkRecord>("get_benchmark_result", { id }),
   deleteBenchmarkResult: (id: string) => call<void>("delete_benchmark_result", { id }),
+  reportNetworkProgress: (token: string, progress: NetworkProgress) =>
+    call<void>("report_network_progress", { token, progress }),
+  submitNetworkSamples: (token: string, samples: NetworkSubmission) =>
+    call<void>("submit_network_samples", { token, samples }),
 };

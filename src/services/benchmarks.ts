@@ -4,6 +4,7 @@
  * run in the backend.
  */
 import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
+import { runNetworkProvider } from "@/services/networkProvider";
 import { isTerminal, useBenchmarkStore } from "@/stores/benchmarkStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { toast } from "@/stores/toastStore";
@@ -31,6 +32,7 @@ export function buildRequest(kinds: BenchmarkKind[], options: RunOptions = {}): 
     diskAllowWrite: b.diskAllowWrite,
     diskWriteLimit: b.diskWriteLimit,
     networkDataProfile: b.networkDataProfile,
+    networkShareResults: b.networkShareResults,
     sustainedSecs: b.sustainedSecs,
     cooldown: b.cooldown,
     simulate: options.simulate ?? false,
@@ -68,6 +70,10 @@ export function preflight(request: BenchmarkRequest): Promise<PreflightReport> {
 function onEvent(event: BenchmarkEvent): void {
   const store = useBenchmarkStore.getState();
   store.applyEvent(event);
+  if (event.type === "networkProviderRequest" && event.runId === store.run?.runId) {
+    void runNetworkProvider(event);
+    return;
+  }
   if (event.type === "finished" && isTerminal(event.phase)) {
     void refreshHistory();
     if (event.phase === "completed") {

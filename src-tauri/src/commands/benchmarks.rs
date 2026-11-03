@@ -8,7 +8,7 @@ use tauri::State;
 use tauri::ipc::Channel;
 use tm_core::benchmarks::models::{
     BenchmarkCapabilities, BenchmarkEvent, BenchmarkRecord, BenchmarkRequest, BenchmarkSummary,
-    PreflightReport,
+    NetworkProgress, NetworkSubmission, PreflightReport,
 };
 use tm_core::benchmarks::progress::ProgressSink;
 use tm_core::errors::{AppError, AppResult};
@@ -100,4 +100,26 @@ pub async fn get_benchmark_result(
 pub async fn delete_benchmark_result(state: State<'_, AppState>, id: String) -> AppResult<()> {
     let benchmarks = Arc::clone(&state.benchmarks);
     blocking(move || benchmarks.history().delete(&id)).await
+}
+
+/// Progress from the WebView internet-test provider. `token` must match the
+/// running test's request.
+#[tauri::command]
+pub fn report_network_progress(
+    state: State<'_, AppState>,
+    token: String,
+    progress: NetworkProgress,
+) -> AppResult<()> {
+    state.network_inbox.progress(&token, progress)
+}
+
+/// Final raw samples from the WebView provider; validated and analyzed in
+/// `tm-core` (nothing is trusted from the WebView).
+#[tauri::command]
+pub fn submit_network_samples(
+    state: State<'_, AppState>,
+    token: String,
+    samples: NetworkSubmission,
+) -> AppResult<()> {
+    state.network_inbox.submit(&token, samples)
 }

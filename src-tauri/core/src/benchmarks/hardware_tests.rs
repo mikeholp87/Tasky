@@ -27,6 +27,7 @@ pub fn run(request: BenchmarkRequest) -> BenchmarkRecord {
         engine.clone(),
         Arc::new(HardwareFactory {
             disk_dir: Some(dir.join("app-benchmark")),
+            ..HardwareFactory::default()
         }),
         Arc::new(MockFactory::new(Duration::from_millis(1))),
         Arc::new(HistoryStore::new(Some(dir.clone()))),

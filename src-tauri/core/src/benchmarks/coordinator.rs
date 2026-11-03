@@ -617,6 +617,7 @@ mod tests {
             disk_allow_write: false,
             disk_write_limit: crate::benchmarks::models::DiskWriteLimit::default(),
             network_data_profile: NetworkDataProfile::DataSaver,
+            network_share_results: false,
             sustained_secs: None,
             cooldown: false,
             simulate: true,

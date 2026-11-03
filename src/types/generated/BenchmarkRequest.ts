@@ -26,6 +26,10 @@ diskMountPoint: string | null, diskAllowWrite: boolean,
  */
 diskWriteLimit: DiskWriteLimit, networkDataProfile: NetworkDataProfile, 
 /**
+ * Let the internet-test provider keep anonymized results.
+ */
+networkShareResults: boolean, 
+/**
  * Extended-profile sustained phase length; `None` = default.
  */
 sustainedSecs: number | null, 
