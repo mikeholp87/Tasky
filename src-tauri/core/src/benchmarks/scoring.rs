@@ -19,7 +19,8 @@
 //!
 //! Reference values are fixed constants per score version: round numbers
 //! close to what the development machine (a 2024 mid-range laptop, Intel
-//! Core 7 150U, 10 cores / 12 threads, on AC power) measured, so a score of
+//! Core 7 150U with integrated Intel Graphics, 10 cores / 12 threads, on AC
+//! power) measured, so a score of
 //! about 1000 means "comparable to that laptop". They are arbitrary anchors,
 //! not derived from and not comparable with any other benchmark product. Changing any constant or the
 //! formula requires bumping [`SCORE_VERSION`].
@@ -49,9 +50,9 @@ pub const REFERENCES: &[(&str, f64)] = &[
     ("cpu.single.lz4.decompress", 2_500.0),
     ("cpu.multi.lz4.decompress", 9_000.0),
     // GPU (GFLOP/s, GB/s)
-    ("gpu.compute.fma", 5_000.0),
-    ("gpu.memory.copy", 200.0),
-    ("gpu.memory.readwrite", 200.0),
+    ("gpu.compute.fma", 1_000.0),
+    ("gpu.memory.copy", 30.0),
+    ("gpu.memory.readwrite", 30.0),
     // Disk (MB/s, IOPS)
     ("disk.seq.read", 2_000.0),
     ("disk.seq.write", 1_500.0),

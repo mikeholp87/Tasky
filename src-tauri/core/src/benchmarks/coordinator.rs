@@ -51,6 +51,8 @@ pub struct BenchmarkCoordinator {
     /// Whether any CPU temperature sensor is readable (probed once; sensor
     /// enumeration can be slow on Windows).
     temperature_available: OnceLock<bool>,
+    /// GPU adapters (enumeration creates a graphics instance; done once).
+    gpu_adapters: OnceLock<Vec<super::models::GpuAdapterInfo>>,
 }
 
 struct Outcome {
@@ -76,6 +78,7 @@ impl BenchmarkCoordinator {
             save_history: AtomicBool::new(true),
             active: Mutex::new(None),
             temperature_available: OnceLock::new(),
+            gpu_adapters: OnceLock::new(),
         })
     }
 
@@ -110,6 +113,10 @@ impl BenchmarkCoordinator {
                 .temperature_available
                 .get_or_init(|| super::thermal::ThermalProbe::new().cpu().is_some()),
             power_available: self.probe.power().source != super::models::PowerSource::Unknown,
+            gpu_adapters: self
+                .gpu_adapters
+                .get_or_init(super::gpu::list_adapters)
+                .clone(),
             running_run_id: self.running_run_id(),
         }
     }
@@ -143,9 +150,19 @@ impl BenchmarkCoordinator {
             let heavy = request.kinds.iter().filter(|k| k.is_heavy()).count() as u32;
             estimated_secs += heavy.saturating_sub(1) * request.profile.cooldown_secs();
         }
+        let mut warnings = preflight_warnings(&env);
+        if request.profile == super::models::BenchmarkProfile::Extended
+            && request.kinds.contains(&BenchmarkKind::Gpu)
+            && !request.simulate
+        {
+            warnings.push(BenchmarkWarning::new(
+                WarningCode::SustainedLoad,
+                "Extended GPU benchmarks generate sustained load and may increase temperature \n                 and power consumption.",
+            ));
+        }
         Ok(PreflightReport {
             load_level: load_level(&env),
-            warnings: preflight_warnings(&env),
+            warnings,
             environment: env,
             estimated_secs,
             estimated_disk_write_bytes: 0,

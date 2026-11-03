@@ -15,6 +15,8 @@ lz4_flex = { version = "0.14", default-features = false, features = ["std", "saf
 sysinfo = { version = "0.40", default-features = false, features = ["component", "disk", "network", "system", "user"] }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
+wgpu = { version = "30", default-features = false, features = ["std", "wgsl", "dx12", "vulkan", "metal"] }
+pollster = "1"
 tracing = "0.1"
 
 [dev-dependencies]

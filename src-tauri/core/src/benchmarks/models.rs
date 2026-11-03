@@ -350,6 +350,7 @@ pub enum WarningCode {
     LatencyIncreasedUnderLoad,
     PartialBenchmark,
     Simulated,
+    SustainedLoad,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -691,6 +692,7 @@ pub struct BenchmarkCapabilities {
     pub simulation_available: bool,
     pub temperature_available: bool,
     pub power_available: bool,
+    pub gpu_adapters: Vec<GpuAdapterInfo>,
     pub running_run_id: Option<String>,
 }
 
@@ -821,4 +823,38 @@ impl BenchmarkSettings {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum GpuDeviceType {
+    Discrete,
+    Integrated,
+    Virtual,
+    Software,
+    Other,
+}
+
+/// A GPU adapter as seen through one graphics API. The same physical GPU
+/// can appear once per backend (e.g. DirectX 12 and Vulkan).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GpuAdapterInfo {
+    /// Stable id: `backend:vendor:device:ordinal`.
+    pub id: String,
+    pub name: String,
+    pub vendor: String,
+    /// PCI vendor/device ids in hex, when the backend reports them.
+    pub vendor_id: String,
+    pub device_id: String,
+    pub backend: String,
+    pub device_type: GpuDeviceType,
+    pub driver: String,
+    pub driver_info: String,
+    pub timestamp_queries: bool,
+    pub max_storage_buffer_mib: u32,
+    /// The adapter the system reports as high-performance.
+    pub preferred: bool,
 }

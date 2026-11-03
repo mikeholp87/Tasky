@@ -1,11 +1,13 @@
 import { Download, Monitor, Moon, RotateCcw, Sun } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/PageHeader";
 import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
 import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
 import { togglePaused } from "@/services/monitoring";
+import { loadBenchmarkData } from "@/services/benchmarks";
+import { useBenchmarkStore } from "@/stores/benchmarkStore";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useSettingsStore, type ThemePreference } from "@/stores/settingsStore";
 import { toast } from "@/stores/toastStore";
@@ -13,6 +15,7 @@ import type {
   BenchmarkProfile,
   BenchmarkSettings,
   DiskWriteLimit,
+  GpuAdapterInfo,
   NetworkDataProfile,
 } from "@/types";
 import { useUiStore } from "@/stores/uiStore";
@@ -223,11 +226,19 @@ const DATA_PROFILES: { id: NetworkDataProfile; label: string }[] = [
   { id: "maximum", label: "Maximum throughput (≈1 GB)" },
 ];
 
+// Stable fallback: a fresh `[]` in a store selector would re-render forever.
+const NO_ADAPTERS: GpuAdapterInfo[] = [];
+
 function BenchmarkSection() {
   const b = useSettingsStore((s) => s.benchmark);
   const update = useSettingsStore((s) => s.update);
   const logical = useMetricsStore((m) => m.staticInfo?.logicalCoreCount ?? 0);
   const set = (patch: Partial<BenchmarkSettings>) => update({ benchmark: { ...b, ...patch } });
+  const adapters = useBenchmarkStore((s) => s.capabilities?.gpuAdapters ?? NO_ADAPTERS);
+  const capabilitiesLoaded = useBenchmarkStore((s) => s.capabilities !== null);
+  useEffect(() => {
+    if (!capabilitiesLoaded) void loadBenchmarkData();
+  }, [capabilitiesLoaded]);
   const workerOptions = Array.from({ length: Math.min(logical, 256) }, (_, i) => i + 1);
 
   return (
@@ -263,6 +274,26 @@ function BenchmarkSection() {
           {workerOptions.map((n) => (
             <option key={n} value={n}>
               {n}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field
+        label="GPU to benchmark"
+        htmlFor="bench-gpu"
+        description="Automatic picks the GPU the system reports as high-performance."
+      >
+        <select
+          id="bench-gpu"
+          value={b.gpuAdapterId ?? "auto"}
+          onChange={(e) => set({ gpuAdapterId: e.target.value === "auto" ? null : e.target.value })}
+          className={cn(selectCls, "max-w-64")}
+        >
+          <option value="auto">Automatic</option>
+          {adapters.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} · {a.backend}
+              {a.deviceType === "software" ? " (software)" : ""}
             </option>
           ))}
         </select>

@@ -3,11 +3,11 @@ import { useMemo } from "react";
 import type uPlot from "uplot";
 import { LineChart, type LineSeries } from "@/components/charts/LineChart";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { KeyValueList } from "@/components/ui/KeyValueList";
+import { KeyValueList, type KeyValueItem } from "@/components/ui/KeyValueList";
 import { isTerminal, latestByKind, liveSeries, useBenchmarkStore } from "@/stores/benchmarkStore";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { BenchmarkKind, MetricUnit } from "@/types";
+import type { BenchmarkKind, GpuAdapterInfo, MetricUnit, StaticSystemInfo } from "@/types";
 import { formatBytes } from "@/utils/format";
 import { KIND_LABELS, formatMetricText } from "../format";
 import { METHODOLOGY } from "../methodology";
@@ -72,22 +72,58 @@ function LiveCharts({ kind }: { kind: BenchmarkKind }) {
   );
 }
 
-function HardwareCard({ kind }: { kind: BenchmarkKind }) {
-  const info = useMetricsStore((s) => s.staticInfo);
-  const items =
-    kind === "cpu" && info
+const NO_ADAPTERS: GpuAdapterInfo[] = [];
+
+const GPU_TYPES: Record<GpuAdapterInfo["deviceType"], string> = {
+  discrete: "Discrete GPU",
+  integrated: "Integrated GPU",
+  virtual: "Virtual GPU",
+  software: "Software renderer",
+  other: "Other",
+};
+
+function hardwareItems(
+  kind: BenchmarkKind,
+  info: StaticSystemInfo | null,
+  adapters: readonly GpuAdapterInfo[],
+  selectedGpu: string | null,
+): KeyValueItem[] {
+  if (kind === "gpu") {
+    // Mirrors the backend's default selection (see gpu::select).
+    const gpu =
+      adapters.find((a) => a.id === selectedGpu) ??
+      adapters.find((a) => a.preferred && a.deviceType !== "software") ??
+      adapters.find((a) => a.deviceType !== "software");
+    if (!gpu) return [{ label: "GPU", value: "No compatible adapter detected" }];
+    return [
+      { label: "GPU", value: gpu.name },
+      { label: "Vendor", value: gpu.vendor },
+      { label: "Backend", value: gpu.backend },
+      { label: "Device type", value: GPU_TYPES[gpu.deviceType] },
+      { label: "Driver", value: [gpu.driver, gpu.driverInfo].filter(Boolean).join(" ") || "—" },
+      { label: "GPU timing", value: gpu.timestampQueries ? "Timestamp queries" : "Wall clock" },
+    ];
+  }
+  return kind === "cpu" && info
+    ? [
+        { label: "Processor", value: info.cpuBrand },
+        { label: "Physical cores", value: info.physicalCoreCount?.toString() ?? "—" },
+        { label: "Logical processors", value: String(info.logicalCoreCount) },
+        { label: "Memory", value: formatBytes(info.totalMemoryBytes) },
+      ]
+    : info
       ? [
-          { label: "Processor", value: info.cpuBrand },
-          { label: "Physical cores", value: info.physicalCoreCount?.toString() ?? "—" },
-          { label: "Logical processors", value: String(info.logicalCoreCount) },
+          { label: "Operating system", value: info.longOsVersion ?? info.osName ?? "—" },
           { label: "Memory", value: formatBytes(info.totalMemoryBytes) },
         ]
-      : info
-        ? [
-            { label: "Operating system", value: info.longOsVersion ?? info.osName ?? "—" },
-            { label: "Memory", value: formatBytes(info.totalMemoryBytes) },
-          ]
-        : [];
+      : [];
+}
+
+function HardwareCard({ kind }: { kind: BenchmarkKind }) {
+  const info = useMetricsStore((s) => s.staticInfo);
+  const adapters = useBenchmarkStore((s) => s.capabilities?.gpuAdapters ?? NO_ADAPTERS);
+  const selectedGpu = useSettingsStore((s) => s.benchmark.gpuAdapterId);
+  const items = hardwareItems(kind, info, adapters, selectedGpu);
   return (
     <Card>
       <CardHeader title="Hardware" />

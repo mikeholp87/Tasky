@@ -9,6 +9,9 @@ pub mod confidence;
 pub mod coordinator;
 pub mod cpu;
 pub mod environment;
+pub mod gpu;
+#[cfg(test)]
+mod hardware_tests;
 pub mod history;
 pub mod mock;
 pub mod models;
@@ -127,6 +130,7 @@ impl BenchmarkFactory for HardwareFactory {
     ) -> AppResult<Box<dyn CategoryBenchmark>> {
         Ok(match kind {
             BenchmarkKind::Cpu => Box::new(cpu::CpuBenchmark),
+            BenchmarkKind::Gpu => Box::new(gpu::GpuBenchmark),
             _ => Box::new(NotAvailable(kind)),
         })
     }
@@ -134,6 +138,7 @@ impl BenchmarkFactory for HardwareFactory {
     fn estimate_secs(&self, kind: BenchmarkKind, request: &BenchmarkRequest) -> u32 {
         match kind {
             BenchmarkKind::Cpu => cpu::estimate_secs(request),
+            BenchmarkKind::Gpu => gpu::estimate_secs(request),
             _ => 0,
         }
     }

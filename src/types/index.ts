@@ -31,6 +31,8 @@ export type { EngineStats } from "./generated/EngineStats";
 export type { EnvironmentSnapshot } from "./generated/EnvironmentSnapshot";
 export type { ErrorKind } from "./generated/ErrorKind";
 export type { FailureInfo } from "./generated/FailureInfo";
+export type { GpuAdapterInfo } from "./generated/GpuAdapterInfo";
+export type { GpuDeviceType } from "./generated/GpuDeviceType";
 export type { HardwareFingerprint } from "./generated/HardwareFingerprint";
 export type { HistoryPoint } from "./generated/HistoryPoint";
 export type { InterferenceReport } from "./generated/InterferenceReport";
