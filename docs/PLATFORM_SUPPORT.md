@@ -32,6 +32,10 @@
 | Priority                           | Idle … High priority classes (no Real-time)                                            | nice 19 … −10; raising needs `CAP_SYS_NICE`     |
 | Critical-process detection         | `IsProcessCritical` + verified System32 paths                                          | PID 1, kernel threads                           |
 | Tray, notifications, autostart     | ✓                                                                                      | ✓ (needs a tray-capable desktop / AppIndicator) |
+| Benchmarks: GPU backend            | Direct3D 12, Vulkan                                                                    | Vulkan (driver + loader required)               |
+| Benchmarks: direct storage I/O     | `FILE_FLAG_NO_BUFFERING` + write-through                                               | `O_DIRECT` (buffered fallback, labelled)        |
+| Benchmarks: temperatures           | Usually unavailable without elevation                                                  | hwmon sensors                                   |
+| Benchmarks: internet provider      | WebView2                                                                               | WebKitGTK                                       |
 
 ## Known differences and limitations
 

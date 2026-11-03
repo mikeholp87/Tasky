@@ -43,6 +43,12 @@ Information → Monitoring diagnostics) and place them in `docs/screenshots/`.
   - cache and commit charge;
   - disk IOPS and active time;
   - per-interface rates and addresses.
+- **Benchmarks:** CPU (single/multi-core integer, floating point, SHA-256,
+  LZ4), GPU (wgpu compute and memory), storage (sequential, random 4K IOPS
+  and latency, direct I/O) and an optional internet quality test (download,
+  upload, idle and loaded latency, jitter). Statistics with variation and
+  stability, versioned scores, local history, comparison, trends and
+  export. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 - **Alerts:** rules such as _"node CPU above 80% for 20 s"_ or _"memory above
   85%"_, evaluated in the background with desktop notifications.
 - **Settings:** theme (system/light/dark), refresh interval
@@ -174,6 +180,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
   only.
 - Command lines are never logged, and are excluded from exports unless you
   opt in.
+- No telemetry. The only network access is the optional, user-started
+  internet benchmark (privacy notice and consent first).
 
 Details: [docs/SECURITY.md](docs/SECURITY.md).
 

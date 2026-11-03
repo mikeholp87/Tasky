@@ -1,6 +1,8 @@
 import { FastForward, Square } from "lucide-react";
 import { Card } from "@/components/ui/Card";
-import { cancelRun, skipCooldown } from "@/services/benchmarks";
+import { cancelRun, loadBenchmarkData, skipCooldown } from "@/services/benchmarks";
+import { backend, toAppError } from "@/services/ipc";
+import { toast } from "@/stores/toastStore";
 import { isTerminal, useBenchmarkStore } from "@/stores/benchmarkStore";
 import { KIND_LABELS, PHASE_LABELS, formatElapsed, formatMetricText } from "../format";
 import { secondaryButton } from "./styles";
@@ -8,7 +10,12 @@ import { secondaryButton } from "./styles";
 /** Live status of the active run, with Cancel. Renders nothing when idle. */
 export function RunPanel() {
   const run = useBenchmarkStore((s) => s.run);
-  if (!run || isTerminal(run.phase)) return null;
+  const orphan = useBenchmarkStore((s) => s.capabilities?.runningRunId ?? null);
+  if (!run || isTerminal(run.phase)) {
+    // A run started before the window reloaded keeps going in the backend;
+    // offer a way to stop it even though its progress cannot be shown.
+    return orphan && orphan !== run?.runId ? <OrphanRun runId={orphan} /> : null;
+  }
   const p = run.progress;
   const percent = Math.round(p?.percent ?? 0);
   const title = p?.kind ? `${KIND_LABELS[p.kind]} benchmark` : "Benchmark";
@@ -79,6 +86,27 @@ export function RunPanel() {
           </div>
         )}
       </dl>
+    </Card>
+  );
+}
+
+function OrphanRun({ runId }: { runId: string }) {
+  const stop = async () => {
+    try {
+      await backend.cancelBenchmark(runId);
+    } catch (e) {
+      toast.error(toAppError(e).message);
+    }
+    // Give the backend a moment to clean up, then refresh.
+    setTimeout(() => void loadBenchmarkData(), 1500);
+  };
+  return (
+    <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 p-4" role="status">
+      <p>A benchmark started earlier is still running. Its progress cannot be shown here.</p>
+      <button type="button" className={secondaryButton} onClick={() => void stop()}>
+        <Square size={14} aria-hidden />
+        Cancel benchmark
+      </button>
     </Card>
   );
 }

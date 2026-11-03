@@ -34,6 +34,16 @@ the pieces fit and why they are shaped this way.
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Benchmarks
+
+The benchmark subsystem (`core/src/benchmarks/`) is a separate coordinator
+that reuses the engine instead of polling the OS itself: it reads engine
+snapshots for the environment, interference and volume list, and switches
+the engine into Benchmark Mode (polling ≥ 2 s) for the duration of a run.
+Workloads run on their own `benchmark-runner` thread; progress reaches the
+UI over a `Channel`, throttled to ≤ 8 messages per second. See
+[BENCHMARKS.md](BENCHMARKS.md).
+
 ## Key decisions
 
 ### One monitoring engine, one thread
@@ -149,8 +159,12 @@ debug logging and autostart.
   `monitoring/`, run `npm run gen:types`, render them in a feature folder.
 - **New platform capability:** add the function to every `platform/*`
   module (stub where unsupported) and re-export it from `platform/mod.rs`.
-- **GPU, temperatures, battery:** sysinfo's `component` and `gpu` features
-  are deliberately disabled today; enabling them is a collector change plus
-  new model fields.
+- **GPU monitoring, temperatures:** sysinfo's `component` feature is enabled
+  (benchmarks read temperatures through `benchmarks/thermal.rs`); showing them
+  on monitoring pages is a collector change plus new model fields.
+- **New benchmark category or provider:** implement `CategoryBenchmark`
+  (or `NetworkProvider`), register it in `HardwareFactory`, add mock
+  metrics in `mock.rs`, and bump `METHOD_VERSION` / `SCORE_VERSION` when
+  results change meaning. See [BENCHMARKS.md](BENCHMARKS.md).
 - **Process history persistence (SQLite):** subscribe a new `TickSink` that
   writes sampled rows with a retention policy. The engine needs no changes.

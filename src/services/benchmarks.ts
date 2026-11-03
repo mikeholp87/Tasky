@@ -75,6 +75,10 @@ function onEvent(event: BenchmarkEvent): void {
     return;
   }
   if (event.type === "finished" && isTerminal(event.phase)) {
+    const capabilities = store.capabilities;
+    if (capabilities?.runningRunId === event.runId) {
+      store.setCapabilities({ ...capabilities, runningRunId: null });
+    }
     void refreshHistory();
     if (event.phase === "completed") {
       toast.success("Benchmark complete.");

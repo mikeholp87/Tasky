@@ -17,8 +17,12 @@ control as privileged and treats the webview as untrusted input.
 4. **The app runs unprivileged.** It never requests elevation. Operations the
    OS denies return a clear `PermissionDenied` explaining that administrator
    or root rights may be needed.
-5. **Local only.** No network requests and no telemetry. All data stays on
-   the machine.
+5. **Local by default.** No telemetry, and nothing is sent anywhere
+   automatically. The only network access is the optional internet benchmark,
+   which runs only when the user starts it, after a privacy notice and
+   consent, and only to `https://speed.cloudflare.com` (see
+   [BENCHMARKS.md](BENCHMARKS.md#privacy)). Benchmark results stay on the
+   machine.
 
 ## Command input validation
 
@@ -67,8 +71,22 @@ wording, and the Delete key only opens the dialog.
 
 ## Content Security Policy
 
-`default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost`.
-No remote scripts, fonts or images are loaded.
+`default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost https://speed.cloudflare.com`.
+No remote scripts, fonts or images are loaded. The single remote
+`connect-src` host is used only by the optional internet benchmark.
+
+## Benchmarks
+
+Benchmark commands accept enums, bounded numbers, GPU adapter ids and a
+mount point that must match the monitoring engine's list of writable
+volumes; there are no path, URL or command parameters. Storage tests write
+only `.taskmanager-benchmark-<uuid>.tmp` files (create-new) inside an
+app-owned folder that is canonicalized and must not be a symlink or escape
+the volume, keep a free-space reserve, respect a write limit, and delete
+their file on every exit path; the start-up sweep deletes only exact-pattern
+files in those folders. Internet-test results from the WebView are accepted
+only with a single-use token and are fully validated in Rust. Details:
+[BENCHMARKS.md](BENCHMARKS.md#security).
 
 ## Reporting
 

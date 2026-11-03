@@ -1,6 +1,6 @@
 # Benchmark Suite — Implementation Plan
 
-Status: in progress. This document is the design of record for the benchmarking
+Status: implemented (phases 0–7). This document is the design of record for the benchmarking
 subsystem; `docs/BENCHMARKS.md` is the user/maintainer-facing methodology
 reference produced at the end of the work.
 
@@ -263,7 +263,7 @@ bytes. Exports exclude process lists and personal files.
 | 4     | Disk: validation, RAII files, direct I/O, seq/random/latency, limits                                                                    | done   |
 | 5     | Internet: provider trait, Cloudflare provider, privacy, loaded latency, jitter                                                          | done   |
 | 6     | Full run orchestration, scoring, dashboard, history, comparison, export                                                                 | done   |
-| 7     | Profiling, security review, failure-recovery testing, docs, production build                                                            |        |
+| 7     | Profiling, security review, failure-recovery testing, docs, production build                                                            | done   |
 
 Each phase ends with: `cargo fmt --all --check`, `cargo clippy --workspace
 --all-targets -- -D warnings`, `cargo test --workspace`, `npm run gen:types`,

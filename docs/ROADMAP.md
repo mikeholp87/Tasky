@@ -23,8 +23,11 @@ palette, light/dark/system themes.
 - **Startup applications** and **Services** pages.
 - **Process history persistence** (opt-in, SQLite, retention 1 h – 30 d) as
   an extra `TickSink`.
-- **GPU, temperatures, fans, battery** via sysinfo's `component`/`gpu`
-  features where reliable.
+- **GPU utilisation, fans, GPU temperature** in the monitoring pages
+  (temperatures and power state are already used by benchmarks).
+- **Benchmarks:** asynchronous storage queue depths (IOCP / io_uring),
+  macOS direct I/O and Metal verification, a self-hosted internet provider
+  with packet loss (TURN), opt-in anonymous result comparison.
 - **Docker containers and WSL processes** views.
 - **Port viewer** (all listening sockets, not just per process).
 
