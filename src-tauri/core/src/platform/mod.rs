@@ -114,3 +114,47 @@ pub fn disk_io_counters(
 ) -> std::collections::HashMap<String, DiskIoCounters> {
     imp::disk_io_counters(disks)
 }
+
+/// Opens a storage-benchmark file. `direct` requests unbuffered I/O
+/// (Windows `FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH`, Linux
+/// `O_DIRECT`); it fails where unsupported so the caller can fall back.
+/// `create` uses create-new semantics: an existing file is never reused.
+pub fn open_benchmark_file(
+    path: &std::path::Path,
+    create: bool,
+    direct: bool,
+) -> std::io::Result<std::fs::File> {
+    imp::open_benchmark_file(path, create, direct)
+}
+
+/// Reads exactly `buf.len()` bytes at `offset`.
+pub fn read_exact_at(
+    file: &std::fs::File,
+    mut buf: &mut [u8],
+    mut offset: u64,
+) -> std::io::Result<()> {
+    while !buf.is_empty() {
+        match imp::read_at(file, buf, offset)? {
+            0 => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+            n => {
+                buf = &mut buf[n..];
+                offset += n as u64;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Writes all of `buf` at `offset`.
+pub fn write_all_at(file: &std::fs::File, mut buf: &[u8], mut offset: u64) -> std::io::Result<()> {
+    while !buf.is_empty() {
+        match imp::write_at(file, buf, offset)? {
+            0 => return Err(std::io::ErrorKind::WriteZero.into()),
+            n => {
+                buf = &buf[n..];
+                offset += n as u64;
+            }
+        }
+    }
+    Ok(())
+}

@@ -53,6 +53,8 @@ pub struct BenchmarkCoordinator {
     temperature_available: OnceLock<bool>,
     /// GPU adapters (enumeration creates a graphics instance; done once).
     gpu_adapters: OnceLock<Vec<super::models::GpuAdapterInfo>>,
+    /// App-owned benchmark folder (default storage-test location).
+    disk_dir: Option<std::path::PathBuf>,
 }
 
 struct Outcome {
@@ -68,6 +70,7 @@ impl BenchmarkCoordinator {
         simulated: Arc<dyn BenchmarkFactory>,
         history: Arc<HistoryStore>,
         simulation_enabled: bool,
+        disk_dir: Option<std::path::PathBuf>,
     ) -> Arc<Self> {
         Arc::new(Self {
             probe,
@@ -79,6 +82,7 @@ impl BenchmarkCoordinator {
             active: Mutex::new(None),
             temperature_available: OnceLock::new(),
             gpu_adapters: OnceLock::new(),
+            disk_dir,
         })
     }
 
@@ -117,8 +121,37 @@ impl BenchmarkCoordinator {
                 .gpu_adapters
                 .get_or_init(super::gpu::list_adapters)
                 .clone(),
+            disk_locations: super::disk::location::locations(
+                &self
+                    .probe
+                    .latest()
+                    .map(|t| t.disks.clone())
+                    .unwrap_or_default(),
+                self.disk_dir.as_deref(),
+            ),
             running_run_id: self.running_run_id(),
         }
+    }
+
+    /// Benchmark folders that may hold files abandoned by a crash: the app's
+    /// own folder and `<mount>/.taskmanager-benchmark` on every volume.
+    pub fn benchmark_dirs(&self) -> Vec<std::path::PathBuf> {
+        let mut dirs: Vec<std::path::PathBuf> = self.disk_dir.iter().cloned().collect();
+        if let Some(tick) = self.probe.latest() {
+            dirs.extend(tick.disks.iter().map(|d| {
+                std::path::Path::new(&d.mount_point).join(super::disk::location::BENCH_DIR_NAME)
+            }));
+        }
+        dirs
+    }
+
+    /// Removes benchmark files left behind by a crash. Never runs while a
+    /// benchmark is active (its file would match the pattern).
+    pub fn sweep_abandoned_files(&self) -> usize {
+        if self.running_run_id().is_some() {
+            return 0;
+        }
+        super::disk::file::sweep(&self.benchmark_dirs())
     }
 
     fn factory(&self, request: &BenchmarkRequest) -> &dyn BenchmarkFactory {
@@ -157,15 +190,47 @@ impl BenchmarkCoordinator {
         {
             warnings.push(BenchmarkWarning::new(
                 WarningCode::SustainedLoad,
-                "Extended GPU benchmarks generate sustained load and may increase temperature \n                 and power consumption.",
+                "Extended GPU benchmarks generate sustained load and may increase temperature \
+                 and power consumption.",
             ));
+        }
+        let mut estimated_disk_write_bytes = 0;
+        if request.kinds.contains(&BenchmarkKind::Disk) && !request.simulate {
+            let disks = self
+                .probe
+                .latest()
+                .map(|t| t.disks.clone())
+                .unwrap_or_default();
+            match super::disk::plan_for(&disks, &request, self.disk_dir.as_deref()) {
+                Ok((location, _, plan)) => {
+                    estimated_disk_write_bytes = plan.total_write_bytes;
+                    if let Some(r) = plan.reduced {
+                        warnings.push(BenchmarkWarning::new(WarningCode::SizeReduced, r));
+                    }
+                    if request.disk_allow_write {
+                        warnings.push(BenchmarkWarning::new(
+                            WarningCode::SizeReduced,
+                            format!(
+                                "This benchmark writes temporary data to {} (up to {:.1} GB). \
+                                 The file is deleted afterwards.",
+                                location.mount_point,
+                                plan.total_write_bytes as f64 / 1e9
+                            ),
+                        ));
+                    }
+                }
+                Err(e) => warnings.push(BenchmarkWarning::new(
+                    WarningCode::DiskTestUnavailable,
+                    format!("The storage test cannot run: {e}"),
+                )),
+            }
         }
         Ok(PreflightReport {
             load_level: load_level(&env),
             warnings,
             environment: env,
             estimated_secs,
-            estimated_disk_write_bytes: 0,
+            estimated_disk_write_bytes,
             estimated_network_bytes: if request.kinds.contains(&BenchmarkKind::Network) {
                 request.network_data_profile.max_bytes()
             } else {
@@ -465,6 +530,18 @@ impl BenchmarkCoordinator {
 
 /// Scores, confidence and measurement-derived warnings for one category.
 pub fn finalize_category(category: &mut CategoryResult) {
+    // Never store non-finite measurements: they cannot round-trip through
+    // JSON and carry no information.
+    category.metrics.retain(|m| {
+        let ok = m.value.is_finite();
+        if !ok {
+            tracing::warn!(metric = %m.id, "dropping non-finite benchmark metric");
+        }
+        ok
+    });
+    for m in &mut category.metrics {
+        m.samples.retain(|v| v.is_finite());
+    }
     scoring::score_category(category);
     let derived = confidence::derived_warnings(category);
     category.warnings.extend(derived);
@@ -538,6 +615,7 @@ mod tests {
             gpu_adapter_id: None,
             disk_mount_point: None,
             disk_allow_write: false,
+            disk_write_limit: crate::benchmarks::models::DiskWriteLimit::default(),
             network_data_profile: NetworkDataProfile::DataSaver,
             sustained_secs: None,
             cooldown: false,
@@ -561,6 +639,7 @@ mod tests {
             factory,
             Arc::new(HistoryStore::new(Some(dir.clone()))),
             true,
+            None,
         );
         Setup {
             coordinator,

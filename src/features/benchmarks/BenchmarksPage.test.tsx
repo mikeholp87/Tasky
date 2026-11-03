@@ -73,6 +73,8 @@ describe("BenchmarksPage", () => {
       simulationAvailable: false,
       temperatureAvailable: false,
       powerAvailable: false,
+      gpuAdapters: [],
+      diskLocations: [],
       runningRunId: null,
     });
     backend.listBenchmarkHistory.mockResolvedValue([]);

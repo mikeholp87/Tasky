@@ -14,11 +14,13 @@ import { toast } from "@/stores/toastStore";
 import type {
   BenchmarkProfile,
   BenchmarkSettings,
+  DiskLocation,
   DiskWriteLimit,
   GpuAdapterInfo,
   NetworkDataProfile,
 } from "@/types";
 import { useUiStore } from "@/stores/uiStore";
+import { formatBytes } from "@/utils/format";
 
 const THEMES: { id: ThemePreference; label: string; icon: typeof Sun }[] = [
   { id: "system", label: "System", icon: Monitor },
@@ -228,6 +230,7 @@ const DATA_PROFILES: { id: NetworkDataProfile; label: string }[] = [
 
 // Stable fallback: a fresh `[]` in a store selector would re-render forever.
 const NO_ADAPTERS: GpuAdapterInfo[] = [];
+const NO_LOCATIONS: DiskLocation[] = [];
 
 function BenchmarkSection() {
   const b = useSettingsStore((s) => s.benchmark);
@@ -235,6 +238,7 @@ function BenchmarkSection() {
   const logical = useMetricsStore((m) => m.staticInfo?.logicalCoreCount ?? 0);
   const set = (patch: Partial<BenchmarkSettings>) => update({ benchmark: { ...b, ...patch } });
   const adapters = useBenchmarkStore((s) => s.capabilities?.gpuAdapters ?? NO_ADAPTERS);
+  const locations = useBenchmarkStore((s) => s.capabilities?.diskLocations ?? NO_LOCATIONS);
   const capabilitiesLoaded = useBenchmarkStore((s) => s.capabilities !== null);
   useEffect(() => {
     if (!capabilitiesLoaded) void loadBenchmarkData();
@@ -304,6 +308,28 @@ function BenchmarkSection() {
         checked={b.cooldown}
         onChange={(v) => set({ cooldown: v })}
       />
+      <Field
+        label="Storage benchmark location"
+        htmlFor="bench-disk"
+        description="A temporary file is created in a dedicated benchmark folder on this drive and deleted afterwards."
+      >
+        <select
+          id="bench-disk"
+          value={b.diskMountPoint ?? "auto"}
+          onChange={(e) =>
+            set({ diskMountPoint: e.target.value === "auto" ? null : e.target.value })
+          }
+          className={cn(selectCls, "max-w-64")}
+        >
+          <option value="auto">Automatic (app drive)</option>
+          {locations.map((l) => (
+            <option key={l.mountPoint} value={l.mountPoint}>
+              {l.mountPoint} · {l.fileSystem} · {formatBytes(l.availableBytes)} free
+              {l.removable ? " (removable)" : ""}
+            </option>
+          ))}
+        </select>
+      </Field>
       <Toggle
         label="Allow disk write benchmark"
         description="Write tests create a temporary file on the selected drive and delete it afterwards."

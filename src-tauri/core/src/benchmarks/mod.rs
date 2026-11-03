@@ -8,6 +8,7 @@ pub mod cancellation;
 pub mod confidence;
 pub mod coordinator;
 pub mod cpu;
+pub mod disk;
 pub mod environment;
 pub mod gpu;
 #[cfg(test)]
@@ -99,7 +100,12 @@ pub fn validate_request(
 
 /// Real-hardware benchmarks. Categories not implemented on this platform
 /// report `Unsupported` rather than inventing results.
-pub struct HardwareFactory;
+#[derive(Default)]
+pub struct HardwareFactory {
+    /// App-owned benchmark folder on the app's own volume (the default
+    /// storage-test location).
+    pub disk_dir: Option<std::path::PathBuf>,
+}
 
 struct NotAvailable(BenchmarkKind);
 
@@ -131,6 +137,9 @@ impl BenchmarkFactory for HardwareFactory {
         Ok(match kind {
             BenchmarkKind::Cpu => Box::new(cpu::CpuBenchmark),
             BenchmarkKind::Gpu => Box::new(gpu::GpuBenchmark),
+            BenchmarkKind::Disk => Box::new(disk::DiskBenchmark {
+                app_dir: self.disk_dir.clone(),
+            }),
             _ => Box::new(NotAvailable(kind)),
         })
     }
@@ -139,6 +148,7 @@ impl BenchmarkFactory for HardwareFactory {
         match kind {
             BenchmarkKind::Cpu => cpu::estimate_secs(request),
             BenchmarkKind::Gpu => gpu::estimate_secs(request),
+            BenchmarkKind::Disk => disk::estimate_secs(request),
             _ => 0,
         }
     }
@@ -154,6 +164,7 @@ pub fn coordinator_test_request() -> BenchmarkRequest {
         gpu_adapter_id: None,
         disk_mount_point: None,
         disk_allow_write: false,
+        disk_write_limit: models::DiskWriteLimit::default(),
         network_data_profile: models::NetworkDataProfile::DataSaver,
         sustained_secs: None,
         cooldown: false,
@@ -178,6 +189,7 @@ mod tests {
             gpu_adapter_id: None,
             disk_mount_point: None,
             disk_allow_write: false,
+            disk_write_limit: models::DiskWriteLimit::default(),
             network_data_profile: NetworkDataProfile::Standard,
             sustained_secs: None,
             cooldown: true,

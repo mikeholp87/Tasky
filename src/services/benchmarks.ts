@@ -29,6 +29,7 @@ export function buildRequest(kinds: BenchmarkKind[], options: RunOptions = {}): 
     gpuAdapterId: b.gpuAdapterId,
     diskMountPoint: b.diskMountPoint,
     diskAllowWrite: b.diskAllowWrite,
+    diskWriteLimit: b.diskWriteLimit,
     networkDataProfile: b.networkDataProfile,
     sustainedSecs: b.sustainedSecs,
     cooldown: b.cooldown,

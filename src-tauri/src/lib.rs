@@ -64,13 +64,35 @@ pub fn run() {
                 .app_data_dir()
                 .ok()
                 .map(|d| d.join("benchmarks").join("results"));
+            // Default storage-test folder: inside the app cache, on the app's volume.
+            let disk_dir = paths.app_cache_dir().ok().map(|d| d.join("benchmark"));
             let benchmarks = BenchmarkCoordinator::new(
                 Arc::clone(&engine) as Arc<dyn SystemProbe>,
-                Arc::new(HardwareFactory),
+                Arc::new(HardwareFactory {
+                    disk_dir: disk_dir.clone(),
+                }),
                 Arc::new(MockFactory::new(SIMULATED_STEP)),
                 Arc::new(HistoryStore::new(history_dir)),
                 simulation_enabled(),
+                disk_dir,
             );
+            // Remove storage-test files abandoned by a crash, once the engine has
+            // listed the mounted volumes.
+            {
+                let benchmarks = Arc::clone(&benchmarks);
+                let engine = Arc::clone(&engine);
+                let _ = std::thread::Builder::new()
+                    .name("benchmark-sweep".into())
+                    .spawn(move || {
+                        for _ in 0..50 {
+                            if engine.latest().is_some() {
+                                break;
+                            }
+                            std::thread::sleep(Duration::from_millis(200));
+                        }
+                        benchmarks.sweep_abandoned_files();
+                    });
+            }
             let state = AppState {
                 engine: Arc::clone(&engine),
                 benchmarks,

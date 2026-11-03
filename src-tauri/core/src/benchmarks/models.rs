@@ -147,6 +147,9 @@ pub struct BenchmarkRequest {
     /// Mount point from the capabilities list.
     pub disk_mount_point: Option<String>,
     pub disk_allow_write: bool,
+    /// Cap on everything the disk test writes (SSD wear guard).
+    #[serde(default)]
+    pub disk_write_limit: DiskWriteLimit,
     pub network_data_profile: NetworkDataProfile,
     /// Extended-profile sustained phase length; `None` = default.
     pub sustained_secs: Option<u32>,
@@ -351,6 +354,7 @@ pub enum WarningCode {
     PartialBenchmark,
     Simulated,
     SustainedLoad,
+    DiskTestUnavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -693,6 +697,7 @@ pub struct BenchmarkCapabilities {
     pub temperature_available: bool,
     pub power_available: bool,
     pub gpu_adapters: Vec<GpuAdapterInfo>,
+    pub disk_locations: Vec<DiskLocation>,
     pub running_run_id: Option<String>,
 }
 
@@ -857,4 +862,20 @@ pub struct GpuAdapterInfo {
     pub max_storage_buffer_mib: u32,
     /// The adapter the system reports as high-performance.
     pub preferred: bool,
+}
+
+/// A mounted volume the storage benchmark may use.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiskLocation {
+    pub mount_point: String,
+    pub name: String,
+    pub file_system: String,
+    pub kind: crate::models::DiskKind,
+    pub removable: bool,
+    pub total_bytes: u64,
+    pub available_bytes: u64,
+    /// Holds this app's data folder (the default location).
+    pub is_default: bool,
 }

@@ -15,6 +15,7 @@ const REQUEST: BenchmarkRequest = {
   gpuAdapterId: null,
   diskMountPoint: null,
   diskAllowWrite: false,
+  diskWriteLimit: "standard",
   networkDataProfile: "standard",
   sustainedSecs: 60,
   cooldown: true,

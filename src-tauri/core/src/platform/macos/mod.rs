@@ -69,3 +69,32 @@ pub fn disk_io_counters(_disks: &[(String, String)]) -> HashMap<String, super::D
 pub fn power_state() -> crate::benchmarks::models::PowerState {
     crate::benchmarks::models::PowerState::default()
 }
+
+/// macOS direct I/O (`F_NOCACHE`) is not implemented yet: only buffered
+/// access is offered, and results are labelled accordingly.
+pub fn open_benchmark_file(
+    path: &std::path::Path,
+    create: bool,
+    direct: bool,
+) -> std::io::Result<std::fs::File> {
+    if direct {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "direct I/O is not implemented on macOS",
+        ));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true);
+    if create {
+        options.create_new(true);
+    }
+    options.open(path)
+}
+
+pub fn read_at(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    std::os::unix::fs::FileExt::read_at(file, buf, offset)
+}
+
+pub fn write_at(file: &std::fs::File, buf: &[u8], offset: u64) -> std::io::Result<usize> {
+    std::os::unix::fs::FileExt::write_at(file, buf, offset)
+}

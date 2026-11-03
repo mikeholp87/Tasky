@@ -25,10 +25,13 @@ pub fn run(request: BenchmarkRequest) -> BenchmarkRecord {
     let dir = temp_dir("hardware");
     let coordinator = BenchmarkCoordinator::new(
         engine.clone(),
-        Arc::new(HardwareFactory),
+        Arc::new(HardwareFactory {
+            disk_dir: Some(dir.join("app-benchmark")),
+        }),
         Arc::new(MockFactory::new(Duration::from_millis(1))),
         Arc::new(HistoryStore::new(Some(dir.clone()))),
         false,
+        Some(dir.join("app-benchmark")),
     );
     let sink = Arc::new(RecordingSink::default());
     let id = coordinator.start(request, sink.clone()).expect("starts");
@@ -108,4 +111,18 @@ fn bench_list_gpu_adapters() {
     for a in super::gpu::list_adapters() {
         println!("{a:?}");
     }
+}
+
+/// Writes ~0.6 GB of temporary data to the system drive (Quick profile).
+#[test]
+#[ignore = "hardware benchmark; run explicitly"]
+fn bench_disk_quick() {
+    let record = run(BenchmarkRequest {
+        disk_allow_write: true,
+        ..request(BenchmarkKind::Disk)
+    });
+    let disk = &record.categories[0];
+    assert!(disk.error.is_none(), "{:?}", disk.error);
+    assert!(disk.metric("disk.seq.read").is_some());
+    assert!(disk.metric("disk.rand.write.t8").is_some());
 }

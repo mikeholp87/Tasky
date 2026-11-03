@@ -7,7 +7,13 @@ import { KeyValueList, type KeyValueItem } from "@/components/ui/KeyValueList";
 import { isTerminal, latestByKind, liveSeries, useBenchmarkStore } from "@/stores/benchmarkStore";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { BenchmarkKind, GpuAdapterInfo, MetricUnit, StaticSystemInfo } from "@/types";
+import type {
+  BenchmarkKind,
+  DiskLocation,
+  GpuAdapterInfo,
+  MetricUnit,
+  StaticSystemInfo,
+} from "@/types";
 import { formatBytes } from "@/utils/format";
 import { KIND_LABELS, formatMetricText } from "../format";
 import { METHODOLOGY } from "../methodology";
@@ -73,6 +79,7 @@ function LiveCharts({ kind }: { kind: BenchmarkKind }) {
 }
 
 const NO_ADAPTERS: GpuAdapterInfo[] = [];
+const NO_LOCATIONS: DiskLocation[] = [];
 
 const GPU_TYPES: Record<GpuAdapterInfo["deviceType"], string> = {
   discrete: "Discrete GPU",
@@ -82,12 +89,37 @@ const GPU_TYPES: Record<GpuAdapterInfo["deviceType"], string> = {
   other: "Other",
 };
 
+interface HardwareContext {
+  info: StaticSystemInfo | null;
+  adapters: readonly GpuAdapterInfo[];
+  selectedGpu: string | null;
+  locations: readonly DiskLocation[];
+  selectedDisk: string | null;
+}
+
+const DISK_KINDS: Record<DiskLocation["kind"], string> = {
+  ssd: "SSD",
+  hdd: "HDD",
+  unknown: "Unknown",
+};
+
 function hardwareItems(
   kind: BenchmarkKind,
-  info: StaticSystemInfo | null,
-  adapters: readonly GpuAdapterInfo[],
-  selectedGpu: string | null,
+  { info, adapters, selectedGpu, locations, selectedDisk }: HardwareContext,
 ): KeyValueItem[] {
+  if (kind === "disk") {
+    const disk =
+      locations.find((l) => l.mountPoint === selectedDisk) ?? locations.find((l) => l.isDefault);
+    if (!disk) return [{ label: "Drive", value: "No writable drive detected" }];
+    return [
+      { label: "Location", value: disk.mountPoint },
+      { label: "Drive", value: disk.name || "—" },
+      { label: "Drive type", value: DISK_KINDS[disk.kind] },
+      { label: "File system", value: disk.fileSystem },
+      { label: "Free space", value: formatBytes(disk.availableBytes) },
+      { label: "Capacity", value: formatBytes(disk.totalBytes) },
+    ];
+  }
   if (kind === "gpu") {
     // Mirrors the backend's default selection (see gpu::select).
     const gpu =
@@ -123,7 +155,9 @@ function HardwareCard({ kind }: { kind: BenchmarkKind }) {
   const info = useMetricsStore((s) => s.staticInfo);
   const adapters = useBenchmarkStore((s) => s.capabilities?.gpuAdapters ?? NO_ADAPTERS);
   const selectedGpu = useSettingsStore((s) => s.benchmark.gpuAdapterId);
-  const items = hardwareItems(kind, info, adapters, selectedGpu);
+  const locations = useBenchmarkStore((s) => s.capabilities?.diskLocations ?? NO_LOCATIONS);
+  const selectedDisk = useSettingsStore((s) => s.benchmark.diskMountPoint);
+  const items = hardwareItems(kind, { info, adapters, selectedGpu, locations, selectedDisk });
   return (
     <Card>
       <CardHeader title="Hardware" />

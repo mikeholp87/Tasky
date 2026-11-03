@@ -1,11 +1,13 @@
 //! Linux implementation, backed by `/proc`.
 
+mod bench_io;
 mod connections;
 mod control;
 
 use std::collections::HashMap;
 use std::io::Read;
 
+pub use bench_io::{open_benchmark_file, read_at, write_at};
 pub use connections::connections;
 pub use control::{force_kill, is_critical, resume, set_priority, suspend, system_root, terminate};
 

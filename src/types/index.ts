@@ -25,6 +25,7 @@ export type { Connection } from "./generated/Connection";
 export type { CpuSnapshot } from "./generated/CpuSnapshot";
 export type { Detail } from "./generated/Detail";
 export type { DiskKind } from "./generated/DiskKind";
+export type { DiskLocation } from "./generated/DiskLocation";
 export type { DiskSnapshot } from "./generated/DiskSnapshot";
 export type { DiskWriteLimit } from "./generated/DiskWriteLimit";
 export type { EngineStats } from "./generated/EngineStats";

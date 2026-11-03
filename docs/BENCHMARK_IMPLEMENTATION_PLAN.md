@@ -260,7 +260,7 @@ bytes. Exports exclude process lists and personal files.
 | 1     | Models, errors, cancellation, progress throttle, statistics, coordinator, Benchmark Mode, history store, mocks, IPC, UI shell, settings | done   |
 | 2     | CPU workloads, single/multi/sustained, temps/frequency                                                                                  | done   |
 | 3     | GPU (wgpu) detection, compute, memory, timing, fallback                                                                                 | done   |
-| 4     | Disk: validation, RAII files, direct I/O, seq/random/latency, limits                                                                    |        |
+| 4     | Disk: validation, RAII files, direct I/O, seq/random/latency, limits                                                                    | done   |
 | 5     | Internet: provider trait, Cloudflare provider, privacy, loaded latency, jitter                                                          |        |
 | 6     | Full run orchestration, scoring, dashboard, history, comparison, export                                                                 |        |
 | 7     | Profiling, security review, failure-recovery testing, docs, production build                                                            |        |
