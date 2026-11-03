@@ -160,6 +160,7 @@ mod tests {
             exe: Some(r"C:\Program Files\app\app.exe".into()),
             cmd: Some(cmd.into()),
             session_id: None,
+            kernel_thread: false,
             restricted: false,
         }
     }

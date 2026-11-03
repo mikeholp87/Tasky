@@ -69,7 +69,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-24.04]
+        # Linux bundles are built on the oldest supported base so the
+        # binary's glibc requirement (2.35) is met by Debian 12, Ubuntu 22.04
+        # and newer. Building on a newer distro would raise that floor.
+        os: [windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

@@ -39,6 +39,10 @@ pub struct Settings {
     pub heat_mapping: bool,
     pub visible_columns: Vec<String>,
     pub column_widths: BTreeMap<String, u32>,
+    /// Linux kernel threads (kworker, ksoftirqd, …) in the process list.
+    pub show_kernel_threads: bool,
+    /// Bridges, veth, TAP and container networks on the Network page.
+    pub show_virtual_adapters: bool,
     // Alerts
     pub notifications_enabled: bool,
     pub alert_rules: Vec<AlertRule>,
@@ -61,6 +65,8 @@ impl Default for Settings {
             // Empty means "use the UI's defaults".
             visible_columns: Vec::new(),
             column_widths: BTreeMap::new(),
+            show_kernel_threads: false,
+            show_virtual_adapters: false,
             notifications_enabled: true,
             alert_rules: default_alert_rules(),
             debug_logging: false,

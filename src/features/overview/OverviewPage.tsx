@@ -194,11 +194,13 @@ function StorageCard() {
 
 function NetworkCard() {
   const networks = useMetricsStore((s) => s.tick?.networks);
+  const point = useMetricsStore((s) => s.tick?.point);
   const navigate = useUiStore((s) => s.navigate);
-  if (!networks) return null;
+  if (!networks || !point) return null;
   const primary = networks.find((n) => n.isPrimary) ?? networks[0];
-  const rx = networks.reduce((sum, n) => sum + n.rxBytesPerSec, 0);
-  const tx = networks.reduce((sum, n) => sum + n.txBytesPerSec, 0);
+  // Engine totals skip VPN and virtual interfaces, which re-count bytes.
+  const rx = point.netRx;
+  const tx = point.netTx;
   return (
     <Card>
       <CardHeader

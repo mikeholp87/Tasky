@@ -13,6 +13,8 @@ mod windows;
 // Parsers for /proc files are plain functions, compiled on every platform in
 // tests so they are exercised by CI on Windows too.
 #[cfg(any(target_os = "linux", test))]
+pub mod linux_facts;
+#[cfg(any(target_os = "linux", test))]
 pub mod procfs;
 
 #[cfg(target_os = "linux")]
@@ -21,6 +23,34 @@ use linux as imp;
 use macos as imp;
 #[cfg(target_os = "windows")]
 use windows as imp;
+
+// Facts only Linux implements; other platforms get "unknown" defaults.
+#[cfg(not(target_os = "linux"))]
+use fallback as linux_only;
+#[cfg(target_os = "linux")]
+use linux as linux_only;
+
+/// OS and session facts sysinfo does not report. All `None` where the
+/// concept does not apply (e.g. display server on Windows).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OsDetails {
+    pub distribution: Option<String>,
+    pub desktop_environment: Option<String>,
+    pub display_server: Option<String>,
+    pub container: Option<String>,
+    pub init_system: Option<String>,
+}
+
+/// Read once at startup.
+pub fn os_details() -> OsDetails {
+    linux_only::os_details()
+}
+
+/// Kind of a network interface; `Unknown` where the OS gives no reliable
+/// signal. Callers cache it per interface name.
+pub fn interface_kind(name: &str) -> crate::models::InterfaceKind {
+    linux_only::interface_kind(name)
+}
 
 /// Memory figures that sysinfo does not expose but the OS reports reliably.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -106,4 +136,17 @@ pub fn disk_io_counters(
     disks: &[(String, String)],
 ) -> std::collections::HashMap<String, DiskIoCounters> {
     imp::disk_io_counters(disks)
+}
+
+// Defaults for platforms without an implementation of the Linux-only
+// facts above.
+#[cfg(not(target_os = "linux"))]
+mod fallback {
+    pub fn os_details() -> super::OsDetails {
+        super::OsDetails::default()
+    }
+
+    pub fn interface_kind(_name: &str) -> crate::models::InterfaceKind {
+        crate::models::InterfaceKind::Unknown
+    }
 }

@@ -28,6 +28,10 @@ priority: number | null, exe: string | null,
  */
 cmd: string | null, sessionId: number | null, 
 /**
+ * Linux kernel thread (`PF_KTHREAD`); hidden by default in the UI.
+ */
+kernelThread: boolean, 
+/**
  * The OS refused per-process queries (protected process, other user,
  * no elevation). CPU and disk values are unknown, not zero.
  */

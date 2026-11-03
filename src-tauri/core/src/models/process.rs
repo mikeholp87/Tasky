@@ -28,6 +28,8 @@ pub struct ProcessRow {
     /// logged and excluded from exports unless the user opts in.
     pub cmd: Option<String>,
     pub session_id: Option<u32>,
+    /// Linux kernel thread (`PF_KTHREAD`); hidden by default in the UI.
+    pub kernel_thread: bool,
     /// The OS refused per-process queries (protected process, other user,
     /// no elevation). CPU and disk values are unknown, not zero.
     pub restricted: bool,
@@ -40,8 +42,13 @@ pub enum ProcessState {
     Running,
     Sleeping,
     Idle,
+    /// Linux `D`: uninterruptible sleep, usually waiting for I/O.
+    DiskSleep,
     /// Stopped by a signal or suspended.
     Stopped,
+    /// Linux `t`: stopped by a debugger.
+    Tracing,
+    /// Exited, waiting for its parent to collect the exit status.
     Zombie,
     Dead,
     Unknown,
@@ -52,11 +59,11 @@ impl From<sysinfo::ProcessStatus> for ProcessState {
         use sysinfo::ProcessStatus as S;
         match status {
             S::Run => Self::Running,
-            S::Sleep | S::UninterruptibleDiskSleep | S::Waking | S::Wakekill | S::Parked => {
-                Self::Sleeping
-            }
+            S::Sleep | S::Waking | S::Wakekill | S::Parked => Self::Sleeping,
+            S::UninterruptibleDiskSleep => Self::DiskSleep,
             S::Idle => Self::Idle,
-            S::Stop | S::Tracing | S::Suspended | S::LockBlocked => Self::Stopped,
+            S::Stop | S::Suspended | S::LockBlocked => Self::Stopped,
+            S::Tracing => Self::Tracing,
             S::Zombie => Self::Zombie,
             S::Dead => Self::Dead,
             _ => Self::Unknown,

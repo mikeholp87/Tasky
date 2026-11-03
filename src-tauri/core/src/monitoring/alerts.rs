@@ -181,6 +181,8 @@ mod tests {
             disks: vec![],
             networks: vec![],
             processes: procs,
+            gpus: vec![],
+            temperatures: vec![],
             alerts: vec![],
             point: HistoryPoint {
                 t: 0,
@@ -238,6 +240,7 @@ mod tests {
             exe: None,
             cmd: None,
             session_id: None,
+            kernel_thread: false,
             restricted,
         }
     }

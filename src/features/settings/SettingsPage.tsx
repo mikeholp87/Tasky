@@ -38,6 +38,7 @@ export function SettingsPage() {
   const monitoring = useMetricsStore((m) => m.monitoring);
   const setMonitoring = useMetricsStore((m) => m.setMonitoring);
   const navigate = useUiStore((u) => u.navigate);
+  const platform = useMetricsStore((m) => m.staticInfo?.platform);
   const backendReady = isBackendAvailable();
 
   const onInterval = (value: string) => {
@@ -115,6 +116,22 @@ export function SettingsPage() {
               ))}
             </select>
           </Field>
+          {platform === "linux" && (
+            <>
+              <Toggle
+                label="Show kernel threads"
+                description="List kernel workers (kworker, ksoftirqd, …). They cannot be ended and usually outnumber normal processes."
+                checked={s.showKernelThreads}
+                onChange={(v) => s.update({ showKernelThreads: v })}
+              />
+              <Toggle
+                label="Show virtual network adapters"
+                description="Bridges, veth pairs and container networks. They are never included in network totals."
+                checked={s.showVirtualAdapters}
+                onChange={(v) => s.update({ showVirtualAdapters: v })}
+              />
+            </>
+          )}
         </Section>
 
         <Section title="Appearance">

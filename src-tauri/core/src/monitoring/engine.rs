@@ -10,6 +10,7 @@
 //! While paused the thread blocks on the control channel and uses no CPU.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::thread::{self, JoinHandle};
@@ -60,6 +61,9 @@ struct Shared {
     /// engine reports the state it caused.
     suspended: Mutex<HashSet<(u32, u64)>>,
     alert_rules: RwLock<Vec<AlertRule>>,
+    /// Linux kernel threads are dropped from ticks unless enabled: they are
+    /// often over half of all rows and cannot be acted on.
+    include_kernel_threads: AtomicBool,
     alert_log: Mutex<RingBuffer<AlertEvent>>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
 }
@@ -82,29 +86,52 @@ pub struct Engine {
 
 impl Engine {
     pub fn start(initial: MonitoringState) -> AppResult<Self> {
-        let collector = Collector::new()?;
+        let (tx, rx) = mpsc::channel();
+        let (ready_tx, ready_rx) = mpsc::sync_channel::<AppResult<StaticSystemInfo>>(1);
+        let (shared_tx, shared_rx) = mpsc::sync_channel::<Arc<Shared>>(1);
+        let handle = thread::Builder::new()
+            .name("monitoring-engine".into())
+            .spawn(move || {
+                // sysinfo's GPU handles (Vulkan/NVML) are not `Send`, so the
+                // collector is created, used and dropped on this thread only.
+                let collector = match Collector::new() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(e));
+                        return;
+                    }
+                };
+                if ready_tx.send(Ok(collector.static_info())).is_err() {
+                    return;
+                }
+                let Ok(shared) = shared_rx.recv() else {
+                    return;
+                };
+                let worker = Worker {
+                    collector,
+                    alerts: AlertEvaluator::default(),
+                    shared,
+                    last_payload: 0,
+                };
+                worker.run(rx, initial);
+            })
+            .map_err(|e| AppError::SystemQueryFailed(format!("cannot start engine: {e}")))?;
+        let static_info = ready_rx.recv().map_err(|_| AppError::EngineUnavailable)??;
         let shared = Arc::new(Shared {
-            static_info: collector.static_info(),
+            static_info,
             state: RwLock::new(initial),
             latest: RwLock::new(None),
             history: RwLock::new(RingBuffer::new(MAX_HISTORY_POINTS)),
             process_history: RwLock::new(ProcessHistory::default()),
             suspended: Mutex::new(HashSet::new()),
             alert_rules: RwLock::new(Vec::new()),
+            include_kernel_threads: AtomicBool::new(false),
             alert_log: Mutex::new(RingBuffer::new(ALERT_LOG_LEN)),
             sinks: Mutex::new(HashMap::new()),
         });
-        let (tx, rx) = mpsc::channel();
-        let worker = Worker {
-            collector,
-            alerts: AlertEvaluator::default(),
-            shared: Arc::clone(&shared),
-            last_payload: 0,
-        };
-        let handle = thread::Builder::new()
-            .name("monitoring-engine".into())
-            .spawn(move || worker.run(rx, initial))
-            .map_err(|e| AppError::SystemQueryFailed(format!("cannot start engine: {e}")))?;
+        shared_tx
+            .send(Arc::clone(&shared))
+            .map_err(|_| AppError::EngineUnavailable)?;
         Ok(Self {
             control: tx,
             shared,
@@ -147,6 +174,13 @@ impl Engine {
     /// Resizes the system history buffer (e.g. from the "history length" setting).
     pub fn set_history_capacity(&self, points: usize) {
         write(&self.shared.history).set_capacity(points.clamp(60, MAX_HISTORY_POINTS));
+    }
+
+    /// Whether kernel threads appear in process lists (takes effect next tick).
+    pub fn set_include_kernel_threads(&self, include: bool) {
+        self.shared
+            .include_kernel_threads
+            .store(include, Ordering::Relaxed);
     }
 
     /// The latest row for `pid`, if it is still running.
@@ -249,6 +283,10 @@ impl Worker {
     fn tick(&mut self, state: &MonitoringState) {
         let shared = &*self.shared;
         let mut sample = self.collector.sample(state.interval_ms, self.last_payload);
+        if !shared.include_kernel_threads.load(Ordering::Relaxed) {
+            sample.processes.retain(|p| !p.kernel_thread);
+            sample.engine.process_count = u32::try_from(sample.processes.len()).unwrap_or(u32::MAX);
+        }
         apply_suspended(shared, &mut sample.processes);
 
         let rules = read(&shared.alert_rules).clone();

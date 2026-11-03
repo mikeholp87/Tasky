@@ -6,4 +6,12 @@ import type { ThemePreference } from "./ThemePreference";
  * Persisted user settings. Unknown or missing fields fall back to
  * defaults, so older settings files keep working after upgrades.
  */
-export type Settings = { startWithOs: boolean, minimizeToTray: boolean, launchMinimized: boolean, rememberWindow: boolean, refreshIntervalMs: number, historyMinutes: number, theme: ThemePreference, compactTable: boolean, heatMapping: boolean, visibleColumns: Array<string>, columnWidths: { [key in string]: number }, notificationsEnabled: boolean, alertRules: Array<AlertRule>, debugLogging: boolean, };
+export type Settings = { startWithOs: boolean, minimizeToTray: boolean, launchMinimized: boolean, rememberWindow: boolean, refreshIntervalMs: number, historyMinutes: number, theme: ThemePreference, compactTable: boolean, heatMapping: boolean, visibleColumns: Array<string>, columnWidths: { [key in string]: number }, 
+/**
+ * Linux kernel threads (kworker, ksoftirqd, …) in the process list.
+ */
+showKernelThreads: boolean, 
+/**
+ * Bridges, veth, TAP and container networks on the Network page.
+ */
+showVirtualAdapters: boolean, notificationsEnabled: boolean, alertRules: Array<AlertRule>, debugLogging: boolean, };

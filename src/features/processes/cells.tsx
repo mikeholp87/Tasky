@@ -14,7 +14,9 @@ export const STATUS_LABEL: Record<ProcessState, string> = {
   running: "Running",
   sleeping: "Sleeping",
   idle: "Idle",
+  diskSleep: "Disk sleep",
   stopped: "Suspended",
+  tracing: "Traced",
   zombie: "Zombie",
   dead: "Dead",
   unknown: "Unknown",
@@ -24,7 +26,7 @@ export const STATUS_LABEL: Record<ProcessState, string> = {
 const RESTRICTED_COLUMNS: ReadonlySet<ColumnId> = new Set(["cpu", "diskRead", "diskWrite"]);
 
 const RESTRICTED_HINT =
-  "Restricted: the operating system does not share this process's CPU and disk activity unless Task Manager runs with administrator/root rights.";
+  "Restricted: the operating system does not share this process's CPU and disk activity with a standard account.";
 
 const rate = (v: number) => (v > 0 ? formatBytesPerSecond(v) : "0 B/s");
 const opt = (v: number | null) => (v == null ? NOT_AVAILABLE : String(v));

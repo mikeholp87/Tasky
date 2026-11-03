@@ -84,6 +84,7 @@ impl ProcessTracker {
                     exe: p.exe().map(|e| e.to_string_lossy().into_owned()),
                     cmd: join_cmd(p.cmd()),
                     session_id: p.session_id().map(|s| s.as_u32()),
+                    kernel_thread: p.thread_kind() == Some(sysinfo::ThreadKind::Kernel),
                 }
             })
             .collect()

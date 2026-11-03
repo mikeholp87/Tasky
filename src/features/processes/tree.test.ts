@@ -20,6 +20,7 @@ function p(pid: number, parentPid: number | null, name: string, startTime = 100)
     exe: null,
     cmd: null,
     sessionId: null,
+    kernelThread: false,
     restricted: false,
   };
 }

@@ -21,6 +21,10 @@ pub struct MetricsTick {
     pub disks: Vec<DiskSnapshot>,
     pub networks: Vec<NetworkInterfaceSnapshot>,
     pub processes: Vec<ProcessRow>,
+    /// Empty when no GPU is detected or the platform cannot enumerate them.
+    pub gpus: Vec<GpuSnapshot>,
+    /// Hardware temperature sensors the OS exposes (often none in VMs).
+    pub temperatures: Vec<TemperatureReading>,
     /// Alerts that fired on this tick (usually empty).
     pub alerts: Vec<AlertEvent>,
     /// Compact summary of this tick, appended to history buffers.
@@ -113,6 +117,60 @@ pub struct NetworkInterfaceSnapshot {
     pub mac_address: Option<String>,
     /// Heuristic "primary" interface: has an address and the most traffic.
     pub is_primary: bool,
+    pub kind: InterfaceKind,
+}
+
+/// What an interface is, from kernel-reported facts rather than its name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum InterfaceKind {
+    Ethernet,
+    Wifi,
+    /// VPN or tunnel (WireGuard, TUN, GRE, SIT, …). Its traffic also crosses
+    /// a physical interface, so it is left out of totals.
+    Vpn,
+    /// Bridges, veth pairs, TAP, VLAN/bond masters, container networks.
+    Virtual,
+    Loopback,
+    /// The platform does not classify interfaces (counted in totals).
+    Unknown,
+}
+
+impl InterfaceKind {
+    /// Whether traffic on this interface counts toward machine-wide totals,
+    /// which must not count the same bytes twice.
+    pub fn counts_in_totals(self) -> bool {
+        matches!(self, Self::Ethernet | Self::Wifi | Self::Unknown)
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GpuSnapshot {
+    /// PCI address on Linux; stable across ticks.
+    pub id: String,
+    pub name: String,
+    pub vendor: Option<String>,
+    /// `None` when the driver does not report utilisation.
+    pub usage_percent: Option<f32>,
+    /// Device-wide dedicated memory; `None` for integrated GPUs and drivers
+    /// that only report per-process figures.
+    pub memory_used_bytes: Option<u64>,
+    pub memory_total_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct TemperatureReading {
+    /// Driver label, e.g. "coretemp Package id 0" or "nvme Composite".
+    pub label: String,
+    pub celsius: f32,
+    /// Highest value seen since the app started (or the driver's record).
+    pub max_celsius: Option<f32>,
+    pub critical_celsius: Option<f32>,
 }
 
 /// Compact per-tick summary kept in history ring buffers.

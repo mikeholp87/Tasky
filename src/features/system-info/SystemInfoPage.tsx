@@ -7,12 +7,39 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList, Unavailable } from "@/components/ui/KeyValueList";
 import { useMetricsStore } from "@/stores/metricsStore";
-import { formatBytes, formatDuration, formatTimestamp } from "@/utils/format";
+import type { KeyValueItem } from "@/components/ui/KeyValueList";
+import type { StaticSystemInfo } from "@/types";
+import { formatBytes, formatDuration, formatPercent, formatTimestamp } from "@/utils/format";
 import { uptimeSeconds } from "@/utils/system";
+
+/** OS rows. Linux shows the os-release name instead of sysinfo's name/version. */
+function osItems(info: StaticSystemInfo): KeyValueItem[] {
+  const named: KeyValueItem[] = info.distribution
+    ? [{ label: "Distribution", value: info.distribution }]
+    : [
+        { label: "Name", value: info.osName ?? <Unavailable /> },
+        { label: "Version", value: info.longOsVersion ?? info.osVersion ?? <Unavailable /> },
+      ];
+  const optional: [string, string | null][] = [
+    ["Desktop", info.desktopEnvironment],
+    ["Display server", info.displayServer],
+    ["Init system", info.initSystem],
+    ["Container", info.container],
+  ];
+  return [
+    ...named,
+    { label: "Kernel", value: info.kernelVersion ?? <Unavailable /> },
+    { label: "Hostname", value: info.hostname ?? <Unavailable /> },
+    { label: "Architecture", value: info.architecture },
+    // Shown only where the concept exists and was detected.
+    ...optional.flatMap(([label, value]) => (value ? [{ label, value }] : [])),
+  ];
+}
 
 export function SystemInfoPage() {
   const info = useMetricsStore((s) => s.staticInfo);
   const now = useMetricsStore((s) => s.tick?.timestampMs);
+  const load = useMetricsStore((s) => s.tick?.cpu.loadAverage);
 
   return (
     <>
@@ -37,18 +64,7 @@ export function SystemInfoPage() {
           <Card>
             <CardHeader title="Operating system" />
             <div className="px-4 pb-4 pt-3">
-              <KeyValueList
-                items={[
-                  { label: "Name", value: info.osName ?? <Unavailable /> },
-                  {
-                    label: "Version",
-                    value: info.longOsVersion ?? info.osVersion ?? <Unavailable />,
-                  },
-                  { label: "Kernel", value: info.kernelVersion ?? <Unavailable /> },
-                  { label: "Hostname", value: info.hostname ?? <Unavailable /> },
-                  { label: "Architecture", value: info.architecture },
-                ]}
-              />
+              <KeyValueList items={osItems(info)} />
             </div>
           </Card>
           <Card>
@@ -80,10 +96,21 @@ export function SystemInfoPage() {
                         <Unavailable />
                       ),
                   },
+                  ...(load
+                    ? [
+                        {
+                          label: "Load average (1/5/15 min)",
+                          hint: "Average number of tasks running or waiting to run. Not a percentage: compare it with the number of logical processors.",
+                          value: `${load.one.toFixed(2)} / ${load.five.toFixed(2)} / ${load.fifteen.toFixed(2)}`,
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </div>
           </Card>
+          <GraphicsCard />
+          <TemperaturesCard />
           <Card>
             <CardHeader title="Task Manager" />
             <div className="px-4 pb-4 pt-3">
@@ -99,6 +126,84 @@ export function SystemInfoPage() {
         </div>
       )}
     </>
+  );
+}
+
+function GraphicsCard() {
+  const gpus = useMetricsStore((s) => s.tick?.gpus);
+  if (!gpus) return null;
+  const notReported = (
+    <span className="font-normal text-fg-subtle">Not reported by the driver</span>
+  );
+  return (
+    <Card>
+      <CardHeader title="Graphics" />
+      <div className="space-y-4 px-4 pb-4 pt-3">
+        {gpus.length === 0 && <p className="text-fg-muted">No graphics adapter detected.</p>}
+        {gpus.map((g) => (
+          <KeyValueList
+            key={g.id}
+            items={[
+              { label: "Adapter", value: <span title={g.name}>{g.name}</span> },
+              { label: "Vendor", value: g.vendor ?? <Unavailable /> },
+              {
+                label: "Utilization",
+                value: g.usagePercent != null ? formatPercent(g.usagePercent, 0) : notReported,
+              },
+              {
+                label: "Dedicated memory",
+                hint: "Integrated GPUs share system memory and have no dedicated memory to report.",
+                value:
+                  g.memoryTotalBytes != null
+                    ? `${g.memoryUsedBytes != null ? `${formatBytes(g.memoryUsedBytes)} of ` : ""}${formatBytes(g.memoryTotalBytes)}`
+                    : notReported,
+              },
+            ]}
+          />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function TemperaturesCard() {
+  const temps = useMetricsStore((s) => s.tick?.temperatures);
+  if (!temps) return null;
+  const deg = (v: number) => `${v.toFixed(0)} °C`;
+  return (
+    <Card>
+      <CardHeader title="Temperatures" />
+      <div className="px-4 pb-4 pt-3">
+        {temps.length === 0 ? (
+          <p className="text-fg-muted">
+            No temperature sensors are exposed by the system (common in virtual machines).
+          </p>
+        ) : (
+          <KeyValueList
+            items={temps.map((t) => ({
+              label: t.label,
+              hint: [
+                t.maxCelsius != null ? `Highest seen ${deg(t.maxCelsius)}` : null,
+                t.criticalCelsius != null ? `Critical at ${deg(t.criticalCelsius)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              value: (
+                <span
+                  className={
+                    t.criticalCelsius != null && t.celsius >= t.criticalCelsius - 5
+                      ? "text-crit"
+                      : undefined
+                  }
+                >
+                  {deg(t.celsius)}
+                </span>
+              ),
+            }))}
+          />
+        )}
+      </div>
+    </Card>
   );
 }
 

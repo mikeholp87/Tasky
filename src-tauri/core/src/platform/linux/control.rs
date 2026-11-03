@@ -63,7 +63,7 @@ fn errno_error(pid: u32, action: &str) -> AppError {
     match err.raw_os_error() {
         Some(libc::ESRCH) => AppError::ProcessNotFound(pid),
         Some(libc::EPERM | libc::EACCES) => AppError::PermissionDenied(format!(
-            "The operating system denied permission to {action} this process. It may belong to another user; running with root privileges may allow it."
+            "Permission denied: the system does not allow this account to {action} this process. It usually belongs to another user or to the system."
         )),
         _ => AppError::SystemQueryFailed(format!("unable to {action} the process: {err}")),
     }

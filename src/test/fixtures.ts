@@ -26,6 +26,8 @@ export function makeTick(
     disks: [],
     networks: [],
     processes,
+    gpus: [],
+    temperatures: [],
     alerts: [],
     point: {
       t: NOW_MS,
@@ -65,4 +67,9 @@ export const STATIC_INFO: StaticSystemInfo = {
   bootTimeSecs: NOW_MS / 1000 - 3600,
   appVersion: "0.1.0",
   selfPid: 100,
+  distribution: "Debian GNU/Linux 13 (trixie)",
+  desktopEnvironment: "KDE Plasma",
+  displayServer: "Wayland",
+  container: null,
+  initSystem: "systemd",
 };

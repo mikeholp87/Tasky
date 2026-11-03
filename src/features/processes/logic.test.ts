@@ -35,6 +35,7 @@ function row(overrides: Partial<ProcessRow>): ProcessRow {
     exe: null,
     cmd: null,
     sessionId: null,
+    kernelThread: false,
     restricted: false,
     ...overrides,
   };

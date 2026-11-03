@@ -13,6 +13,7 @@ mod network;
 mod process_history;
 mod processes;
 pub mod rates;
+mod sensors;
 
 pub use collector::unix_millis;
 pub use engine::{Engine, TickSink};

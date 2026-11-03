@@ -18,6 +18,8 @@ export const DEFAULT_SETTINGS: Settings = {
   heatMapping: true,
   visibleColumns: [],
   columnWidths: {},
+  showKernelThreads: false,
+  showVirtualAdapters: false,
   notificationsEnabled: true,
   alertRules: [],
   debugLogging: false,

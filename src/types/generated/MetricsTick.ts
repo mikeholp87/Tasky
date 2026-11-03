@@ -3,10 +3,12 @@ import type { AlertEvent } from "./AlertEvent";
 import type { CpuSnapshot } from "./CpuSnapshot";
 import type { DiskSnapshot } from "./DiskSnapshot";
 import type { EngineStats } from "./EngineStats";
+import type { GpuSnapshot } from "./GpuSnapshot";
 import type { HistoryPoint } from "./HistoryPoint";
 import type { MemorySnapshot } from "./MemorySnapshot";
 import type { NetworkInterfaceSnapshot } from "./NetworkInterfaceSnapshot";
 import type { ProcessRow } from "./ProcessRow";
+import type { TemperatureReading } from "./TemperatureReading";
 
 /**
  * One sample of all dynamic metrics, emitted to the frontend on every tick.
@@ -27,6 +29,14 @@ timestampMs: number,
  * Actual time since the previous sample, used for every rate.
  */
 elapsedMs: number, cpu: CpuSnapshot, memory: MemorySnapshot, disks: Array<DiskSnapshot>, networks: Array<NetworkInterfaceSnapshot>, processes: Array<ProcessRow>, 
+/**
+ * Empty when no GPU is detected or the platform cannot enumerate them.
+ */
+gpus: Array<GpuSnapshot>, 
+/**
+ * Hardware temperature sensors the OS exposes (often none in VMs).
+ */
+temperatures: Array<TemperatureReading>, 
 /**
  * Alerts that fired on this tick (usually empty).
  */

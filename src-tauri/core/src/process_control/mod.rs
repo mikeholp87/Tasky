@@ -45,6 +45,8 @@ fn assess_row(engine: &Engine, row: &ProcessRow, action: ProcessAction) -> Prote
             .then(|| platform::is_critical(row.pid))
             .flatten(),
         system_root: system_root.as_deref(),
+        kernel_thread: row.kernel_thread,
+        zombie: row.status == crate::models::ProcessState::Zombie,
     };
     protection::assess(Platform::current(), &facts, action)
 }

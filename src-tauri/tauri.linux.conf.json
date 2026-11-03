@@ -1,0 +1,5 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "identifier": "io.github.mikeholp87.taskmanager",
+  "mainBinaryName": "task-manager"
+}

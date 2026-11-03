@@ -72,6 +72,7 @@ mod tests {
             exe: None,
             cmd: None,
             session_id: None,
+            kernel_thread: false,
             restricted: false,
         }
     }

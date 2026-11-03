@@ -2,12 +2,16 @@
 
 mod connections;
 mod control;
+mod net;
+mod system;
 
 use std::collections::HashMap;
 use std::io::Read;
 
 pub use connections::connections;
 pub use control::{force_kill, is_critical, resume, set_priority, suspend, system_root, terminate};
+pub use net::interface_kind;
+pub use system::os_details;
 
 use super::{MemoryExtras, ProcessExtras, procfs};
 

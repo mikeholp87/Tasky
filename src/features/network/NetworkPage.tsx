@@ -7,8 +7,10 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList } from "@/components/ui/KeyValueList";
 import { networkHistory } from "@/stores/deviceHistory";
 import { useMetricsStore } from "@/stores/metricsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import type { NetworkInterfaceSnapshot } from "@/types";
 import { formatBytes, formatBytesPerSecond } from "@/utils/format";
+import { INTERFACE_KIND_LABEL, visibleInterfaces } from "@/utils/system";
 
 const SERIES: readonly DeviceChartSeries[] = [
   { label: "Download", key: "rx", colorVar: "--chart-1" },
@@ -16,7 +18,10 @@ const SERIES: readonly DeviceChartSeries[] = [
 ];
 
 export function NetworkPage() {
-  const networks = useMetricsStore((s) => s.tick?.networks);
+  const all = useMetricsStore((s) => s.tick?.networks);
+  const showVirtual = useSettingsStore((s) => s.showVirtualAdapters);
+  const networks = all && visibleInterfaces(all, showVirtual);
+  const hidden = all && networks ? all.length - networks.length : 0;
   return (
     <>
       <PageHeader title="Network" description="Interfaces and throughput." />
@@ -31,6 +36,12 @@ export function NetworkPage() {
           ))}
         </div>
       )}
+      {hidden > 0 && (
+        <p className="mt-4 text-[12px] text-fg-muted">
+          {hidden} virtual {hidden === 1 ? "adapter" : "adapters"} (bridges, container networks)
+          hidden. Show them in Settings → Monitoring.
+        </p>
+      )}
     </>
   );
 }
@@ -42,6 +53,11 @@ function InterfaceCard({ iface: n }: { iface: NetworkInterfaceSnapshot }) {
         title={
           <span className="normal-case tracking-normal text-fg">
             {n.name}
+            {INTERFACE_KIND_LABEL[n.kind] && (
+              <span className="ml-2 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-fg-muted">
+                {INTERFACE_KIND_LABEL[n.kind]}
+              </span>
+            )}
             {n.isPrimary && (
               <span className="ml-2 rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-fg">
                 Primary
