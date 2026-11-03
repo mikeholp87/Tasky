@@ -25,10 +25,34 @@ pub fn process_architecture(_pid: u32) -> Option<String> {
     None
 }
 
-fn unsupported(what: &str) -> crate::errors::AppResult<()> {
+fn unsupported<T>(what: &str) -> crate::errors::AppResult<T> {
     Err(crate::errors::AppError::UnsupportedOperation(
         what.to_owned(),
     ))
+}
+
+pub fn sockets() -> crate::errors::AppResult<crate::models::SocketList> {
+    unsupported("The ports view")
+}
+
+pub fn open_files(_pid: u32) -> crate::errors::AppResult<crate::models::OpenFileList> {
+    unsupported("Listing open files")
+}
+
+pub fn find_file_users(_path: &str) -> crate::errors::AppResult<crate::models::FileUserList> {
+    unsupported("Finding processes that use a file")
+}
+
+pub fn memory_map(_pid: u32) -> crate::errors::AppResult<crate::models::MemoryMap> {
+    unsupported("The memory map")
+}
+
+pub fn modules(_pid: u32) -> crate::errors::AppResult<Vec<crate::models::ModuleInfo>> {
+    unsupported("Listing modules")
+}
+
+pub fn threads(_pid: u32) -> crate::errors::AppResult<Vec<crate::inspect::RawThread>> {
+    unsupported("Listing threads")
 }
 
 pub fn terminate(_pid: u32) -> crate::errors::AppResult<()> {

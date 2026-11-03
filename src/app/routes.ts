@@ -3,6 +3,7 @@ import {
   Bell,
   Cpu,
   FileSearch,
+  FolderSearch,
   Gauge,
   HardDrive,
   Info,
@@ -10,6 +11,8 @@ import {
   ListTree,
   MemoryStick,
   Network,
+  Plug,
+  ScrollText,
   Settings,
   Timer,
   type LucideIcon,
@@ -24,6 +27,9 @@ export type RouteId =
   | "storage"
   | "network"
   | "process-details"
+  | "ports"
+  | "file-finder"
+  | "activity"
   | "system"
   | "alerts"
   | "benchmarks"
@@ -46,6 +52,9 @@ export const ROUTES: readonly RouteDef[] = [
   { id: "storage", label: "Storage", icon: HardDrive, group: "resources" },
   { id: "network", label: "Network", icon: Network, group: "resources" },
   { id: "process-details", label: "Process Details", icon: FileSearch, group: "tools" },
+  { id: "ports", label: "Ports", icon: Plug, group: "tools" },
+  { id: "file-finder", label: "Find File Users", icon: FolderSearch, group: "tools" },
+  { id: "activity", label: "Activity", icon: ScrollText, group: "tools" },
   { id: "system", label: "System Information", icon: Info, group: "tools" },
   { id: "benchmarks", label: "Benchmarks", icon: Timer, group: "tools" },
   { id: "alerts", label: "Alerts", icon: Bell, group: "tools" },

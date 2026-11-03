@@ -18,9 +18,10 @@ use std::time::{Duration, Instant};
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    AlertEvent, AlertRule, HistoryPoint, MetricsTick, MonitoringState, ProcessPoint, ProcessRow,
-    ProcessState, StaticSystemInfo,
+    ActivityEvent, ActivityKind, AlertEvent, AlertRule, HistoryPoint, MetricsTick, MonitoringState,
+    ProcessPoint, ProcessRow, ProcessState, StaticSystemInfo,
 };
+use crate::monitoring::activity::{ActivityConfig, ActivityDetector, ActivityLog, Pending};
 use crate::monitoring::alerts::AlertEvaluator;
 use crate::monitoring::collector::{Collector, unix_millis};
 use crate::monitoring::history::RingBuffer;
@@ -67,6 +68,8 @@ struct Shared {
     /// The UI is showing per-process shared-memory accounting (extra reads).
     memory_detail: AtomicBool,
     alert_log: Mutex<RingBuffer<AlertEvent>>,
+    activity_log: Mutex<ActivityLog>,
+    activity_config: RwLock<ActivityConfig>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
 }
 
@@ -112,6 +115,9 @@ impl Engine {
                 let worker = Worker {
                     collector,
                     alerts: AlertEvaluator::default(),
+                    detector: ActivityDetector::default(),
+                    kernel_threads_shown: false,
+                    emitted_activity: 0,
                     shared,
                     last_payload: 0,
                 };
@@ -130,6 +136,11 @@ impl Engine {
             include_kernel_threads: AtomicBool::new(false),
             memory_detail: AtomicBool::new(false),
             alert_log: Mutex::new(RingBuffer::new(ALERT_LOG_LEN)),
+            activity_log: Mutex::new(ActivityLog::default()),
+            activity_config: RwLock::new(ActivityConfig {
+                cpu_spike_percent: 80.0,
+                memory_jump_bytes: 512 * 1024 * 1024,
+            }),
             sinks: Mutex::new(HashMap::new()),
         });
         shared_tx
@@ -225,6 +236,25 @@ impl Engine {
         lock(&self.shared.alert_log).iter().cloned().collect()
     }
 
+    /// Sets the thresholds for CPU spike and memory jump events.
+    pub fn set_activity_config(&self, cpu_spike_percent: u32, memory_jump_mb: u32) {
+        *write(&self.shared.activity_config) = ActivityConfig {
+            cpu_spike_percent: cpu_spike_percent as f32,
+            memory_jump_bytes: u64::from(memory_jump_mb) * 1024 * 1024,
+        };
+    }
+
+    /// Adds an event from outside the engine (a process action, a benchmark).
+    /// It reaches the UI with the next tick.
+    pub fn record_activity(&self, event: Pending) {
+        lock(&self.shared.activity_log).record(unix_millis(), event);
+    }
+
+    /// Timeline events with a sequence number above `after`, oldest first.
+    pub fn activity_since(&self, after: u64) -> Vec<ActivityEvent> {
+        lock(&self.shared.activity_log).since(after)
+    }
+
     /// Registers (or replaces) the sink with the given key. Re-subscribing
     /// after a webview reload replaces the stale channel instead of leaking it.
     pub fn subscribe(&self, key: String, sink: Arc<dyn TickSink>) {
@@ -249,6 +279,12 @@ impl Engine {
 struct Worker {
     collector: Collector,
     alerts: AlertEvaluator,
+    detector: ActivityDetector,
+    /// Whether the previous tick included kernel threads; a change makes
+    /// rows appear or vanish without any process starting or exiting.
+    kernel_threads_shown: bool,
+    /// Highest activity sequence already delivered in a tick.
+    emitted_activity: u64,
     shared: Arc<Shared>,
     last_payload: u32,
 }
@@ -295,7 +331,8 @@ impl Worker {
             self.last_payload,
             shared.memory_detail.load(Ordering::Relaxed),
         );
-        if !shared.include_kernel_threads.load(Ordering::Relaxed) {
+        let kernel_threads = shared.include_kernel_threads.load(Ordering::Relaxed);
+        if !kernel_threads {
             sample.processes.retain(|p| !p.kernel_thread);
             sample.engine.process_count = u32::try_from(sample.processes.len()).unwrap_or(u32::MAX);
         }
@@ -309,6 +346,32 @@ impl Worker {
                 tracing::info!(rule = %event.rule_id, "alert fired");
                 log.push(event.clone());
             }
+        }
+
+        // Timeline: diff against the previous snapshot, add alerts, then
+        // deliver everything recorded since the last tick (including events
+        // other threads recorded in between).
+        if kernel_threads != self.kernel_threads_shown {
+            self.kernel_threads_shown = kernel_threads;
+            self.detector.reset();
+        }
+        let cfg = *read(&shared.activity_config);
+        let found = self
+            .detector
+            .observe(sample.timestamp_ms, &sample.processes, &cfg);
+        {
+            let mut log = lock(&shared.activity_log);
+            for event in found {
+                log.record(sample.timestamp_ms, event);
+            }
+            for alert in &sample.alerts {
+                let mut e = Pending::new(ActivityKind::AlertFired).detail(alert.message.clone());
+                e.pid = alert.pid;
+                e.name = Some(alert.rule_name.clone());
+                log.record(alert.timestamp_ms, e);
+            }
+            sample.activity = log.since(self.emitted_activity);
+            self.emitted_activity = log.last_seq();
         }
 
         write(&shared.history).push(sample.point.clone());

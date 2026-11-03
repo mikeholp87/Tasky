@@ -29,6 +29,7 @@ export function makeTick(
     gpus: [],
     temperatures: [],
     alerts: [],
+    activity: [],
     point: {
       t: NOW_MS,
       cpu: 12,

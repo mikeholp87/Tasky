@@ -41,7 +41,7 @@ pub fn connections(pid: u32) -> Option<Vec<Connection>> {
     Some(out)
 }
 
-fn to_connection(e: &NetEntry, protocol: Protocol) -> Connection {
+pub(super) fn to_connection(e: &NetEntry, protocol: Protocol) -> Connection {
     let is_tcp = matches!(protocol, Protocol::Tcp | Protocol::Tcp6);
     let state = is_tcp.then(|| tcp_state(e.state));
     let has_remote = is_tcp && state != Some(TcpState::Listen) && e.remote.1 != 0;

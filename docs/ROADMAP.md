@@ -9,6 +9,13 @@ time), Network, System Information, Alerts with desktop notifications,
 persisted settings, tray, autostart, CSV/JSON export, diagnostics, command
 palette, light/dark/system themes.
 
+## Done (diagnostics, 2026-11)
+
+Ports view with port-conflict diagnosis, Find Process Using File, per-process
+Open Files, Modules, Memory Map and Threads tabs, and the Activity timeline
+(starts/exits, CPU spikes, memory jumps, alerts, actions, benchmarks). See
+`FEATURE_GAP_ANALYSIS.md` for the research and scoring behind them.
+
 ## Next
 
 - **Windows: elevation helper.** A narrow, signed helper process for actions
@@ -20,13 +27,21 @@ palette, light/dark/system themes.
 - **macOS support.** Fill in `platform/macos` (`proc_pidinfo`, `kill`,
   `setpriority`, `IOKit` disk stats) and sign/notarize the bundle.
 - **Automatic updates** with the Tauri updater, once releases are signed.
-- **Startup applications** and **Services** pages.
+- **Startup applications** and **Services** pages (P1 in the gap analysis;
+  Services needs a D-Bus client for systemd).
+- **Application grouping** in the process table, new-process highlighting,
+  memory-growth and descriptor-leak hints, wait/blocking analysis and a
+  "Diagnose process" summary built from the new inspection data.
+- **Logged-in users** view and **global resource search** (files, ports,
+  processes, modules in one box).
+- **Thread suspend/resume** (advanced, with warnings) and complete Windows
+  handle enumeration, only if an isolated, clearly documented approach is
+  acceptable.
 - **Process history persistence** (opt-in, SQLite, retention 1 h – 30 d) as
   an extra `TickSink`.
 - **GPU, temperatures, fans, battery** via sysinfo's `component`/`gpu`
   features where reliable.
 - **Docker containers and WSL processes** views.
-- **Port viewer** (all listening sockets, not just per process).
 
 ## Considered and deferred
 

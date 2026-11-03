@@ -1,6 +1,6 @@
 import { ArrowLeft, FolderOpen, OctagonX, Pause, Play, RefreshCw, Square } from "lucide-react";
 import { requestAction, revealExecutable } from "@/features/processes/actions";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type uPlot from "uplot";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
@@ -21,7 +21,22 @@ import {
   formatPercent,
   formatTimestamp,
 } from "@/utils/format";
+import { cn } from "@/lib/cn";
+import { MemoryMapTab } from "./inspect/MemoryMapTab";
+import { ModulesTab } from "./inspect/ModulesTab";
+import { OpenFilesTab } from "./inspect/OpenFilesTab";
+import { ThreadsTab } from "./inspect/ThreadsTab";
 import { useProcessDetails } from "./useProcessDetails";
+
+type Tab = "overview" | "network" | "files" | "modules" | "maps" | "threads";
+const TABS: readonly { id: Tab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "network", label: "Network" },
+  { id: "files", label: "Open Files" },
+  { id: "modules", label: "Modules" },
+  { id: "maps", label: "Memory Map" },
+  { id: "threads", label: "Threads" },
+];
 
 const HISTORY_SECONDS = 300;
 const CPU_SERIES: readonly LineSeries[] = [{ label: "CPU", colorVar: "--res-cpu" }];
@@ -65,6 +80,8 @@ function ProcessDetailsView({ pid }: { pid: number }) {
   const rows = useMetricsStore((s) => s.tick?.processes);
   const totalMemory = useMetricsStore((s) => s.tick?.memory.totalBytes ?? 0);
   const nowMs = useMetricsStore((s) => s.tick?.timestampMs ?? 0);
+  const platform = useMetricsStore((s) => s.staticInfo?.platform);
+  const [tab, setTab] = useState<Tab>("overview");
 
   const row: ProcessRow | null = live ?? details?.row ?? null;
   const exited = live == null && details != null;
@@ -138,119 +155,171 @@ function ProcessDetailsView({ pid }: { pid: number }) {
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card className="xl:col-span-2">
-          <CardHeader title="General" />
-          <div className="grid gap-x-10 px-4 pb-4 pt-3 md:grid-cols-2">
-            <KeyValueList
-              items={[
-                { label: "Name", value: row.name },
-                { label: "PID", value: row.pid },
-                {
-                  label: "Parent",
-                  value:
-                    row.parentPid == null ? (
-                      NOT_AVAILABLE
-                    ) : (
-                      <button
-                        type="button"
-                        className="text-accent hover:underline"
-                        onClick={() => row.parentPid != null && openProcess(row.parentPid)}
-                      >
-                        {details?.parentName ?? "PID"} ({row.parentPid})
-                      </button>
-                    ),
-                },
-                {
-                  label: "User",
-                  value: row.user ?? <Unavailable />,
-                  hint: "Owner information for other accounts' processes may require administrator/root rights.",
-                },
-                { label: "Status", value: STATUS_LABEL[row.status] },
-                { label: "Architecture", value: details?.architecture ?? NOT_AVAILABLE },
-              ]}
-            />
-            <KeyValueList
-              items={[
-                {
-                  label: "Started",
-                  value: row.startTime > 0 ? formatTimestamp(row.startTime * 1000) : NOT_AVAILABLE,
-                },
-                { label: "Runtime", value: formatDuration(runtime) },
-                { label: "Threads", value: row.threads ?? <Unavailable /> },
-                { label: "Priority", value: row.priority ?? <Unavailable /> },
-                { label: "Session", value: row.sessionId ?? NOT_AVAILABLE },
-                { label: "Children", value: live ? children.length : NOT_AVAILABLE },
-              ]}
-            />
-          </div>
-          <div className="space-y-2 border-t border-border px-4 py-3">
-            <PathField label="Executable" value={row.exe} />
-            <PathField label="Command line" value={row.cmd} />
-            <PathField label="Working directory" value={details?.cwd ?? null} />
-          </div>
-        </Card>
-
-        <MetricCard
-          nowMs={nowMs}
-          title={`CPU · ${row.restricted ? NOT_AVAILABLE : formatPercent(row.cpuPercent)}`}
-          series={CPU_SERIES}
-          history={history}
-          pick={(p) => [p.cpu]}
-          yMax={100}
-          format={percentAxis}
-          label="CPU usage of this process"
-        />
-        <MetricCard
-          nowMs={nowMs}
-          title={`Memory · ${formatBytes(row.memoryBytes)}${memPct != null ? ` (${formatPercent(memPct)})` : ""}`}
-          series={MEM_SERIES}
-          history={history}
-          pick={(p) => [p.memory]}
-          format={bytesAxis}
-          label="Memory usage of this process"
-          footer={`Virtual memory ${formatBytes(row.virtualMemoryBytes)}`}
-        />
-        <MetricCard
-          nowMs={nowMs}
-          title={
-            row.restricted
-              ? `Disk · ${NOT_AVAILABLE}`
-              : `Disk · ↓ ${formatBytesPerSecond(row.diskReadPerSec)} ↑ ${formatBytesPerSecond(row.diskWritePerSec)}`
-          }
-          series={IO_SERIES}
-          history={history}
-          pick={(p) => [p.read, p.write]}
-          format={rateAxis}
-          minYMax={RATE_MIN_Y}
-          label="Disk I/O of this process"
-          footer={
-            details?.totalReadBytes != null || details?.totalWrittenBytes != null
-              ? `Total read ${formatBytes(details?.totalReadBytes)} · written ${formatBytes(details?.totalWrittenBytes)}`
-              : "Lifetime totals unavailable for this process"
-          }
-        />
-        <ConnectionsCard connections={details?.connections} loading={loading} />
-
-        {children.length > 0 && (
-          <Card className="xl:col-span-2">
-            <CardHeader title={`Child processes (${children.length})`} />
-            <ul className="flex flex-wrap gap-2 px-4 pb-4 pt-3">
-              {children.map((c) => (
-                <li key={c.pid}>
-                  <button
-                    type="button"
-                    onClick={() => openProcess(c.pid)}
-                    className="rounded-md border border-border px-2 py-1 hover:bg-surface-2"
-                  >
-                    {c.name} <span className="num text-fg-subtle">{c.pid}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+      <div
+        role="tablist"
+        aria-label="Process information"
+        className="mb-4 flex flex-wrap gap-1 border-b border-border"
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls="process-tabpanel"
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-2 text-fg-muted hover:text-fg",
+              tab === t.id ? "border-accent text-fg" : "border-transparent",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id="process-tabpanel" aria-labelledby={`tab-${tab}`}>
+        {tab === "network" && (
+          <ConnectionsCard connections={details?.connections} loading={loading} />
+        )}
+        {/* Inspection tabs mount only when opened, so nothing is read until then. */}
+        {tab === "files" && (
+          <Card>
+            <OpenFilesTab pid={pid} />
+          </Card>
+        )}
+        {tab === "modules" && (
+          <Card>
+            <ModulesTab pid={pid} windows={platform === "windows"} />
+          </Card>
+        )}
+        {tab === "maps" && (
+          <Card>
+            <MemoryMapTab pid={pid} />
+          </Card>
+        )}
+        {tab === "threads" && (
+          <Card>
+            <ThreadsTab pid={pid} linux={platform === "linux"} />
           </Card>
         )}
       </div>
+
+      {tab === "overview" && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card className="xl:col-span-2">
+            <CardHeader title="General" />
+            <div className="grid gap-x-10 px-4 pb-4 pt-3 md:grid-cols-2">
+              <KeyValueList
+                items={[
+                  { label: "Name", value: row.name },
+                  { label: "PID", value: row.pid },
+                  {
+                    label: "Parent",
+                    value:
+                      row.parentPid == null ? (
+                        NOT_AVAILABLE
+                      ) : (
+                        <button
+                          type="button"
+                          className="text-accent hover:underline"
+                          onClick={() => row.parentPid != null && openProcess(row.parentPid)}
+                        >
+                          {details?.parentName ?? "PID"} ({row.parentPid})
+                        </button>
+                      ),
+                  },
+                  {
+                    label: "User",
+                    value: row.user ?? <Unavailable />,
+                    hint: "Owner information for other accounts' processes may require administrator/root rights.",
+                  },
+                  { label: "Status", value: STATUS_LABEL[row.status] },
+                  { label: "Architecture", value: details?.architecture ?? NOT_AVAILABLE },
+                ]}
+              />
+              <KeyValueList
+                items={[
+                  {
+                    label: "Started",
+                    value:
+                      row.startTime > 0 ? formatTimestamp(row.startTime * 1000) : NOT_AVAILABLE,
+                  },
+                  { label: "Runtime", value: formatDuration(runtime) },
+                  { label: "Threads", value: row.threads ?? <Unavailable /> },
+                  { label: "Priority", value: row.priority ?? <Unavailable /> },
+                  { label: "Session", value: row.sessionId ?? NOT_AVAILABLE },
+                  { label: "Children", value: live ? children.length : NOT_AVAILABLE },
+                ]}
+              />
+            </div>
+            <div className="space-y-2 border-t border-border px-4 py-3">
+              <PathField label="Executable" value={row.exe} />
+              <PathField label="Command line" value={row.cmd} />
+              <PathField label="Working directory" value={details?.cwd ?? null} />
+            </div>
+          </Card>
+
+          <MetricCard
+            nowMs={nowMs}
+            title={`CPU · ${row.restricted ? NOT_AVAILABLE : formatPercent(row.cpuPercent)}`}
+            series={CPU_SERIES}
+            history={history}
+            pick={(p) => [p.cpu]}
+            yMax={100}
+            format={percentAxis}
+            label="CPU usage of this process"
+          />
+          <MetricCard
+            nowMs={nowMs}
+            title={`Memory · ${formatBytes(row.memoryBytes)}${memPct != null ? ` (${formatPercent(memPct)})` : ""}`}
+            series={MEM_SERIES}
+            history={history}
+            pick={(p) => [p.memory]}
+            format={bytesAxis}
+            label="Memory usage of this process"
+            footer={`Virtual memory ${formatBytes(row.virtualMemoryBytes)}`}
+          />
+          <MetricCard
+            nowMs={nowMs}
+            title={
+              row.restricted
+                ? `Disk · ${NOT_AVAILABLE}`
+                : `Disk · ↓ ${formatBytesPerSecond(row.diskReadPerSec)} ↑ ${formatBytesPerSecond(row.diskWritePerSec)}`
+            }
+            series={IO_SERIES}
+            history={history}
+            pick={(p) => [p.read, p.write]}
+            format={rateAxis}
+            minYMax={RATE_MIN_Y}
+            label="Disk I/O of this process"
+            footer={
+              details?.totalReadBytes != null || details?.totalWrittenBytes != null
+                ? `Total read ${formatBytes(details?.totalReadBytes)} · written ${formatBytes(details?.totalWrittenBytes)}`
+                : "Lifetime totals unavailable for this process"
+            }
+          />
+
+          {children.length > 0 && (
+            <Card className="xl:col-span-2">
+              <CardHeader title={`Child processes (${children.length})`} />
+              <ul className="flex flex-wrap gap-2 px-4 pb-4 pt-3">
+                {children.map((c) => (
+                  <li key={c.pid}>
+                    <button
+                      type="button"
+                      onClick={() => openProcess(c.pid)}
+                      className="rounded-md border border-border px-2 py-1 hover:bg-surface-2"
+                    >
+                      {c.name} <span className="num text-fg-subtle">{c.pid}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
+      )}
     </>
   );
 }

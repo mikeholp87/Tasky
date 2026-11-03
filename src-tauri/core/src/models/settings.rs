@@ -46,9 +46,20 @@ pub struct Settings {
     // Alerts
     pub notifications_enabled: bool,
     pub alert_rules: Vec<AlertRule>,
+    // Activity timeline
+    /// A process using at least this much CPU (percent of the machine) for a
+    /// few seconds is logged as a spike.
+    pub cpu_spike_percent: u32,
+    /// Growth in a process's memory, within half a minute, that is logged.
+    pub memory_jump_mb: u32,
     // Advanced
     pub debug_logging: bool,
 }
+
+/// Allowed range of [`Settings::cpu_spike_percent`].
+pub const CPU_SPIKE_RANGE: std::ops::RangeInclusive<u32> = 10..=100;
+/// Allowed range of [`Settings::memory_jump_mb`].
+pub const MEMORY_JUMP_RANGE: std::ops::RangeInclusive<u32> = 64..=65_536;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -69,6 +80,8 @@ impl Default for Settings {
             show_virtual_adapters: false,
             notifications_enabled: true,
             alert_rules: default_alert_rules(),
+            cpu_spike_percent: 80,
+            memory_jump_mb: 512,
             debug_logging: false,
         }
     }
@@ -82,6 +95,16 @@ impl Settings {
         if !ALLOWED_HISTORY_MINUTES.contains(&self.history_minutes) {
             return Err(AppError::InvalidArgument(
                 "History length must be 15, 30 or 60 minutes.".into(),
+            ));
+        }
+        if !CPU_SPIKE_RANGE.contains(&self.cpu_spike_percent) {
+            return Err(AppError::InvalidArgument(
+                "CPU spike threshold must be between 10 and 100 percent.".into(),
+            ));
+        }
+        if !MEMORY_JUMP_RANGE.contains(&self.memory_jump_mb) {
+            return Err(AppError::InvalidArgument(
+                "Memory jump threshold must be between 64 MB and 64 GB.".into(),
             ));
         }
         if self.alert_rules.len() > MAX_ALERT_RULES {
@@ -116,6 +139,12 @@ impl Settings {
         }
         if !ALLOWED_HISTORY_MINUTES.contains(&self.history_minutes) {
             self.history_minutes = d.history_minutes;
+        }
+        if !CPU_SPIKE_RANGE.contains(&self.cpu_spike_percent) {
+            self.cpu_spike_percent = d.cpu_spike_percent;
+        }
+        if !MEMORY_JUMP_RANGE.contains(&self.memory_jump_mb) {
+            self.memory_jump_mb = d.memory_jump_mb;
         }
         let mut ids = std::collections::HashSet::new();
         self.alert_rules

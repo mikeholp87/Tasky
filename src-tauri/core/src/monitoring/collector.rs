@@ -147,6 +147,7 @@ impl Collector {
             gpus,
             temperatures,
             alerts: Vec::new(),
+            activity: Vec::new(),
             point,
             engine: EngineStats {
                 poll_duration_ms: duration_ms(started.elapsed()),

@@ -136,6 +136,12 @@ impl Coordinator {
             *lock(&self.shared.status) = initial.clone();
         }
         sink.status(&initial);
+        self.engine.record_activity(
+            crate::monitoring::activity::Pending::new(
+                crate::models::ActivityKind::BenchmarkStarted,
+            )
+            .detail(format!("{kind:?} benchmark, {profile:?} profile")),
+        );
 
         let ctx = RunContext {
             engine: Arc::clone(&self.engine),
@@ -235,6 +241,13 @@ impl RunContext {
             self.sink.finished(result);
         }
         self.sink.status(&final_status);
+        // Also recorded when cancelled or failed; the detail says which.
+        self.engine.record_activity(
+            crate::monitoring::activity::Pending::new(
+                crate::models::ActivityKind::BenchmarkCompleted,
+            )
+            .detail(format!("{:?} benchmark: {state:?}", self.kind)),
+        );
     }
 
     fn execute(&self, reporter: &Reporter) -> Result<BenchmarkResult, BenchmarkError> {

@@ -14,4 +14,13 @@ showKernelThreads: boolean,
 /**
  * Bridges, veth, TAP and container networks on the Network page.
  */
-showVirtualAdapters: boolean, notificationsEnabled: boolean, alertRules: Array<AlertRule>, debugLogging: boolean, };
+showVirtualAdapters: boolean, notificationsEnabled: boolean, alertRules: Array<AlertRule>, 
+/**
+ * A process using at least this much CPU (percent of the machine) for a
+ * few seconds is logged as a spike.
+ */
+cpuSpikePercent: number, 
+/**
+ * Growth in a process's memory, within half a minute, that is logged.
+ */
+memoryJumpMb: number, debugLogging: boolean, };

@@ -9,9 +9,11 @@ pub mod protection;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    ActionOutcome, Platform, ProcessAction, ProcessRow, ProtectionAssessment, ProtectionLevel,
+    ActionOutcome, ActivityKind, Platform, ProcessAction, ProcessRow, ProtectionAssessment,
+    ProtectionLevel,
 };
 use crate::monitoring::Engine;
+use crate::monitoring::activity::Pending;
 use crate::platform;
 use protection::ProcessFacts;
 
@@ -104,6 +106,17 @@ pub fn perform(engine: &Engine, req: ActionRequest) -> AppResult<ActionOutcome> 
     };
     // Process names are not sensitive; command lines are never logged.
     tracing::info!(pid, name = %name, action = ?req.action, "process action performed");
+    let what = match req.action {
+        ProcessAction::Terminate => "Asked to close",
+        ProcessAction::ForceKill => "Force ended",
+        ProcessAction::Suspend => "Suspended",
+        ProcessAction::Resume => "Resumed",
+        ProcessAction::SetPriority { .. } => "Priority changed",
+    };
+    engine.record_activity(
+        Pending::process(ActivityKind::ProcessAction, pid, name)
+            .detail(format!("{what} from this app")),
+    );
     // Show the effect promptly rather than at the next scheduled tick.
     let _ = engine.refresh_now();
     Ok(ActionOutcome { message })

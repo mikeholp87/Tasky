@@ -92,3 +92,21 @@ DOM regardless of process count.
   payloads by about a third, but search needs them; worth revisiting only if
   payload size becomes measurable CPU.
 - **Differential process updates.** Not justified by the measurements above.
+
+## On-demand inspection (measured 2026-11-03)
+
+Release build, Debian, one desktop session (about 300 processes). Run
+`cargo test -p tm-core --release measure_inspection_cost -- --ignored --nocapture`
+and `measure_activity_diff_cost` to reproduce.
+
+| Operation                                      |         Time |
+| ---------------------------------------------- | -----------: |
+| Ports: all sockets with owners (79 sockets)    |       ~12 ms |
+| Find file users, one file (all processes)      |       ~41 ms |
+| Find file users, `/usr` (stops at 2,000 rows)  |        ~8 ms |
+| Open files / memory map / threads, one process | under 0.1 ms |
+| Activity diff, 1,000 processes, per tick       |       ~38 µs |
+
+None of these run unless their view is open, except the activity diff, which
+adds well under 0.1 ms to a tick. The Ports page refreshes every 3 s and the
+Threads tab every 1.5 s, only while visible.

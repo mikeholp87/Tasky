@@ -118,6 +118,27 @@ without re-creating DOM, which keeps frontend CPU low.
 PID. Filtering and sorting run once per tick in a memoized selector; the
 5,000-row case is covered by tests.
 
+### On-demand inspection
+
+Ports, open files, modules, memory maps, threads and the file finder are not
+part of the tick. Each is a Tauri command (`commands/inspect.rs`) that runs the
+platform function (`platform::sockets`, `open_files`, `find_file_users`,
+`memory_map`, `modules`, `threads`) on a blocking worker, and the matching UI
+calls it only while it is mounted (`useRemoteData`). Platform code gathers raw
+facts; classification, summaries and per-thread CPU percentages live in
+`core/src/inspect.rs`, compiled and tested on every OS. The thread sampler keeps
+the previous reading of one process only.
+
+### Activity timeline
+
+`monitoring/activity.rs` compares successive process snapshots keyed by
+`(pid, start_time)` (so a reused PID is an exit plus a start), applies a
+minimum duration and hysteresis to CPU spikes, and tracks memory growth against
+a 30-second low-water mark. The engine also records alerts, actions made
+through `process_control::perform` and benchmark start/finish. New events ride
+in `MetricsTick.activity`; `get_activity(after)` backfills after the window was
+hidden. The log is in memory, bounded to 1,000 events.
+
 ## Data flow for an action (e.g. "Force end")
 
 1. Context menu → `requestAction(row, { type: "forceKill" })`.

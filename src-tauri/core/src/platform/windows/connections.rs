@@ -14,52 +14,63 @@ use crate::models::{Connection, Protocol, TcpState};
 
 /// All TCP/UDP sockets owned by `pid`. Returns `None` if the tables cannot be read.
 pub fn connections(pid: u32) -> Option<Vec<Connection>> {
+    Some(
+        owned_sockets()?
+            .into_iter()
+            .filter(|(owner, _)| *owner == pid)
+            .map(|(_, c)| c)
+            .collect(),
+    )
+}
+
+/// Every TCP/UDP socket on the machine with its owning PID (0 when the
+/// system attributes it to nobody, e.g. sockets in TIME_WAIT).
+pub fn owned_sockets() -> Option<Vec<(u32, Connection)>> {
     let mut out = Vec::new();
 
     for row in table::<MIB_TCPROW_OWNER_PID>(Kind::Tcp, AF_INET.0.into())? {
-        if row.dwOwningPid != pid {
-            continue;
-        }
         let state = tcp_state(row.dwState);
         let listening = state == TcpState::Listen;
-        out.push(Connection {
-            protocol: Protocol::Tcp,
-            local_address: ipv4(row.dwLocalAddr).to_string(),
-            local_port: port(row.dwLocalPort),
-            remote_address: (!listening).then(|| ipv4(row.dwRemoteAddr).to_string()),
-            remote_port: (!listening).then(|| port(row.dwRemotePort)),
-            state: Some(state),
-        });
+        out.push((
+            row.dwOwningPid,
+            Connection {
+                protocol: Protocol::Tcp,
+                local_address: ipv4(row.dwLocalAddr).to_string(),
+                local_port: port(row.dwLocalPort),
+                remote_address: (!listening).then(|| ipv4(row.dwRemoteAddr).to_string()),
+                remote_port: (!listening).then(|| port(row.dwRemotePort)),
+                state: Some(state),
+            },
+        ));
     }
     for row in table::<MIB_TCP6ROW_OWNER_PID>(Kind::Tcp, AF_INET6.0.into())? {
-        if row.dwOwningPid != pid {
-            continue;
-        }
         let state = tcp_state(row.dwState);
         let listening = state == TcpState::Listen;
-        out.push(Connection {
-            protocol: Protocol::Tcp6,
-            local_address: Ipv6Addr::from(row.ucLocalAddr).to_string(),
-            local_port: port(row.dwLocalPort),
-            remote_address: (!listening).then(|| Ipv6Addr::from(row.ucRemoteAddr).to_string()),
-            remote_port: (!listening).then(|| port(row.dwRemotePort)),
-            state: Some(state),
-        });
+        out.push((
+            row.dwOwningPid,
+            Connection {
+                protocol: Protocol::Tcp6,
+                local_address: Ipv6Addr::from(row.ucLocalAddr).to_string(),
+                local_port: port(row.dwLocalPort),
+                remote_address: (!listening).then(|| Ipv6Addr::from(row.ucRemoteAddr).to_string()),
+                remote_port: (!listening).then(|| port(row.dwRemotePort)),
+                state: Some(state),
+            },
+        ));
     }
     for row in table::<MIB_UDPROW_OWNER_PID>(Kind::Udp, AF_INET.0.into())? {
-        if row.dwOwningPid == pid {
-            out.push(udp(
+        out.push((
+            row.dwOwningPid,
+            udp(
                 Protocol::Udp,
                 ipv4(row.dwLocalAddr).to_string(),
                 row.dwLocalPort,
-            ));
-        }
+            ),
+        ));
     }
     for row in table::<MIB_UDP6ROW_OWNER_PID>(Kind::Udp, AF_INET6.0.into())? {
-        if row.dwOwningPid == pid {
-            let addr = Ipv6Addr::from(row.ucLocalAddr).to_string();
-            out.push(udp(Protocol::Udp6, addr, row.dwLocalPort));
-        }
+        let addr = Ipv6Addr::from(row.ucLocalAddr).to_string();
+        out.push((row.dwOwningPid, udp(Protocol::Udp6, addr, row.dwLocalPort)));
     }
     Some(out)
 }

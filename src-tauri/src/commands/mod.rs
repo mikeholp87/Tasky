@@ -4,6 +4,7 @@
 pub mod benchmarks;
 pub mod control;
 pub mod export;
+pub mod inspect;
 pub mod monitoring;
 pub mod processes;
 pub mod settings;

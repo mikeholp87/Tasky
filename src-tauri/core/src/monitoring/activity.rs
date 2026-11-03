@@ -1,0 +1,400 @@
+//! Activity timeline: process starts and exits, CPU spikes and memory jumps,
+//! found by comparing successive process snapshots, plus events other parts
+//! of the app record (alerts, process actions, benchmarks).
+//!
+//! Processes are identified by `(pid, start_time)` so a reused PID is an exit
+//! followed by a start, never a continuation.
+
+use std::collections::HashMap;
+
+use crate::models::{ActivityEvent, ActivityKind, ProcessRow};
+use crate::monitoring::history::RingBuffer;
+
+/// How long CPU must stay above the threshold before it is a spike; shorter
+/// bursts are normal behaviour, not something to report.
+const SPIKE_MIN_MS: u64 = 3_000;
+/// A spike ends when CPU drops below this share of the threshold, so a
+/// process hovering around the line does not flap.
+const SPIKE_END_RATIO: f32 = 0.75;
+/// Memory growth is measured against the lowest value in this window.
+const MEMORY_WINDOW_MS: u64 = 30_000;
+/// A mass start or exit (e.g. closing a browser) cannot flood the log.
+const MAX_EVENTS_PER_TICK: usize = 50;
+/// Events kept for the Activity page.
+pub const LOG_LEN: usize = 1_000;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ActivityConfig {
+    /// Percent of the whole machine.
+    pub cpu_spike_percent: f32,
+    pub memory_jump_bytes: u64,
+}
+
+/// An event before it is given a sequence number and timestamp.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pending {
+    pub kind: ActivityKind,
+    pub pid: Option<u32>,
+    pub name: Option<String>,
+    pub detail: Option<String>,
+}
+
+impl Pending {
+    pub fn new(kind: ActivityKind) -> Self {
+        Self {
+            kind,
+            pid: None,
+            name: None,
+            detail: None,
+        }
+    }
+
+    pub fn process(kind: ActivityKind, pid: u32, name: &str) -> Self {
+        Self {
+            pid: Some(pid),
+            name: Some(name.to_owned()),
+            ..Self::new(kind)
+        }
+    }
+
+    pub fn detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+}
+
+struct Tracked {
+    name: String,
+    hot_since: Option<u64>,
+    spiking: bool,
+    mem_ref: u64,
+    mem_ref_at: u64,
+}
+
+#[derive(Default)]
+pub struct ActivityDetector {
+    known: HashMap<(u32, u64), Tracked>,
+    primed: bool,
+}
+
+impl ActivityDetector {
+    /// Forgets everything; the next snapshot is adopted silently. Used when
+    /// the visible process set changes for a reason other than processes
+    /// starting or exiting (e.g. toggling kernel threads).
+    pub fn reset(&mut self) {
+        self.known.clear();
+        self.primed = false;
+    }
+
+    pub fn observe(
+        &mut self,
+        now_ms: u64,
+        rows: &[ProcessRow],
+        cfg: &ActivityConfig,
+    ) -> Vec<Pending> {
+        let announce = self.primed;
+        self.primed = true;
+        let mut out: Vec<Pending> = Vec::new();
+        let mut push = |p: Pending| {
+            if out.len() < MAX_EVENTS_PER_TICK {
+                out.push(p);
+            }
+        };
+
+        let mut seen = std::collections::HashSet::with_capacity(rows.len());
+        for row in rows {
+            let key = (row.pid, row.start_time);
+            seen.insert(key);
+            let Some(t) = self.known.get_mut(&key) else {
+                if announce {
+                    push(Pending::process(
+                        ActivityKind::ProcessStarted,
+                        row.pid,
+                        &row.name,
+                    ));
+                }
+                self.known.insert(
+                    key,
+                    Tracked {
+                        name: row.name.clone(),
+                        hot_since: None,
+                        spiking: false,
+                        mem_ref: row.memory_bytes,
+                        mem_ref_at: now_ms,
+                    },
+                );
+                continue;
+            };
+
+            // CPU spike with a minimum duration and hysteresis. Restricted
+            // processes report no CPU, so they never spike.
+            if !row.restricted {
+                if row.cpu_percent >= cfg.cpu_spike_percent {
+                    let since = *t.hot_since.get_or_insert(now_ms);
+                    if !t.spiking && now_ms.saturating_sub(since) >= SPIKE_MIN_MS {
+                        t.spiking = true;
+                        push(
+                            Pending::process(ActivityKind::CpuSpike, row.pid, &row.name)
+                                .detail(format!("{:.0}% of CPU", row.cpu_percent)),
+                        );
+                    }
+                } else if row.cpu_percent < cfg.cpu_spike_percent * SPIKE_END_RATIO {
+                    t.hot_since = None;
+                    if t.spiking {
+                        t.spiking = false;
+                        push(
+                            Pending::process(ActivityKind::CpuNormal, row.pid, &row.name)
+                                .detail(format!("{:.0}% of CPU", row.cpu_percent)),
+                        );
+                    }
+                }
+            }
+
+            // Memory growth against the window's low-water mark.
+            if now_ms.saturating_sub(t.mem_ref_at) >= MEMORY_WINDOW_MS
+                || row.memory_bytes < t.mem_ref
+            {
+                t.mem_ref = row.memory_bytes;
+                t.mem_ref_at = now_ms;
+            } else if row.memory_bytes - t.mem_ref >= cfg.memory_jump_bytes {
+                push(
+                    Pending::process(ActivityKind::MemoryJump, row.pid, &row.name).detail(format!(
+                        "Memory grew by {} MB to {} MB",
+                        (row.memory_bytes - t.mem_ref) / (1024 * 1024),
+                        row.memory_bytes / (1024 * 1024)
+                    )),
+                );
+                // Re-arm so continued growth is reported in steps, not every tick.
+                t.mem_ref = row.memory_bytes;
+                t.mem_ref_at = now_ms;
+            }
+        }
+
+        let gone: Vec<(u32, u64)> = self
+            .known
+            .keys()
+            .filter(|k| !seen.contains(k))
+            .copied()
+            .collect();
+        for key in gone {
+            if let Some(t) = self.known.remove(&key)
+                && announce
+            {
+                push(Pending::process(
+                    ActivityKind::ProcessExited,
+                    key.0,
+                    &t.name,
+                ));
+            }
+        }
+        out
+    }
+}
+
+/// Bounded log with monotonically increasing sequence numbers.
+pub struct ActivityLog {
+    events: RingBuffer<ActivityEvent>,
+    next_seq: u64,
+}
+
+impl Default for ActivityLog {
+    fn default() -> Self {
+        Self {
+            events: RingBuffer::new(LOG_LEN),
+            next_seq: 1,
+        }
+    }
+}
+
+impl ActivityLog {
+    pub fn record(&mut self, timestamp_ms: u64, p: Pending) -> u64 {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.events.push(ActivityEvent {
+            seq,
+            timestamp_ms,
+            kind: p.kind,
+            pid: p.pid,
+            name: p.name,
+            detail: p.detail,
+        });
+        seq
+    }
+
+    /// Events with a sequence number above `after`, oldest first.
+    pub fn since(&self, after: u64) -> Vec<ActivityEvent> {
+        self.events
+            .iter()
+            .filter(|e| e.seq > after)
+            .cloned()
+            .collect()
+    }
+
+    /// Sequence number of the newest event, or 0.
+    pub fn last_seq(&self) -> u64 {
+        self.next_seq - 1
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ProcessState;
+
+    const CFG: ActivityConfig = ActivityConfig {
+        cpu_spike_percent: 80.0,
+        memory_jump_bytes: 500 * 1024 * 1024,
+    };
+    const MB: u64 = 1024 * 1024;
+
+    fn row(pid: u32, start: u64, cpu: f32, mem_mb: u64) -> ProcessRow {
+        ProcessRow {
+            pid,
+            parent_pid: None,
+            name: format!("p{pid}"),
+            status: ProcessState::Running,
+            cpu_percent: cpu,
+            memory_bytes: mem_mb * MB,
+            virtual_memory_bytes: 0,
+            disk_read_per_sec: 0.0,
+            disk_write_per_sec: 0.0,
+            user: None,
+            start_time: start,
+            threads: None,
+            priority: None,
+            exe: None,
+            cmd: None,
+            session_id: None,
+            kernel_thread: false,
+            pss_bytes: None,
+            restricted: false,
+        }
+    }
+
+    fn kinds(events: &[Pending]) -> Vec<ActivityKind> {
+        events.iter().map(|e| e.kind).collect()
+    }
+
+    #[test]
+    fn first_snapshot_is_adopted_silently() {
+        let mut d = ActivityDetector::default();
+        assert!(
+            d.observe(0, &[row(1, 10, 0.0, 10), row(2, 10, 0.0, 10)], &CFG)
+                .is_empty()
+        );
+        assert!(
+            d.observe(1_000, &[row(1, 10, 0.0, 10), row(2, 10, 0.0, 10)], &CFG)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn reports_starts_exits_and_pid_reuse() {
+        let mut d = ActivityDetector::default();
+        d.observe(0, &[row(1, 10, 0.0, 10)], &CFG);
+        let ev = d.observe(1_000, &[row(1, 10, 0.0, 10), row(2, 50, 0.0, 10)], &CFG);
+        assert_eq!(kinds(&ev), [ActivityKind::ProcessStarted]);
+        assert_eq!(ev[0].pid, Some(2));
+
+        // Pid 2 exits and the number is reused by a new instance.
+        let ev = d.observe(2_000, &[row(1, 10, 0.0, 10), row(2, 99, 0.0, 10)], &CFG);
+        assert_eq!(
+            kinds(&ev),
+            [ActivityKind::ProcessStarted, ActivityKind::ProcessExited]
+        );
+    }
+
+    #[test]
+    fn cpu_spike_needs_duration_and_ends_with_hysteresis() {
+        let mut d = ActivityDetector::default();
+        d.observe(0, &[row(1, 1, 5.0, 10)], &CFG);
+        // A 2 s burst is not a spike.
+        assert!(d.observe(1_000, &[row(1, 1, 95.0, 10)], &CFG).is_empty());
+        assert!(d.observe(3_000, &[row(1, 1, 95.0, 10)], &CFG).is_empty());
+        let ev = d.observe(4_000, &[row(1, 1, 90.0, 10)], &CFG);
+        assert_eq!(kinds(&ev), [ActivityKind::CpuSpike]);
+        // Reported once per episode.
+        assert!(d.observe(5_000, &[row(1, 1, 90.0, 10)], &CFG).is_empty());
+        // Dipping just under the threshold is not "normal" yet (80 * 0.75 = 60).
+        assert!(d.observe(6_000, &[row(1, 1, 70.0, 10)], &CFG).is_empty());
+        let ev = d.observe(7_000, &[row(1, 1, 20.0, 10)], &CFG);
+        assert_eq!(kinds(&ev), [ActivityKind::CpuNormal]);
+        // A brief dip resets the clock for a later episode.
+        assert!(d.observe(8_000, &[row(1, 1, 99.0, 10)], &CFG).is_empty());
+    }
+
+    #[test]
+    fn memory_jump_is_measured_against_the_window_low_and_rearms() {
+        let mut d = ActivityDetector::default();
+        d.observe(0, &[row(1, 1, 0.0, 100)], &CFG);
+        assert!(d.observe(1_000, &[row(1, 1, 0.0, 400)], &CFG).is_empty());
+        let ev = d.observe(2_000, &[row(1, 1, 0.0, 700)], &CFG);
+        assert_eq!(kinds(&ev), [ActivityKind::MemoryJump]);
+        assert!(ev[0].detail.as_deref().unwrap().contains("600 MB"));
+        // Re-armed at 700: no repeat until another 500 MB.
+        assert!(d.observe(3_000, &[row(1, 1, 0.0, 800)], &CFG).is_empty());
+        // Falling resets the low-water mark.
+        assert!(d.observe(4_000, &[row(1, 1, 0.0, 50)], &CFG).is_empty());
+        assert_eq!(
+            kinds(&d.observe(5_000, &[row(1, 1, 0.0, 600)], &CFG)),
+            [ActivityKind::MemoryJump]
+        );
+    }
+
+    #[test]
+    fn restricted_processes_never_spike_and_floods_are_capped() {
+        let mut d = ActivityDetector::default();
+        let mut r = row(1, 1, 100.0, 10);
+        r.restricted = true;
+        d.observe(0, &[r.clone()], &CFG);
+        assert!(d.observe(10_000, &[r], &CFG).is_empty());
+
+        let many: Vec<ProcessRow> = (100..400).map(|p| row(p, 1, 0.0, 1)).collect();
+        assert_eq!(d.observe(20_000, &many, &CFG).len(), MAX_EVENTS_PER_TICK);
+    }
+
+    #[test]
+    fn reset_prevents_a_start_flood() {
+        let mut d = ActivityDetector::default();
+        d.observe(0, &[row(1, 1, 0.0, 1)], &CFG);
+        d.reset();
+        assert!(
+            d.observe(1_000, &[row(1, 1, 0.0, 1), row(2, 1, 0.0, 1)], &CFG)
+                .is_empty()
+        );
+    }
+
+    /// `cargo test -p tm-core --release measure_activity_diff_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore = "measurement, not a check"]
+    fn measure_activity_diff_cost() {
+        let rows: Vec<ProcessRow> = (1..=1_000).map(|p| row(p, 1, 3.0, 100)).collect();
+        let mut d = ActivityDetector::default();
+        d.observe(0, &rows, &CFG);
+        let started = std::time::Instant::now();
+        let n = 1_000;
+        for i in 1..=n {
+            d.observe(i * 1_000, &rows, &CFG);
+        }
+        eprintln!(
+            "activity diff, 1000 processes: {:?} per tick",
+            started.elapsed() / n as u32
+        );
+    }
+
+    #[test]
+    fn log_numbers_events_and_serves_a_tail() {
+        let mut log = ActivityLog::default();
+        assert_eq!(log.last_seq(), 0);
+        log.record(1, Pending::new(ActivityKind::BenchmarkStarted));
+        log.record(2, Pending::new(ActivityKind::BenchmarkCompleted));
+        assert_eq!(log.last_seq(), 2);
+        let tail = log.since(1);
+        assert_eq!(tail.len(), 1);
+        assert_eq!(tail[0].seq, 2);
+        for i in 0..(LOG_LEN as u64 + 10) {
+            log.record(i, Pending::new(ActivityKind::AlertFired));
+        }
+        assert_eq!(log.since(0).len(), LOG_LEN, "bounded");
+    }
+}

@@ -116,6 +116,42 @@ export function SettingsPage() {
               ))}
             </select>
           </Field>
+          <Field
+            label="CPU spike threshold"
+            htmlFor="cpu-spike"
+            description="Activity logs a process that stays above this share of the whole machine's CPU for a few seconds."
+          >
+            <select
+              id="cpu-spike"
+              value={s.cpuSpikePercent}
+              onChange={(e) => s.update({ cpuSpikePercent: Number(e.target.value) })}
+              className={selectCls}
+            >
+              {withCurrent([25, 50, 70, 80, 90], s.cpuSpikePercent).map((v) => (
+                <option key={v} value={v}>
+                  {v}%
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label="Memory jump threshold"
+            htmlFor="memory-jump"
+            description="Activity logs a process whose memory grows by this much within half a minute."
+          >
+            <select
+              id="memory-jump"
+              value={s.memoryJumpMb}
+              onChange={(e) => s.update({ memoryJumpMb: Number(e.target.value) })}
+              className={selectCls}
+            >
+              {withCurrent([128, 256, 512, 1024, 2048], s.memoryJumpMb).map((v) => (
+                <option key={v} value={v}>
+                  {v >= 1024 ? `${v / 1024} GB` : `${v} MB`}
+                </option>
+              ))}
+            </select>
+          </Field>
           {platform === "linux" && (
             <>
               <Toggle
@@ -264,6 +300,11 @@ function DiagnosticsExport({ disabled }: { disabled: boolean }) {
       </label>
     </div>
   );
+}
+
+/** The preset choices plus the stored value, if a hand-edited file set something else. */
+function withCurrent(options: number[], current: number): number[] {
+  return options.includes(current) ? options : [...options, current].sort((a, b) => a - b);
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

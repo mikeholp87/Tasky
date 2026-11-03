@@ -184,6 +184,7 @@ mod tests {
             gpus: vec![],
             temperatures: vec![],
             alerts: vec![],
+            activity: vec![],
             point: HistoryPoint {
                 t: 0,
                 cpu,

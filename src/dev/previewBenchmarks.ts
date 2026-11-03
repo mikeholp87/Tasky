@@ -7,6 +7,7 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { DEFAULT_SETTINGS } from "@/stores/settingsStore";
+import { NOT_HANDLED, inspectPreview } from "./previewInspect";
 import type {
   BenchmarkProfile,
   BenchmarkResult,
@@ -196,8 +197,10 @@ export function installBenchmarkPreview(info: StaticSystemInfo, tick: MetricsTic
         case "delete_benchmark_result":
           history = history.filter((r) => r.id !== (args as { id: string }).id);
           return undefined;
-        default:
-          return undefined;
+        default: {
+          const reply = inspectPreview(cmd, args);
+          return reply === NOT_HANDLED ? undefined : reply;
+        }
       }
     },
     { shouldMockEvents: true },

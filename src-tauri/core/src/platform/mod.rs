@@ -123,6 +123,41 @@ pub fn connections(pid: u32) -> Option<Vec<crate::models::Connection>> {
     imp::connections(pid)
 }
 
+// ------------------------------------------------------------- inspection
+// On-demand, read-only views of one process or of the whole machine. Each
+// call may be expensive (it walks /proc or OS tables), so callers run it on a
+// blocking worker, only while the matching UI is visible.
+
+/// Every TCP/UDP socket with its owning process.
+pub fn sockets() -> crate::errors::AppResult<crate::models::SocketList> {
+    imp::sockets()
+}
+
+/// Files, directories and other objects `pid` holds open.
+pub fn open_files(pid: u32) -> crate::errors::AppResult<crate::models::OpenFileList> {
+    imp::open_files(pid)
+}
+
+/// Processes using `path` (a file or, where supported, a directory).
+pub fn find_file_users(path: &str) -> crate::errors::AppResult<crate::models::FileUserList> {
+    imp::find_file_users(path)
+}
+
+/// Address-space layout of `pid`.
+pub fn memory_map(pid: u32) -> crate::errors::AppResult<crate::models::MemoryMap> {
+    imp::memory_map(pid)
+}
+
+/// Executable and libraries loaded into `pid`.
+pub fn modules(pid: u32) -> crate::errors::AppResult<Vec<crate::models::ModuleInfo>> {
+    imp::modules(pid)
+}
+
+/// Threads of `pid` with cumulative CPU time.
+pub fn threads(pid: u32) -> crate::errors::AppResult<Vec<crate::inspect::RawThread>> {
+    imp::threads(pid)
+}
+
 /// Instruction set a process runs as, e.g. "x64" or "x86_64".
 pub fn process_architecture(pid: u32) -> Option<String> {
     imp::process_architecture(pid)

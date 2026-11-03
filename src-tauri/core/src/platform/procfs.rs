@@ -146,6 +146,135 @@ pub fn socket_inode(link: &str) -> Option<u64> {
         .ok()
 }
 
+/// One line of `/proc/[pid]/maps`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapsEntry {
+    pub start: u64,
+    pub end: u64,
+    /// Four characters, e.g. `r-xp` (last is `p` private or `s` shared).
+    pub perms: String,
+    pub offset: u64,
+    /// Backing file or a bracketed pseudo-name such as `[heap]`; `None` for
+    /// anonymous memory. May end in ` (deleted)`.
+    pub path: Option<String>,
+}
+
+/// Parses `address perms offset dev inode  pathname`. The pathname is the
+/// rest of the line and may contain spaces.
+pub fn parse_maps_line(line: &str) -> Option<MapsEntry> {
+    fn field<'a>(rest: &mut &'a str) -> Option<&'a str> {
+        let trimmed = rest.trim_start();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+        let (head, tail) = trimmed.split_at(end);
+        *rest = tail;
+        Some(head)
+    }
+    let mut rest = line;
+    let range = field(&mut rest)?;
+    let perms = field(&mut rest)?;
+    let offset = field(&mut rest)?;
+    let _dev = field(&mut rest)?;
+    let _inode = field(&mut rest)?;
+    let (start, end) = range.split_once('-')?;
+    if perms.len() != 4 {
+        return None;
+    }
+    let path = rest.trim();
+    Some(MapsEntry {
+        start: u64::from_str_radix(start, 16).ok()?,
+        end: u64::from_str_radix(end, 16).ok()?,
+        perms: perms.to_owned(),
+        offset: u64::from_str_radix(offset, 16).ok()?,
+        path: (!path.is_empty()).then(|| path.to_owned()),
+    })
+}
+
+/// Access mode from `/proc/[pid]/fdinfo/[fd]`: the `flags:` line is octal
+/// and its low two bits are `O_RDONLY`, `O_WRONLY` or `O_RDWR`.
+pub fn parse_fdinfo_access(text: &str) -> Option<crate::models::FileAccess> {
+    use crate::models::FileAccess;
+    let flags = text
+        .lines()
+        .find_map(|l| l.strip_prefix("flags:"))
+        .and_then(|v| u32::from_str_radix(v.trim(), 8).ok())?;
+    match flags & 0o3 {
+        0 => Some(FileAccess::Read),
+        1 => Some(FileAccess::Write),
+        2 => Some(FileAccess::ReadWrite),
+        _ => None,
+    }
+}
+
+/// Kind of an `/proc/[pid]/fd/*` link target. Paths are reported as `File`;
+/// the caller refines directories with a metadata call.
+pub fn classify_fd_target(target: &str) -> crate::models::OpenFileKind {
+    use crate::models::OpenFileKind;
+    if target.starts_with("socket:[") {
+        OpenFileKind::Socket
+    } else if target.starts_with("pipe:[") {
+        OpenFileKind::Pipe
+    } else if target.starts_with("anon_inode:") || target.starts_with("/memfd:") {
+        OpenFileKind::Anonymous
+    } else if target.starts_with("/dev/") && !target.starts_with("/dev/shm/") {
+        OpenFileKind::Device
+    } else if target.starts_with('/') {
+        OpenFileKind::File
+    } else {
+        OpenFileKind::Other
+    }
+}
+
+/// Whether the file at `target` (an fd link or maps path) is the searched
+/// `query`, or beneath it when `query_is_dir`. A trailing ` (deleted)` marker
+/// is ignored. Paths must already be canonical.
+pub fn path_matches(target: &str, query: &str, query_is_dir: bool) -> bool {
+    let target = target.strip_suffix(" (deleted)").unwrap_or(target);
+    if target == query {
+        return true;
+    }
+    query_is_dir
+        && target
+            .strip_prefix(query)
+            .is_some_and(|rest| query == "/" || rest.starts_with('/'))
+}
+
+/// Selected fields of `/proc/[pid]/task/[tid]/stat`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskStat {
+    pub comm: String,
+    pub state: char,
+    /// User + system CPU time in clock ticks.
+    pub cpu_ticks: u64,
+    pub nice: i32,
+    /// Start time in clock ticks since boot.
+    pub start_ticks: u64,
+    pub processor: u32,
+}
+
+/// Parses a task `stat` line. Like [`parse_stat`], fields are counted from
+/// the last `)` because the command name can contain anything.
+pub fn parse_task_stat(text: &str) -> Option<TaskStat> {
+    let open = text.find('(')?;
+    let close = text.rfind(')')?;
+    let comm = text.get(open + 1..close)?.to_owned();
+    let fields: Vec<&str> = text[close + 1..].split_whitespace().collect();
+    let field = |n: usize| fields.get(n - 3).copied();
+    Some(TaskStat {
+        comm,
+        state: field(3)?.chars().next()?,
+        cpu_ticks: field(14)?
+            .parse::<u64>()
+            .ok()?
+            .saturating_add(field(15)?.parse().ok()?),
+        nice: field(19)?.parse().ok()?,
+        start_ticks: field(22)?.parse().ok()?,
+        processor: field(39)?.parse().ok()?,
+    })
+}
+
 /// Architecture from the first 20 bytes of an ELF file (`e_machine`).
 pub fn elf_architecture(header: &[u8]) -> Option<&'static str> {
     if header.len() < 20 || &header[..4] != b"\x7fELF" {
@@ -295,6 +424,114 @@ mod tests {
                 num_threads: 7
             }
         );
+    }
+
+    #[test]
+    fn parses_maps_lines() {
+        let e = parse_maps_line(
+            "7f3a1c000000-7f3a1c1c5000 r-xp 00001000 fd:01 1234     /usr/lib/x86_64-linux-gnu/libc.so.6",
+        )
+        .unwrap();
+        assert_eq!(
+            (e.start, e.end, e.offset),
+            (0x7f3a_1c00_0000, 0x7f3a_1c1c_5000, 0x1000)
+        );
+        assert_eq!(e.perms, "r-xp");
+        assert_eq!(
+            e.path.as_deref(),
+            Some("/usr/lib/x86_64-linux-gnu/libc.so.6")
+        );
+
+        let anon = parse_maps_line("7ffd1a3c5000-7ffd1a3e6000 rw-p 00000000 00:00 0 ").unwrap();
+        assert_eq!(anon.path, None);
+
+        let spaced = parse_maps_line(
+            "55d0c8a00000-55d0c8a01000 r--p 00000000 08:02 99   /home/me/My Apps/tool (deleted)",
+        )
+        .unwrap();
+        assert_eq!(
+            spaced.path.as_deref(),
+            Some("/home/me/My Apps/tool (deleted)")
+        );
+
+        let heap =
+            parse_maps_line("55d0c9000000-55d0c9021000 rw-p 00000000 00:00 0   [heap]").unwrap();
+        assert_eq!(heap.path.as_deref(), Some("[heap]"));
+
+        assert_eq!(parse_maps_line("garbage"), None);
+        assert_eq!(parse_maps_line("zz-zz r-xp 0 0:0 0"), None);
+    }
+
+    #[test]
+    fn reads_fd_access_from_octal_flags() {
+        use crate::models::FileAccess;
+        assert_eq!(
+            parse_fdinfo_access("pos:\t0\nflags:\t0100002\nmnt_id:\t29\n"),
+            Some(FileAccess::ReadWrite)
+        );
+        assert_eq!(
+            parse_fdinfo_access("flags:\t02000000\n"),
+            Some(FileAccess::Read)
+        );
+        assert_eq!(parse_fdinfo_access("flags:\t01\n"), Some(FileAccess::Write));
+        assert_eq!(parse_fdinfo_access("pos: 0\n"), None);
+    }
+
+    #[test]
+    fn classifies_fd_targets() {
+        use crate::models::OpenFileKind as K;
+        assert_eq!(classify_fd_target("socket:[1]"), K::Socket);
+        assert_eq!(classify_fd_target("pipe:[2]"), K::Pipe);
+        assert_eq!(classify_fd_target("anon_inode:[eventpoll]"), K::Anonymous);
+        assert_eq!(classify_fd_target("/memfd:x (deleted)"), K::Anonymous);
+        assert_eq!(classify_fd_target("/dev/null"), K::Device);
+        assert_eq!(classify_fd_target("/dev/shm/seg"), K::File);
+        assert_eq!(classify_fd_target("/home/a/b.txt"), K::File);
+        assert_eq!(classify_fd_target("weird"), K::Other);
+    }
+
+    #[test]
+    fn matches_files_and_directories() {
+        assert!(path_matches("/a/b.txt", "/a/b.txt", false));
+        assert!(path_matches("/a/b.txt (deleted)", "/a/b.txt", false));
+        assert!(!path_matches("/a/b.txt2", "/a/b.txt", false));
+        assert!(path_matches("/a/b/c", "/a/b", true));
+        assert!(path_matches("/a/b", "/a/b", true));
+        assert!(
+            !path_matches("/a/bc", "/a/b", true),
+            "prefix is not a parent"
+        );
+        assert!(
+            !path_matches("/a/b/c", "/a/b", false),
+            "file search is exact"
+        );
+        assert!(path_matches("/anything", "/", true));
+    }
+
+    #[test]
+    fn parses_task_stat() {
+        // Fields 3.. after the command name; set the ones we read.
+        let mut f = vec!["0".to_string(); 50];
+        let mut set = |n: usize, v: &str| f[n - 3] = v.to_string();
+        set(3, "S");
+        set(14, "120");
+        set(15, "30");
+        set(19, "-5");
+        set(22, "5000");
+        set(39, "3");
+        let text = format!("77 (Web Content (x)) {}", f.join(" "));
+        assert_eq!(
+            parse_task_stat(&text),
+            Some(TaskStat {
+                comm: "Web Content (x)".into(),
+                state: 'S',
+                cpu_ticks: 150,
+                nice: -5,
+                start_ticks: 5000,
+                processor: 3,
+            })
+        );
+        assert_eq!(parse_task_stat("1 (a) S 1"), None);
     }
 
     #[test]

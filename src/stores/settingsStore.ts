@@ -22,6 +22,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showVirtualAdapters: false,
   notificationsEnabled: true,
   alertRules: [],
+  cpuSpikePercent: 80,
+  memoryJumpMb: 512,
   debugLogging: false,
 };
 

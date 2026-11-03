@@ -1,6 +1,7 @@
 //! Centralised monitoring. The engine is the only component that queries the
 //! operating system for metrics; everything else reads its snapshots.
 
+pub mod activity;
 mod alerts;
 mod collector;
 mod cpu;

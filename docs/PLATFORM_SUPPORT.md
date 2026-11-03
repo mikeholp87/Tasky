@@ -9,29 +9,36 @@
 
 ## Feature matrix
 
-| Feature                            | Windows                                                                                | Linux                                           |
-| ---------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| CPU total / per core               | ✓                                                                                      | ✓                                               |
-| CPU frequency                      | Nominal (base) frequency                                                               | Current frequency                               |
-| Load average                       | — (Windows has none)                                                                   | ✓                                               |
-| Memory, swap                       | ✓ (swap = page file)                                                                   | ✓                                               |
-| Cached memory                      | System file cache                                                                      | Page cache + reclaimable slab (as `free`)       |
-| Buffers                            | —                                                                                      | ✓                                               |
-| Commit charge                      | ✓                                                                                      | —                                               |
-| Per-process CPU / memory / I/O     | ✓; restricted processes show CPU and I/O as unavailable                                | ✓                                               |
-| Per-process I/O meaning            | All I/O including network (`GetProcessIoCounters`)                                     | Storage I/O                                     |
-| Process owner                      | Own processes; others need admin                                                       | ✓                                               |
-| Threads / priority                 | ✓ / base priority class                                                                | ✓ / nice                                        |
-| Process architecture               | ✓ (`IsWow64Process2`)                                                                  | ✓ (ELF header)                                  |
-| Working directory                  | Own processes                                                                          | Own processes (others need root)                |
-| Network connections per process    | ✓ (TCP/UDP, IPv4/IPv6)                                                                 | ✓ (own processes; others need root)             |
-| Disk throughput, IOPS, active time | ✓ (drive-letter volumes)                                                               | ✓                                               |
-| End process (graceful)             | Sends `WM_CLOSE` to the process's windows; windowless processes need Force end         | `SIGTERM`                                       |
-| Force end                          | `TerminateProcess`                                                                     | `SIGKILL`                                       |
-| Suspend / resume                   | Suspends every thread (`SuspendThread`); status shown for processes this app suspended | `SIGSTOP` / `SIGCONT`; status read from `/proc` |
-| Priority                           | Idle … High priority classes (no Real-time)                                            | nice 19 … −10; raising needs `CAP_SYS_NICE`     |
-| Critical-process detection         | `IsProcessCritical` + verified System32 paths                                          | PID 1, kernel threads                           |
-| Tray, notifications, autostart     | ✓                                                                                      | ✓ (needs a tray-capable desktop / AppIndicator) |
+| Feature                            | Windows                                                                                | Linux                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| CPU total / per core               | ✓                                                                                      | ✓                                                              |
+| CPU frequency                      | Nominal (base) frequency                                                               | Current frequency                                              |
+| Load average                       | — (Windows has none)                                                                   | ✓                                                              |
+| Memory, swap                       | ✓ (swap = page file)                                                                   | ✓                                                              |
+| Cached memory                      | System file cache                                                                      | Page cache + reclaimable slab (as `free`)                      |
+| Buffers                            | —                                                                                      | ✓                                                              |
+| Commit charge                      | ✓                                                                                      | —                                                              |
+| Per-process CPU / memory / I/O     | ✓; restricted processes show CPU and I/O as unavailable                                | ✓                                                              |
+| Per-process I/O meaning            | All I/O including network (`GetProcessIoCounters`)                                     | Storage I/O                                                    |
+| Process owner                      | Own processes; others need admin                                                       | ✓                                                              |
+| Threads / priority                 | ✓ / base priority class                                                                | ✓ / nice                                                       |
+| Process architecture               | ✓ (`IsWow64Process2`)                                                                  | ✓ (ELF header)                                                 |
+| Working directory                  | Own processes                                                                          | Own processes (others need root)                               |
+| Network connections per process    | ✓ (TCP/UDP, IPv4/IPv6)                                                                 | ✓ (own processes; others need root)                            |
+| Ports view (all sockets + owner)   | ✓ (IP Helper owner-PID tables)                                                         | ✓ (`/proc/net` + socket inode scan; others' sockets need root) |
+| Open files of a process            | — (needs undocumented handle APIs; not used)                                           | ✓ (`/proc/<pid>/fd`; own processes, others need root)          |
+| Find process using a file          | Files only, via Restart Manager (not folders)                                          | Files and folders (`/proc/*/fd`, cwd, exe, maps)               |
+| Modules / libraries                | ✓ (ToolHelp)                                                                           | ✓ (executable + `.so` mappings from `/proc/<pid>/maps`)        |
+| Memory map                         | ✓ committed regions (`VirtualQueryEx`); heap/stack not distinguished                   | ✓ (`/proc/<pid>/maps`; heap, main stack, libraries, files)     |
+| Threads                            | ID, CPU time, base priority, start time (no state or wait reason)                      | ID, name, state, CPU %, nice, core, start, wait channel        |
+| Activity timeline                  | ✓                                                                                      | ✓                                                              |
+| Disk throughput, IOPS, active time | ✓ (drive-letter volumes)                                                               | ✓                                                              |
+| End process (graceful)             | Sends `WM_CLOSE` to the process's windows; windowless processes need Force end         | `SIGTERM`                                                      |
+| Force end                          | `TerminateProcess`                                                                     | `SIGKILL`                                                      |
+| Suspend / resume                   | Suspends every thread (`SuspendThread`); status shown for processes this app suspended | `SIGSTOP` / `SIGCONT`; status read from `/proc`                |
+| Priority                           | Idle … High priority classes (no Real-time)                                            | nice 19 … −10; raising needs `CAP_SYS_NICE`                    |
+| Critical-process detection         | `IsProcessCritical` + verified System32 paths                                          | PID 1, kernel threads                                          |
+| Tray, notifications, autostart     | ✓                                                                                      | ✓ (needs a tray-capable desktop / AppIndicator)                |
 
 ## Known differences and limitations
 
@@ -49,6 +56,19 @@
   because querying a hung mount can block.
 - **Linux tray.** Needs a desktop environment with StatusNotifier/AppIndicator
   support (GNOME needs the AppIndicator extension).
+
+- **Windows file lookup.** Restart Manager reports applications and services
+  that hold a file, and cannot search folders; the UI says so. Listing every
+  open handle of a process would require undocumented `NtQuerySystemInformation`
+  structures, so the Open Files tab is unavailable on Windows.
+- **Windows memory map paths.** Mapped file names are NT device paths
+  (`\Device\HarddiskVolumeN\…`) as the system reports them.
+- **Windows inspection code is untested on a real machine.** It compiles and
+  passes clippy for `x86_64-pc-windows-msvc` and has tests that run in the
+  Windows CI job, but was written on Linux.
+- **Other users' processes (Linux).** Open files, memory maps, threads and
+  socket owners of processes owned by other accounts need root. The UI reports
+  how many processes could not be inspected instead of showing an empty result.
 
 ## Linux build prerequisites
 

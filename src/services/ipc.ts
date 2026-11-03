@@ -4,22 +4,29 @@
  */
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import type {
+  ActivityEvent,
   AppError,
   BenchmarkKind,
   BenchmarkProfile,
   BenchmarkResult,
   BenchmarkStatus,
   ErrorKind,
+  FileUserList,
   HistoryPoint,
+  MemoryMap,
   MetricsTick,
+  ModuleInfo,
   MonitoringState,
   ActionOutcome,
+  OpenFileList,
   ProcessAction,
   ProcessDetails,
   ProtectionAssessment,
   AlertEvent,
   Settings,
+  SocketList,
   StaticSystemInfo,
+  ThreadList,
 } from "@/types";
 
 export const isBackendAvailable = (): boolean => isTauri();
@@ -106,6 +113,17 @@ export const backend = {
     acknowledgeWarnings: boolean,
   ) =>
     call<ActionOutcome>("perform_process_action", { pid, startTime, action, acknowledgeWarnings }),
+
+  /** On-demand inspection; each call walks OS tables, so call only while its view is open. */
+  listSockets: () => call<SocketList>("list_sockets"),
+  getOpenFiles: (pid: number) => call<OpenFileList>("get_open_files", { pid }),
+  findFileUsers: (path: string) => call<FileUserList>("find_file_users", { path }),
+  getMemoryMap: (pid: number) => call<MemoryMap>("get_memory_map", { pid }),
+  getModules: (pid: number) => call<ModuleInfo[]>("get_modules", { pid }),
+  getThreads: (pid: number) => call<ThreadList>("get_threads", { pid }),
+  /** Native file/folder picker; resolves to the chosen path or null if cancelled. */
+  pickPath: (directory: boolean) => call<string | null>("pick_path", { directory }),
+  getActivity: (after: number) => call<ActivityEvent[]>("get_activity", { after }),
 
   revealExecutable: (pid: number) => call<void>("reveal_executable", { pid }),
 

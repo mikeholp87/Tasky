@@ -29,6 +29,8 @@ control as privileged and treats the webview as untrusted input.
 | Refresh interval     | One of 500 / 1000 / 2000 / 5000 ms.                                                                                                  |
 | History range        | 1–3600 s.                                                                                                                            |
 | Settings             | Fully validated (`Settings::validate`); alert rules capped at 50, with bounded names, thresholds and durations.                      |
+| File-finder path     | Trimmed, non-empty, ≤ 4096 bytes, no NUL. Resolved (symlinks) by the platform code; a missing path is `InvalidArgument`. Read-only.  |
+| File / folder picker | Native dialog opened by Rust (`pick_path`); the webview gets the chosen path only, not a file-system permission.                     |
 | Export destinations  | Chosen by the user in a native save dialog opened by Rust. The frontend never supplies a path or file contents.                      |
 | "Open file location" | The path comes from the engine's own snapshot for the PID, never from the frontend.                                                  |
 
@@ -50,6 +52,18 @@ gets a warning, not special protection.
 
 Dangerous actions always need confirmation in the UI. Force end uses stronger
 wording, and the Delete key only opens the dialog.
+
+## Inspection commands
+
+Ports, open files, modules, memory maps, threads and the file finder are
+read-only and run on a blocking worker only while their view is open. They
+read what the operating system already exposes to the current account:
+processes of other users that cannot be read are counted and reported, never
+guessed. Results are capped (sockets 20,000, open files 5,000, regions 20,000,
+file matches 2,000) and the path search stops after 4 seconds, with a
+"results may be incomplete" notice. Paths, ports and connection endpoints are
+shown locally and are not logged or exported; the activity timeline keeps
+process names and PIDs only, in memory, for the last 1,000 events.
 
 ## Sensitive data
 

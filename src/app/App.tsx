@@ -5,13 +5,16 @@ import { Toaster } from "@/components/Toaster";
 import { ConfirmActionDialog } from "@/features/processes/ConfirmActionDialog";
 import { CommandPalette } from "./CommandPalette";
 import { useUiStore } from "@/stores/uiStore";
+import { ActivityPage } from "@/features/activity/ActivityPage";
 import { AlertsPage } from "@/features/alerts/AlertsPage";
 import { BenchmarksPage } from "@/features/benchmarks/BenchmarksPage";
 import { CpuPage } from "@/features/cpu/CpuPage";
+import { FileFinderPage } from "@/features/file-finder/FileFinderPage";
 import { MemoryPage } from "@/features/memory/MemoryPage";
 import { NetworkPage } from "@/features/network/NetworkPage";
 import { OverviewPage } from "@/features/overview/OverviewPage";
 import { PerformancePage } from "@/features/performance/PerformancePage";
+import { PortsPage } from "@/features/ports/PortsPage";
 import { ProcessDetailsPage } from "@/features/process-details/ProcessDetailsPage";
 import { ProcessesPage } from "@/features/processes/ProcessesPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -31,6 +34,9 @@ const PAGES: Record<RouteId, ComponentType> = {
   storage: StoragePage,
   network: NetworkPage,
   "process-details": ProcessDetailsPage,
+  ports: PortsPage,
+  "file-finder": FileFinderPage,
+  activity: ActivityPage,
   system: SystemInfoPage,
   alerts: AlertsPage,
   benchmarks: BenchmarksPage,

@@ -5,10 +5,11 @@
  */
 import { mockProcesses } from "@/features/processes/mock";
 import { STATIC_INFO, makeTick } from "@/test/fixtures";
+import { useActivityStore } from "@/stores/activityStore";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useSettingsStore, type ThemePreference } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
-import type { HistoryPoint, MetricsTick } from "@/types";
+import type { ActivityEvent, HistoryPoint, MetricsTick } from "@/types";
 import type { RouteId } from "@/app/routes";
 import { installBenchmarkPreview } from "./previewBenchmarks";
 
@@ -150,6 +151,37 @@ if (theme === "dark" || theme === "light") {
 }
 const route = params.get("route");
 if (route) useUiStore.getState().navigate(route as RouteId);
+
+// A few timeline events so the Activity page has something to show.
+{
+  const t = now;
+  const e = (
+    seq: number,
+    ago: number,
+    kind: ActivityEvent["kind"],
+    name: string | null,
+    detail: string | null,
+    pid: number | null,
+  ) => ({
+    seq,
+    timestampMs: t - ago * 1000,
+    kind,
+    pid,
+    name,
+    detail,
+  });
+  useActivityStore
+    .getState()
+    .add([
+      e(1, 240, "processStarted", "node", null, 28119),
+      e(2, 211, "cpuSpike", "node", "93% of CPU", 28119),
+      e(3, 180, "cpuNormal", "node", "4% of CPU", 28119),
+      e(4, 120, "memoryJump", "firefox", "Memory grew by 612 MB to 1873 MB", 2210),
+      e(5, 90, "processAction", "ffmpeg", "Suspended from this app", 19122),
+      e(6, 60, "benchmarkStarted", null, "Cpu benchmark, Quick profile", null),
+      e(7, 20, "processExited", "ffmpeg", null, 19122),
+    ]);
+}
 
 // Start after the app's own (no-backend) startup has set its status.
 setTimeout(() => {
