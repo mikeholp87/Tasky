@@ -6,6 +6,7 @@ import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import type {
   AppError,
   BenchmarkCapabilities,
+  BenchmarkComparison,
   BenchmarkEvent,
   BenchmarkRecord,
   BenchmarkRequest,
@@ -154,4 +155,10 @@ export const backend = {
     call<void>("report_network_progress", { token, progress }),
   submitNetworkSamples: (token: string, samples: NetworkSubmission) =>
     call<void>("submit_network_samples", { token, samples }),
+  compareBenchmarks: (baselineId: string, currentId: string) =>
+    call<BenchmarkComparison>("compare_benchmarks", { baselineId, currentId }),
+  /** Opens a native save dialog; resolves to the path, or null if cancelled. */
+  exportBenchmark: (id: string, format: "json" | "csv" | "markdown") =>
+    call<string | null>("export_benchmark", { id, format }),
+  benchmarkSummaryText: (id: string) => call<string>("benchmark_summary_text", { id }),
 };

@@ -27,7 +27,7 @@ fn failed(e: impl std::fmt::Display) -> AppError {
 
 /// Asks for a destination and writes `contents`. Returns the saved path, or
 /// `None` if the user cancelled.
-fn save_with_dialog<R: Runtime>(
+pub(crate) fn save_with_dialog<R: Runtime>(
     app: &AppHandle<R>,
     default_name: &str,
     filter: (&str, &str),

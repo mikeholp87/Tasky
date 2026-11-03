@@ -274,6 +274,8 @@ pub enum MetricUnit {
     Celsius,
     Megahertz,
     Bytes,
+    /// Benchmark score (dimensionless, see `scoring`).
+    Score,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

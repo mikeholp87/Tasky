@@ -4,13 +4,15 @@
 
 use std::sync::Arc;
 
-use tauri::State;
+use serde::Deserialize;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Runtime, State};
 use tm_core::benchmarks::models::{
-    BenchmarkCapabilities, BenchmarkEvent, BenchmarkRecord, BenchmarkRequest, BenchmarkSummary,
-    NetworkProgress, NetworkSubmission, PreflightReport,
+    BenchmarkCapabilities, BenchmarkComparison, BenchmarkEvent, BenchmarkRecord, BenchmarkRequest,
+    BenchmarkSummary, NetworkProgress, NetworkSubmission, PreflightReport,
 };
 use tm_core::benchmarks::progress::ProgressSink;
+use tm_core::benchmarks::report;
 use tm_core::errors::{AppError, AppResult};
 
 use crate::state::AppState;
@@ -122,4 +124,64 @@ pub fn submit_network_samples(
     samples: NetworkSubmission,
 ) -> AppResult<()> {
     state.network_inbox.submit(&token, samples)
+}
+
+#[tauri::command]
+pub async fn compare_benchmarks(
+    state: State<'_, AppState>,
+    baseline_id: String,
+    current_id: String,
+) -> AppResult<BenchmarkComparison> {
+    let benchmarks = Arc::clone(&state.benchmarks);
+    blocking(move || {
+        let history = benchmarks.history();
+        Ok(report::compare(
+            &history.get(&baseline_id)?,
+            &history.get(&current_id)?,
+        ))
+    })
+    .await
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BenchmarkExportFormat {
+    Json,
+    Csv,
+    Markdown,
+}
+
+/// Exports a stored result through a native save dialog. Returns the saved
+/// path, or `None` if the user cancelled.
+#[tauri::command]
+pub async fn export_benchmark<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    id: String,
+    format: BenchmarkExportFormat,
+) -> AppResult<Option<String>> {
+    let benchmarks = Arc::clone(&state.benchmarks);
+    blocking(move || {
+        let record = benchmarks.history().get(&id)?;
+        let (contents, ext, label) = match format {
+            BenchmarkExportFormat::Json => (
+                serde_json::to_string_pretty(&record)
+                    .map_err(|e| AppError::SystemQueryFailed(format!("export failed: {e}")))?,
+                "json",
+                "JSON",
+            ),
+            BenchmarkExportFormat::Csv => (report::to_csv(&record), "csv", "CSV"),
+            BenchmarkExportFormat::Markdown => (report::to_markdown(&record), "md", "Markdown"),
+        };
+        let name = format!("benchmark-{}.{ext}", record.started_at_ms / 1_000);
+        crate::commands::export::save_with_dialog(&app, &name, (label, ext), contents)
+    })
+    .await
+}
+
+/// Plain-text summary for "Copy benchmark summary".
+#[tauri::command]
+pub async fn benchmark_summary_text(state: State<'_, AppState>, id: String) -> AppResult<String> {
+    let benchmarks = Arc::clone(&state.benchmarks);
+    blocking(move || Ok(report::summary_text(&benchmarks.history().get(&id)?))).await
 }

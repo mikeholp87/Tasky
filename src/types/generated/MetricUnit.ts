@@ -4,4 +4,4 @@
  * Units are explicit so the UI never confuses MB/s with Mbps.
  * Throughput units are decimal (1 MB = 10^6 bytes, 1 Mbps = 10^6 bit/s).
  */
-export type MetricUnit = "mops" | "mflops" | "gflops" | "megabytesPerSec" | "gigabytesPerSec" | "mbps" | "iops" | "milliseconds" | "microseconds" | "percent" | "ratio" | "celsius" | "megahertz" | "bytes";
+export type MetricUnit = "mops" | "mflops" | "gflops" | "megabytesPerSec" | "gigabytesPerSec" | "mbps" | "iops" | "milliseconds" | "microseconds" | "percent" | "ratio" | "celsius" | "megahertz" | "bytes" | "score";

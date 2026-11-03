@@ -6,6 +6,7 @@ import type { BenchmarkKind } from "@/types";
 import { formatDuration, formatTimestamp } from "@/utils/format";
 import { KIND_LABELS, PROFILE_LABELS, formatScore } from "../format";
 import { linkButton, secondaryButton } from "./styles";
+import { TrendCharts } from "./TrendCharts";
 
 /** Stored runs, newest first. `kind` limits the list to one category. */
 export function HistoryList({ kind }: { kind?: BenchmarkKind }) {
@@ -91,6 +92,7 @@ export function HistoryView() {
         <ArrowLeft size={14} aria-hidden />
         Benchmarks
       </button>
+      <TrendCharts />
       <HistoryList />
     </div>
   );

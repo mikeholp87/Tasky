@@ -262,7 +262,7 @@ bytes. Exports exclude process lists and personal files.
 | 3     | GPU (wgpu) detection, compute, memory, timing, fallback                                                                                 | done   |
 | 4     | Disk: validation, RAII files, direct I/O, seq/random/latency, limits                                                                    | done   |
 | 5     | Internet: provider trait, Cloudflare provider, privacy, loaded latency, jitter                                                          | done   |
-| 6     | Full run orchestration, scoring, dashboard, history, comparison, export                                                                 |        |
+| 6     | Full run orchestration, scoring, dashboard, history, comparison, export                                                                 | done   |
 | 7     | Profiling, security review, failure-recovery testing, docs, production build                                                            |        |
 
 Each phase ends with: `cargo fmt --all --check`, `cargo clippy --workspace

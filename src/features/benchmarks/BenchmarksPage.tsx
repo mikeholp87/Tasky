@@ -6,7 +6,9 @@ import { loadBenchmarkData } from "@/services/benchmarks";
 import { isBackendAvailable } from "@/services/ipc";
 import { isTerminal, latestByKind, useBenchmarkStore } from "@/stores/benchmarkStore";
 import { formatTimestamp } from "@/utils/format";
+import { AboutView } from "./components/AboutView";
 import { CategoryCard } from "./components/CategoryCard";
+import { CompareView } from "./components/CompareView";
 import { CategoryView } from "./components/CategoryView";
 import { HistoryView } from "./components/HistoryView";
 import { PreflightDialog } from "./components/PreflightDialog";
@@ -41,6 +43,11 @@ function Home() {
             onClick={() => setView({ name: "result", id: last.id })}
           >
             View results
+          </button>
+        )}
+        {history.length > 1 && (
+          <button type="button" className={linkButton} onClick={() => setView({ name: "compare" })}>
+            Compare
           </button>
         )}
       </div>
@@ -116,9 +123,10 @@ export function BenchmarksPage() {
       {view.name === "category" && <CategoryView kind={view.kind} />}
       {view.name === "result" && <ResultView id={view.id} />}
       {view.name === "history" && <HistoryView />}
-      {(view.name === "about" || view.name === "compare") && (
-        <EmptyState title="Coming soon">This view is not available yet.</EmptyState>
+      {view.name === "compare" && (
+        <CompareView baselineId={view.baselineId} currentId={view.currentId} />
       )}
+      {view.name === "about" && <AboutView />}
       <PreflightDialog />
     </>
   );

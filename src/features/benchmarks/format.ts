@@ -76,6 +76,8 @@ export function formatMetric(value: number | null | undefined, unit: MetricUnit)
       const [v = NOT_AVAILABLE, u = ""] = formatFrequency(value).split(" ");
       return { value: v, unit: u };
     }
+    case "score":
+      return { value: group(Math.round(value)), unit: "" };
     case "bytes": {
       const [v = NOT_AVAILABLE, u = ""] = formatBytes(value).split(" ");
       return { value: v, unit: u };

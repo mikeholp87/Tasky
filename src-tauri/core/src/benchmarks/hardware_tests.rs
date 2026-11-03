@@ -127,3 +127,19 @@ fn bench_disk_quick() {
     assert!(disk.metric("disk.seq.read").is_some());
     assert!(disk.metric("disk.rand.write.t8").is_some());
 }
+
+/// Quick full benchmark (CPU, GPU, storage): orchestration and system score.
+#[test]
+#[ignore = "hardware benchmark; run explicitly"]
+fn bench_full_quick() {
+    let record = run(BenchmarkRequest {
+        kinds: vec![BenchmarkKind::Cpu, BenchmarkKind::Gpu, BenchmarkKind::Disk],
+        disk_allow_write: true,
+        ..coordinator_test_request()
+    });
+    println!("system score: {:?}", record.system_score);
+    println!("fingerprint: {:?}", record.fingerprint);
+    println!("duration: {} ms", record.duration_ms);
+    println!("{}", super::report::summary_text(&record));
+    assert!(record.system_score.is_some());
+}

@@ -16,6 +16,7 @@ import {
   formatMetricText,
   formatScore,
 } from "../format";
+import { ResultActions } from "./ResultActions";
 import { secondaryButton } from "./styles";
 
 export function MetricRow({ metric, showRaw }: { metric: Metric; showRaw?: boolean }) {
@@ -121,14 +122,19 @@ export function ResultView({ id }: { id: string }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         {back}
-        <button
-          type="button"
-          className={secondaryButton}
-          onClick={() => void deleteResult(record.id)}
-        >
-          <Trash2 size={14} aria-hidden />
-          Delete result
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <ResultActions id={record.id} />
+          <button
+            type="button"
+            className={secondaryButton}
+            onClick={() => {
+              if (window.confirm("Delete this benchmark result?")) void deleteResult(record.id);
+            }}
+          >
+            <Trash2 size={14} aria-hidden />
+            Delete
+          </button>
+        </div>
       </div>
       <Card className="p-4">
         <h2 className="text-[12px] font-semibold uppercase tracking-wide text-fg-muted">

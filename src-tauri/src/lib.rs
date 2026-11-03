@@ -185,6 +185,9 @@ pub fn run() {
             commands::benchmarks::delete_benchmark_result,
             commands::benchmarks::report_network_progress,
             commands::benchmarks::submit_network_samples,
+            commands::benchmarks::compare_benchmarks,
+            commands::benchmarks::export_benchmark,
+            commands::benchmarks::benchmark_summary_text,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

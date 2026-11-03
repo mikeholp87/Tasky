@@ -18,6 +18,7 @@ pub mod mock;
 pub mod models;
 pub mod network;
 pub mod progress;
+pub mod report;
 pub mod scoring;
 pub mod statistics;
 pub mod suite;
