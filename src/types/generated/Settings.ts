@@ -23,4 +23,9 @@ cpuSpikePercent: number,
 /**
  * Growth in a process's memory, within half a minute, that is logged.
  */
-memoryJumpMb: number, debugLogging: boolean, };
+memoryJumpMb: number, 
+/**
+ * How long a newly started process is highlighted in the process table;
+ * 0 turns the highlight off.
+ */
+newProcessSeconds: number, debugLogging: boolean, };

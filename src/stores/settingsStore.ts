@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   alertRules: [],
   cpuSpikePercent: 80,
   memoryJumpMb: 512,
+  newProcessSeconds: 10,
   debugLogging: false,
 };
 

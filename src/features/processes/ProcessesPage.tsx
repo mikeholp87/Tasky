@@ -32,7 +32,7 @@ export function ProcessesPage() {
             items={items}
             ctx={ctx}
             selfPid={selfPid}
-            tree={mode === "tree"}
+            tree={mode !== "list"}
             renderRow={withContextMenu}
             onRequestTerminate={requestTerminate}
           />

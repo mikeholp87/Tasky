@@ -15,6 +15,8 @@ export interface TableItem {
   depth?: number;
   hasChildren?: boolean;
   expanded?: boolean;
+  /** Applications view: a synthetic row summing the processes of one program. */
+  group?: boolean;
 }
 
 export interface Forest {

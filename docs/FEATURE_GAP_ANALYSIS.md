@@ -120,6 +120,17 @@ Files, Modules + Memory Map, Threads, Activity timeline. Reasons:
 Deferred (backlog above): services, startup, users, persisted history, leak hints, wait
 analysis, Diagnose, application grouping, global search, thread suspend/resume.
 
+## Phase 2 (quick wins)
+
+Built next, with no new dependencies: Applications view (groups by executable;
+summed memory is labelled as resident memory counted per process), new-process
+highlight, memory- and thread-growth hints (one sample per minute for up to an
+hour, reported once per process, worded as "potential"/"possible"), and a
+Diagnose tab that lists measurable facts and recognises one pattern ("consistent
+with idle or blocked"), never "deadlocked". Not built: file-descriptor growth
+tracking (needs per-process polling) and recently-exited highlighting (needs row
+retention).
+
 ## Windows approach and limits
 
 - **Find process using a file:** Restart Manager (`RmGetList`) is the documented route. It

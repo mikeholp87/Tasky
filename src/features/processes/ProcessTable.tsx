@@ -15,8 +15,15 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import type { ProcessRow } from "@/types";
 import { type HeatLevel, heatLevel, memoryHeatLevel } from "@/utils/levels";
+import { GROUP_MEMORY_NOTE } from "./apps";
 import { cellContent, cellTitle } from "./cells";
-import { COLUMN_BY_ID, type ColumnId, type ProcessContext, type SortState } from "./logic";
+import {
+  COLUMN_BY_ID,
+  type ColumnId,
+  type ProcessContext,
+  type SortState,
+  isNewProcess,
+} from "./logic";
 import type { TableItem } from "./tree";
 
 const HEAT_BG: Record<HeatLevel, string | undefined> = {
@@ -64,6 +71,7 @@ export function ProcessTable({
   const openProcess = useUiStore((s) => s.openProcess);
   const compact = useSettingsStore((s) => s.compactTable);
   const heat = useSettingsStore((s) => s.heatMapping);
+  const highlightSecs = useSettingsStore((s) => s.newProcessSeconds);
   const rowHeight = compact ? 26 : 32;
 
   const template = useMemo(
@@ -130,11 +138,12 @@ export function ProcessTable({
           }
           return;
         case "Enter":
-          if (current) openProcess(current.row.pid);
+          if (current?.group) toggleCollapsed(current.row.pid);
+          else if (current) openProcess(current.row.pid);
           e.preventDefault();
           return;
         case "Delete":
-          if (current && onRequestTerminate) {
+          if (current && !current.group && onRequestTerminate) {
             e.preventDefault();
             onRequestTerminate(current.row);
           }
@@ -157,6 +166,7 @@ export function ProcessTable({
       select,
       setCollapsed,
       openProcess,
+      toggleCollapsed,
       onRequestTerminate,
       virtualizer,
     ],
@@ -188,6 +198,7 @@ export function ProcessTable({
                 template={template}
                 ctx={ctx}
                 heat={heat}
+                highlightSecs={highlightSecs}
                 tree={tree}
                 selected={item.row.pid === selectedPid}
                 isSelf={item.row.pid === selfPid}
@@ -198,7 +209,8 @@ export function ProcessTable({
                 onToggle={toggleCollapsed}
               />
             );
-            return renderRow ? (
+            // A summary row is not a process: no process actions on it.
+            return renderRow && !item.group ? (
               <RowSlot key={item.row.pid}>{renderRow(item.row, element)}</RowSlot>
             ) : (
               element
@@ -306,6 +318,8 @@ interface RowProps {
   template: string;
   ctx: ProcessContext;
   heat: boolean;
+  /** Seconds a new process is highlighted; 0 is off. */
+  highlightSecs: number;
   tree: boolean;
   selected: boolean;
   isSelf: boolean;
@@ -325,6 +339,7 @@ const Row = memo(function Row({
   template,
   ctx,
   heat,
+  highlightSecs,
   tree,
   selected,
   isSelf,
@@ -338,6 +353,7 @@ const Row = memo(function Row({
 }: RowProps) {
   const { row } = item;
   const memPct = ctx.totalMemoryBytes > 0 ? (row.memoryBytes / ctx.totalMemoryBytes) * 100 : 0;
+  const isNew = isNewProcess(row.startTime, ctx.nowSecs, highlightSecs);
   return (
     <div
       // Context-menu triggers inject handlers via props when wrapping.
@@ -349,14 +365,15 @@ const Row = memo(function Row({
       aria-expanded={tree && item.hasChildren ? item.expanded : undefined}
       data-pid={row.pid}
       onClick={() => onSelect(row.pid)}
-      onDoubleClick={() => onOpen(row.pid)}
+      onDoubleClick={() => (item.group ? onToggle(row.pid) : onOpen(row.pid))}
       onContextMenu={(e) => {
         onSelect(row.pid);
         onContextMenu?.(e);
       }}
       className={cn(
         "absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[13px]",
-        selected ? "bg-accent-soft" : "hover:bg-surface-2",
+        selected ? "bg-accent-soft" : isNew ? "bg-accent-soft/40" : "hover:bg-surface-2",
+        item.group && "font-medium",
       )}
       style={{ transform: `translateY(${offset}px)`, height, gridTemplateColumns: template }}
     >
@@ -373,7 +390,11 @@ const Row = memo(function Row({
           <div
             key={id}
             role="gridcell"
-            title={cellTitle(id, row)}
+            title={
+              item.group && (id === "memory" || id === "memoryPercent")
+                ? GROUP_MEMORY_NOTE
+                : cellTitle(id, row)
+            }
             className={cn(
               "flex h-full min-w-0 items-center px-2",
               col.align === "right" && "num justify-end",
@@ -404,7 +425,14 @@ const Row = memo(function Row({
                 )}
               </span>
             )}
-            <span className="truncate">{cellContent(id, row, ctx)}</span>
+            <span className="truncate">
+              {item.group && id === "pid" ? "—" : cellContent(id, row, ctx)}
+            </span>
+            {id === "name" && isNew && (
+              <span className="ml-2 shrink-0 rounded bg-accent-soft px-1 text-[10px] font-normal text-accent">
+                New
+              </span>
+            )}
             {id === "name" && isSelf && (
               <span className="ml-2 shrink-0 rounded bg-surface-2 px-1 text-[10px] font-normal text-fg-muted">
                 this app

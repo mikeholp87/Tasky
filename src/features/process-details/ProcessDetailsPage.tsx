@@ -10,6 +10,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList, Unavailable } from "@/components/ui/KeyValueList";
 import { childrenOf } from "@/features/processes/tree";
 import { STATUS_LABEL } from "@/features/processes/cells";
+import { useActivityStore } from "@/stores/activityStore";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useUiStore } from "@/stores/uiStore";
 import type { Connection, ProcessPoint, ProcessRow } from "@/types";
@@ -22,13 +23,14 @@ import {
   formatTimestamp,
 } from "@/utils/format";
 import { cn } from "@/lib/cn";
+import { DiagnoseTab } from "./DiagnoseTab";
 import { MemoryMapTab } from "./inspect/MemoryMapTab";
 import { ModulesTab } from "./inspect/ModulesTab";
 import { OpenFilesTab } from "./inspect/OpenFilesTab";
 import { ThreadsTab } from "./inspect/ThreadsTab";
 import { useProcessDetails } from "./useProcessDetails";
 
-type Tab = "overview" | "network" | "files" | "modules" | "maps" | "threads";
+type Tab = "overview" | "network" | "files" | "modules" | "maps" | "threads" | "diagnose";
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "network", label: "Network" },
@@ -36,6 +38,7 @@ const TABS: readonly { id: Tab; label: string }[] = [
   { id: "modules", label: "Modules" },
   { id: "maps", label: "Memory Map" },
   { id: "threads", label: "Threads" },
+  { id: "diagnose", label: "Diagnose" },
 ];
 
 const HISTORY_SECONDS = 300;
@@ -86,6 +89,18 @@ function ProcessDetailsView({ pid }: { pid: number }) {
   const row: ProcessRow | null = live ?? details?.row ?? null;
   const exited = live == null && details != null;
   const children = useMemo(() => (rows && live ? childrenOf(rows, pid) : []), [rows, live, pid]);
+  const allEvents = useActivityStore((s) => s.events);
+  // Growth hints recorded for this process (not for a later one with the same PID).
+  const hints = useMemo(
+    () =>
+      allEvents.filter(
+        (e) =>
+          e.pid === pid &&
+          (e.kind === "memoryGrowth" || e.kind === "threadGrowth") &&
+          (live == null || e.timestampMs >= live.startTime * 1000),
+      ),
+    [allEvents, pid, live],
+  );
 
   if (!row) {
     return (
@@ -198,6 +213,17 @@ function ProcessDetailsView({ pid }: { pid: number }) {
             <MemoryMapTab pid={pid} />
           </Card>
         )}
+        {tab === "diagnose" && (
+          <Card>
+            <DiagnoseTab
+              row={row}
+              history={history}
+              connections={details?.connections}
+              childCount={children.length}
+              events={hints}
+            />
+          </Card>
+        )}
         {tab === "threads" && (
           <Card>
             <ThreadsTab pid={pid} linux={platform === "linux"} />
@@ -205,6 +231,13 @@ function ProcessDetailsView({ pid }: { pid: number }) {
         )}
       </div>
 
+      {tab === "overview" && hints.length > 0 && (
+        <div role="note" className="mb-4 rounded-md border border-warn/40 bg-warn-soft px-4 py-2">
+          {hints.map((h) => (
+            <p key={h.seq}>{h.detail}</p>
+          ))}
+        </div>
+      )}
       {tab === "overview" && (
         <div className="grid gap-4 xl:grid-cols-2">
           <Card className="xl:col-span-2">

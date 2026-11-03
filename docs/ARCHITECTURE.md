@@ -137,7 +137,9 @@ minimum duration and hysteresis to CPU spikes, and tracks memory growth against
 a 30-second low-water mark. The engine also records alerts, actions made
 through `process_control::perform` and benchmark start/finish. New events ride
 in `MetricsTick.activity`; `get_activity(after)` backfills after the window was
-hidden. The log is in memory, bounded to 1,000 events.
+hidden. The log is in memory, bounded to 1,000 events. The same detector keeps
+one sample per minute (at most 60) per process to report sustained memory or
+thread-count growth once per process instance.
 
 ## Data flow for an action (e.g. "Force end")
 

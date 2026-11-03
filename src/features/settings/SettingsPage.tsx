@@ -117,6 +117,24 @@ export function SettingsPage() {
             </select>
           </Field>
           <Field
+            label="Highlight new processes"
+            htmlFor="new-process"
+            description="Marks processes that started within this time in the process table."
+          >
+            <select
+              id="new-process"
+              value={s.newProcessSeconds}
+              onChange={(e) => s.update({ newProcessSeconds: Number(e.target.value) })}
+              className={selectCls}
+            >
+              {withCurrent([0, 5, 10, 30, 60], s.newProcessSeconds).map((v) => (
+                <option key={v} value={v}>
+                  {v === 0 ? "Off" : `${v} seconds`}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
             label="CPU spike threshold"
             htmlFor="cpu-spike"
             description="Activity logs a process that stays above this share of the whole machine's CPU for a few seconds."

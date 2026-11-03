@@ -9,7 +9,7 @@ import {
   nextSort,
 } from "@/features/processes/logic";
 
-export type ProcessViewMode = "list" | "tree";
+export type ProcessViewMode = "list" | "tree" | "apps";
 
 interface ProcessState {
   search: string;
@@ -23,6 +23,8 @@ interface ProcessState {
   focusSearchToken: number;
   /** Tree mode: PIDs whose children are hidden (everything else is expanded). */
   collapsed: ReadonlySet<number>;
+  /** Applications mode: group ids that are expanded (groups start collapsed). */
+  expandedApps: ReadonlySet<number>;
 
   setSearch: (search: string) => void;
   setPreset: (preset: FilterPreset) => void;
@@ -37,6 +39,14 @@ interface ProcessState {
   setCollapsed: (pid: number, collapsed: boolean) => void;
   collapseAll: (pids: Iterable<number>) => void;
   expandAll: () => void;
+  setExpandedApps: (ids: Iterable<number>) => void;
+}
+
+function flipped(set: ReadonlySet<number>, id: number): Set<number> {
+  const next = new Set(set);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
 }
 
 export const useProcessStore = create<ProcessState>((set) => ({
@@ -49,6 +59,7 @@ export const useProcessStore = create<ProcessState>((set) => ({
   selectedPid: null,
   focusSearchToken: 0,
   collapsed: new Set(),
+  expandedApps: new Set(),
 
   setSearch: (search) => set({ search }),
   setPreset: (preset) => set({ preset }),
@@ -73,23 +84,26 @@ export const useProcessStore = create<ProcessState>((set) => ({
     })),
   select: (selectedPid) => set({ selectedPid }),
   requestSearchFocus: () => set((s) => ({ focusSearchToken: s.focusSearchToken + 1 })),
+  // The tree starts expanded (`collapsed` lists exceptions); the applications
+  // view starts collapsed (`expandedApps` lists exceptions). Same row actions.
   toggleCollapsed: (pid) =>
-    set((s) => {
-      const next = new Set(s.collapsed);
-      if (next.has(pid)) next.delete(pid);
-      else next.add(pid);
-      return { collapsed: next };
-    }),
+    set((s) =>
+      s.mode === "apps"
+        ? { expandedApps: flipped(s.expandedApps, pid) }
+        : { collapsed: flipped(s.collapsed, pid) },
+    ),
   setCollapsed: (pid, collapsed) =>
     set((s) => {
+      if (s.mode === "apps") {
+        if (s.expandedApps.has(pid) === !collapsed) return s;
+        return { expandedApps: flipped(s.expandedApps, pid) };
+      }
       if (s.collapsed.has(pid) === collapsed) return s;
-      const next = new Set(s.collapsed);
-      if (collapsed) next.add(pid);
-      else next.delete(pid);
-      return { collapsed: next };
+      return { collapsed: flipped(s.collapsed, pid) };
     }),
   collapseAll: (pids) => set({ collapsed: new Set(pids) }),
   expandAll: () => set({ collapsed: new Set() }),
+  setExpandedApps: (ids) => set({ expandedApps: new Set(ids) }),
 }));
 
 export function columnWidth(widths: Partial<Record<ColumnId, number>>, column: ColumnId): number {

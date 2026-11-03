@@ -15,6 +15,8 @@ const GROUP: Record<ActivityKind, Exclude<ActivityFilter, "all">> = {
   cpuSpike: "resources",
   cpuNormal: "resources",
   memoryJump: "resources",
+  memoryGrowth: "resources",
+  threadGrowth: "resources",
   alertFired: "resources",
   processAction: "actions",
   benchmarkStarted: "actions",
@@ -35,6 +37,10 @@ export function describe(e: ActivityEvent): string {
       return `${who} CPU use returned to normal`;
     case "memoryJump":
       return `${who} memory grew quickly`;
+    case "memoryGrowth":
+      return `${who}: potential memory growth`;
+    case "threadGrowth":
+      return `${who}: thread count keeps rising`;
     case "alertFired":
       return `Alert: ${who}`;
     case "processAction":

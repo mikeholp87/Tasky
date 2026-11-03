@@ -5,7 +5,7 @@
 //! Processes are identified by `(pid, start_time)` so a reused PID is an exit
 //! followed by a start, never a continuation.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use crate::models::{ActivityEvent, ActivityKind, ProcessRow};
 use crate::monitoring::history::RingBuffer;
@@ -22,6 +22,19 @@ const MEMORY_WINDOW_MS: u64 = 30_000;
 const MAX_EVENTS_PER_TICK: usize = 50;
 /// Events kept for the Activity page.
 pub const LOG_LEN: usize = 1_000;
+
+// Slow-growth hints. One sample per minute for up to an hour, so "sustained"
+// means ten or more minutes of mostly non-decreasing readings. Thresholds are
+// deliberately conservative: a hint is a prompt to look, not a verdict.
+const TREND_STEP_MS: u64 = 60_000;
+const TREND_SAMPLES: usize = 60;
+const TREND_MIN_SAMPLES: usize = 11;
+const MEMORY_GROWTH_MIN_BYTES: u64 = 256 * 1024 * 1024;
+const MEMORY_GROWTH_RATIO: f64 = 1.25;
+const THREAD_GROWTH_MIN: u64 = 32;
+const THREAD_GROWTH_RATIO: f64 = 1.5;
+/// Share of minute-to-minute steps that must not fall (1% jitter allowed).
+const RISING_SHARE: f64 = 0.8;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ActivityConfig {
@@ -63,8 +76,120 @@ impl Pending {
     }
 }
 
+struct TrendSample {
+    at: u64,
+    memory: u64,
+    threads: Option<u32>,
+}
+
+/// Coarse per-process history for the growth hints; at most 60 small samples.
+#[derive(Default)]
+struct Trend {
+    samples: VecDeque<TrendSample>,
+    memory_reported: bool,
+    threads_reported: bool,
+}
+
+/// Whether `values` rose by at least `min_growth` and `min_ratio` overall
+/// without falling back much along the way. Needs ten minutes of samples.
+fn sustained_rise(values: &[u64], min_growth: u64, min_ratio: f64) -> bool {
+    let (Some(&first), Some(&last)) = (values.first(), values.last()) else {
+        return false;
+    };
+    if values.len() < TREND_MIN_SAMPLES
+        || last < first.saturating_add(min_growth)
+        || (last as f64) < (first as f64) * min_ratio
+    {
+        return false;
+    }
+    let steps = values.len() - 1;
+    let holding = values
+        .windows(2)
+        .filter(|w| w[1].saturating_add(w[0] / 100) >= w[0])
+        .count();
+    holding as f64 >= steps as f64 * RISING_SHARE
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const MB: f64 = 1024.0 * 1024.0;
+    let mb = bytes as f64 / MB;
+    if mb >= 1024.0 {
+        format!("{:.1} GB", mb / 1024.0)
+    } else {
+        format!("{mb:.0} MB")
+    }
+}
+
+impl Trend {
+    /// Adds a sample when a minute has passed and reports hints that newly
+    /// hold. Each hint is reported once per process instance.
+    fn observe(&mut self, now_ms: u64, row: &ProcessRow) -> Vec<Pending> {
+        let due = self
+            .samples
+            .back()
+            .is_none_or(|last| now_ms.saturating_sub(last.at) >= TREND_STEP_MS);
+        if !due {
+            return Vec::new();
+        }
+        if self.samples.len() == TREND_SAMPLES {
+            self.samples.pop_front();
+        }
+        self.samples.push_back(TrendSample {
+            at: now_ms,
+            memory: row.memory_bytes,
+            threads: row.threads,
+        });
+
+        let mut out = Vec::new();
+        let (Some(first), Some(last)) = (self.samples.front(), self.samples.back()) else {
+            return out;
+        };
+        let minutes = last.at.saturating_sub(first.at) / 60_000;
+        if !self.memory_reported {
+            let values: Vec<u64> = self.samples.iter().map(|s| s.memory).collect();
+            if sustained_rise(&values, MEMORY_GROWTH_MIN_BYTES, MEMORY_GROWTH_RATIO) {
+                self.memory_reported = true;
+                out.push(
+                    Pending::process(ActivityKind::MemoryGrowth, row.pid, &row.name).detail(
+                        format!(
+                            "Sustained memory growth: {} to {} over {minutes} minutes. \
+                             A growing cache can be normal.",
+                            human_bytes(first.memory),
+                            human_bytes(last.memory)
+                        ),
+                    ),
+                );
+            }
+        }
+        if !self.threads_reported {
+            let values: Option<Vec<u64>> = self
+                .samples
+                .iter()
+                .map(|s| s.threads.map(u64::from))
+                .collect();
+            if let Some(values) = values
+                && sustained_rise(&values, THREAD_GROWTH_MIN, THREAD_GROWTH_RATIO)
+            {
+                self.threads_reported = true;
+                out.push(
+                    Pending::process(ActivityKind::ThreadGrowth, row.pid, &row.name).detail(
+                        format!(
+                            "Possible resource leak: thread count rose from {} to {} over \
+                             {minutes} minutes.",
+                            values.first().copied().unwrap_or(0),
+                            values.last().copied().unwrap_or(0)
+                        ),
+                    ),
+                );
+            }
+        }
+        out
+    }
+}
+
 struct Tracked {
     name: String,
+    trend: Trend,
     hot_since: Option<u64>,
     spiking: bool,
     mem_ref: u64,
@@ -113,10 +238,13 @@ impl ActivityDetector {
                         &row.name,
                     ));
                 }
+                let mut trend = Trend::default();
+                trend.observe(now_ms, row);
                 self.known.insert(
                     key,
                     Tracked {
                         name: row.name.clone(),
+                        trend,
                         hot_since: None,
                         spiking: false,
                         mem_ref: row.memory_bytes,
@@ -167,6 +295,10 @@ impl ActivityDetector {
                 // Re-arm so continued growth is reported in steps, not every tick.
                 t.mem_ref = row.memory_bytes;
                 t.mem_ref_at = now_ms;
+            }
+
+            for hint in t.trend.observe(now_ms, row) {
+                push(hint);
             }
         }
 
@@ -338,6 +470,77 @@ mod tests {
         assert_eq!(
             kinds(&d.observe(5_000, &[row(1, 1, 0.0, 600)], &CFG)),
             [ActivityKind::MemoryJump]
+        );
+    }
+
+    fn grow(
+        d: &mut ActivityDetector,
+        minutes: u64,
+        mem_at: impl Fn(u64) -> u64,
+        threads_at: impl Fn(u64) -> u32,
+    ) -> Vec<Pending> {
+        let mut all = Vec::new();
+        for m in 0..=minutes {
+            let mut r = row(1, 1, 0.0, 0);
+            r.memory_bytes = mem_at(m);
+            r.threads = Some(threads_at(m));
+            all.extend(d.observe(m * 60_000, &[r], &CFG));
+        }
+        all
+    }
+
+    #[test]
+    fn reports_sustained_memory_growth_once() {
+        let mut d = ActivityDetector::default();
+        // 400 MB rising 100 MB a minute for 12 minutes.
+        let ev = grow(&mut d, 12, |m| (400 + 100 * m) * MB, |_| 10);
+        let growth: Vec<_> = ev
+            .iter()
+            .filter(|e| e.kind == ActivityKind::MemoryGrowth)
+            .collect();
+        assert_eq!(growth.len(), 1, "reported once");
+        let detail = growth[0].detail.as_deref().unwrap();
+        assert!(
+            detail.contains("400 MB") && detail.contains("minutes"),
+            "{detail}"
+        );
+        assert!(
+            detail.contains("can be normal"),
+            "never says leak confirmed"
+        );
+        assert!(ev.iter().all(|e| e.kind != ActivityKind::ThreadGrowth));
+    }
+
+    #[test]
+    fn ignores_short_noisy_or_falling_memory() {
+        // Too short: nine minutes.
+        let mut d = ActivityDetector::default();
+        assert!(grow(&mut d, 9, |m| (400 + 100 * m) * MB, |_| 10).is_empty());
+        // Saw-tooth: ends higher but keeps falling back (garbage collection).
+        let mut d = ActivityDetector::default();
+        let saw = |m: u64| if m.is_multiple_of(2) { 400 * MB } else { 900 * MB } + m * 20 * MB;
+        let ev = grow(&mut d, 20, saw, |_| 10);
+        assert!(ev.iter().all(|e| e.kind != ActivityKind::MemoryGrowth));
+        // Small absolute growth is not interesting.
+        let mut d = ActivityDetector::default();
+        assert!(grow(&mut d, 20, |m| (100 + m) * MB, |_| 10).is_empty());
+    }
+
+    #[test]
+    fn reports_thread_growth_as_a_possible_leak() {
+        let mut d = ActivityDetector::default();
+        let ev = grow(&mut d, 12, |_| 100 * MB, |m| 10 + 8 * m as u32);
+        let hit: Vec<_> = ev
+            .iter()
+            .filter(|e| e.kind == ActivityKind::ThreadGrowth)
+            .collect();
+        assert_eq!(hit.len(), 1);
+        assert!(
+            hit[0]
+                .detail
+                .as_deref()
+                .unwrap()
+                .starts_with("Possible resource leak")
         );
     }
 

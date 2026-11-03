@@ -30,6 +30,7 @@ suite("activity", () => {
     expect(describe(events[0] as ActivityEvent)).toBe("node started");
     expect(describe(ev(9, "processExited", null))).toBe("A process exited");
     expect(describe(events[3] as ActivityEvent)).toBe("Benchmark started");
+    expect(describe(ev(9, "memoryGrowth", "node"))).toBe("node: potential memory growth");
   });
 
   it("filters by group and by text, PID or detail", () => {

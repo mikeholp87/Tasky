@@ -9,6 +9,10 @@ pub enum ActivityKind {
     CpuSpike,
     CpuNormal,
     MemoryJump,
+    /// Memory rose steadily for many minutes. A cache can do this legitimately.
+    MemoryGrowth,
+    /// Thread count rose steadily for many minutes.
+    ThreadGrowth,
     AlertFired,
     /// A suspend, resume, terminate or priority change made through this app.
     ProcessAction,

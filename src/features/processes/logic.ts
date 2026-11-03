@@ -404,3 +404,10 @@ export function userOf(rows: readonly ProcessRow[], pid: number | undefined): st
   if (pid == null) return null;
   return rows.find((r) => r.pid === pid)?.user ?? null;
 }
+
+/** Whether a process started within the last `windowSecs` (0 turns the highlight off). */
+export function isNewProcess(startTime: number, nowSecs: number, windowSecs: number): boolean {
+  return (
+    windowSecs > 0 && startTime > 0 && nowSecs >= startTime && nowSecs - startTime < windowSecs
+  );
+}

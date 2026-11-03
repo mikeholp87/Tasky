@@ -52,12 +52,17 @@ pub struct Settings {
     pub cpu_spike_percent: u32,
     /// Growth in a process's memory, within half a minute, that is logged.
     pub memory_jump_mb: u32,
+    /// How long a newly started process is highlighted in the process table;
+    /// 0 turns the highlight off.
+    pub new_process_seconds: u32,
     // Advanced
     pub debug_logging: bool,
 }
 
 /// Allowed range of [`Settings::cpu_spike_percent`].
 pub const CPU_SPIKE_RANGE: std::ops::RangeInclusive<u32> = 10..=100;
+/// Allowed range of [`Settings::new_process_seconds`].
+pub const NEW_PROCESS_RANGE: std::ops::RangeInclusive<u32> = 0..=300;
 /// Allowed range of [`Settings::memory_jump_mb`].
 pub const MEMORY_JUMP_RANGE: std::ops::RangeInclusive<u32> = 64..=65_536;
 
@@ -82,6 +87,7 @@ impl Default for Settings {
             alert_rules: default_alert_rules(),
             cpu_spike_percent: 80,
             memory_jump_mb: 512,
+            new_process_seconds: 10,
             debug_logging: false,
         }
     }
@@ -105,6 +111,11 @@ impl Settings {
         if !MEMORY_JUMP_RANGE.contains(&self.memory_jump_mb) {
             return Err(AppError::InvalidArgument(
                 "Memory jump threshold must be between 64 MB and 64 GB.".into(),
+            ));
+        }
+        if !NEW_PROCESS_RANGE.contains(&self.new_process_seconds) {
+            return Err(AppError::InvalidArgument(
+                "The new-process highlight must last 0 to 300 seconds.".into(),
             ));
         }
         if self.alert_rules.len() > MAX_ALERT_RULES {
@@ -145,6 +156,9 @@ impl Settings {
         }
         if !MEMORY_JUMP_RANGE.contains(&self.memory_jump_mb) {
             self.memory_jump_mb = d.memory_jump_mb;
+        }
+        if !NEW_PROCESS_RANGE.contains(&self.new_process_seconds) {
+            self.new_process_seconds = d.new_process_seconds;
         }
         let mut ids = std::collections::HashSet::new();
         self.alert_rules
