@@ -2,7 +2,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useBenchmarkStore } from "@/stores/benchmarkStore";
 import { toast } from "@/stores/toastStore";
-import type { BenchmarkProfile, BenchmarkResult, BenchmarkStatus } from "@/types";
+import type { BenchmarkKind, BenchmarkProfile, BenchmarkResult, BenchmarkStatus } from "@/types";
 import { backend, isBackendAvailable, toAppError } from "./ipc";
 
 const STATUS_EVENT = "benchmark://status";
@@ -36,12 +36,27 @@ export async function initBenchmarks(): Promise<void> {
   await refreshHistory();
 }
 
-export async function runCpuBenchmark(profile: BenchmarkProfile): Promise<void> {
+export async function runBenchmark(
+  kind: BenchmarkKind,
+  profile: BenchmarkProfile,
+  adapter?: string,
+): Promise<void> {
   try {
     useBenchmarkStore.getState().select(null);
-    useBenchmarkStore.getState().setStatus(await backend.startBenchmark("cpu", profile));
+    useBenchmarkStore.getState().setStatus(await backend.startBenchmark(kind, profile, adapter));
   } catch (e) {
     toast.error(toAppError(e).message);
+  }
+}
+
+/** Lists graphics adapters once; a failure is shown in the GPU card, not as a toast. */
+export async function loadGpuAdapters(): Promise<void> {
+  const store = useBenchmarkStore.getState();
+  if (store.adapters !== null || !isBackendAvailable()) return;
+  try {
+    store.setAdapters(await backend.listGpuAdapters());
+  } catch (e) {
+    store.setAdapters([], toAppError(e).message);
   }
 }
 

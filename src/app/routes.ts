@@ -12,6 +12,7 @@ import {
   MemoryStick,
   Network,
   Plug,
+  Rocket,
   ScrollText,
   Settings,
   Timer,
@@ -28,6 +29,7 @@ export type RouteId =
   | "network"
   | "process-details"
   | "ports"
+  | "startup"
   | "file-finder"
   | "activity"
   | "system"
@@ -53,6 +55,7 @@ export const ROUTES: readonly RouteDef[] = [
   { id: "network", label: "Network", icon: Network, group: "resources" },
   { id: "process-details", label: "Process Details", icon: FileSearch, group: "tools" },
   { id: "ports", label: "Ports", icon: Plug, group: "tools" },
+  { id: "startup", label: "Startup", icon: Rocket, group: "tools" },
   { id: "file-finder", label: "Find File Users", icon: FolderSearch, group: "tools" },
   { id: "activity", label: "Activity", icon: ScrollText, group: "tools" },
   { id: "system", label: "System Information", icon: Info, group: "tools" },

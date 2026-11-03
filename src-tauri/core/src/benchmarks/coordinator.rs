@@ -10,9 +10,13 @@ use std::time::{Duration, Instant};
 
 use super::cancel::CancelToken;
 use super::cpu::runner::{CpuHooks, CpuRunConfig, Observer, run_cpu};
+use super::gpu::runner::{GpuRunConfig, run_gpu};
+use super::gpu::wgpu_backend::WgpuBackend;
+use super::gpu::{self, GpuBackend};
 use super::history::HistoryStore;
 use super::model::{
-    BenchmarkKind, BenchmarkProfile, BenchmarkResult, BenchmarkState, BenchmarkStatus, LiveReading,
+    BenchmarkKind, BenchmarkProfile, BenchmarkResult, BenchmarkState, BenchmarkStatus,
+    GpuAdapterInfo, GpuDeviceType, GpuResult, LiveReading,
 };
 use super::{BenchmarkError, environment, scoring};
 use crate::errors::{AppError, AppResult};
@@ -48,8 +52,26 @@ pub struct Coordinator {
     engine: Arc<Engine>,
     history: Arc<HistoryStore>,
     shared: Arc<Shared>,
+    gpu: Arc<dyn GpuBackend>,
     /// Tests run unoptimised; this lets them exercise scoring and saving.
     score_development_builds: bool,
+}
+
+/// What a run executes. The user chooses only the kind, profile and adapter;
+/// explicit configurations exist for tests.
+pub enum RunPlan {
+    Cpu(CpuRunConfig),
+    Gpu {
+        /// `None` means "build it from the profile once the adapter is known".
+        config: Option<GpuRunConfig>,
+        adapter: Option<String>,
+    },
+}
+
+impl From<CpuRunConfig> for RunPlan {
+    fn from(cfg: CpuRunConfig) -> Self {
+        Self::Cpu(cfg)
+    }
 }
 
 impl Coordinator {
@@ -62,8 +84,21 @@ impl Coordinator {
                 active: Mutex::new(None),
                 counter: AtomicU64::new(0),
             }),
+            gpu: Arc::new(WgpuBackend::new()),
             score_development_builds: false,
         }
+    }
+
+    /// Replaces the GPU backend (tests use a fake, so CI needs no GPU).
+    #[doc(hidden)]
+    pub fn with_gpu_backend(mut self, backend: Arc<dyn GpuBackend>) -> Self {
+        self.gpu = backend;
+        self
+    }
+
+    /// Graphics adapters a GPU benchmark could run on.
+    pub fn gpu_adapters(&self) -> AppResult<Vec<GpuAdapterInfo>> {
+        self.gpu.adapters().map_err(AppError::from)
     }
 
     #[doc(hidden)]
@@ -91,28 +126,50 @@ impl Coordinator {
         }
     }
 
+    /// `adapter` selects a graphics adapter for GPU runs (an id from
+    /// [`gpu_adapters`](Self::gpu_adapters)); it is ignored for CPU runs.
     pub fn start(
         &self,
         kind: BenchmarkKind,
         profile: BenchmarkProfile,
+        adapter: Option<String>,
         sink: Arc<dyn ProgressSink>,
     ) -> AppResult<BenchmarkStatus> {
-        let logical = self.engine.static_info().logical_core_count as usize;
-        let cfg = CpuRunConfig::for_profile(profile, logical);
-        self.start_with(kind, profile, cfg, sink)
+        let plan = match kind {
+            BenchmarkKind::Cpu => {
+                let logical = self.engine.static_info().logical_core_count as usize;
+                RunPlan::Cpu(CpuRunConfig::for_profile(profile, logical))
+            }
+            BenchmarkKind::Gpu => RunPlan::Gpu {
+                config: None,
+                adapter,
+            },
+            // Wired up when the disk and internet runs are connected below.
+            BenchmarkKind::Disk | BenchmarkKind::Internet => {
+                return Err(AppError::InvalidArgument("Not available yet.".into()));
+            }
+        };
+        self.start_with(kind, profile, plan, sink)
     }
 
-    /// [`start`](Self::start) with an explicit workload (tests use tiny ones).
+    /// [`start`](Self::start) with an explicit plan (tests use tiny ones).
     pub fn start_with(
         &self,
         kind: BenchmarkKind,
         profile: BenchmarkProfile,
-        cfg: CpuRunConfig,
+        plan: impl Into<RunPlan>,
         sink: Arc<dyn ProgressSink>,
     ) -> AppResult<BenchmarkStatus> {
+        let plan = plan.into();
         let cancel = CancelToken::new();
+        let prefix = match kind {
+            BenchmarkKind::Cpu => "cpu",
+            BenchmarkKind::Gpu => "gpu",
+            BenchmarkKind::Disk => "disk",
+            BenchmarkKind::Internet => "net",
+        };
         let id = format!(
-            "cpu-{}-{}",
+            "{prefix}-{}-{}",
             unix_millis(),
             self.shared.counter.fetch_add(1, Ordering::Relaxed)
         );
@@ -147,12 +204,13 @@ impl Coordinator {
             engine: Arc::clone(&self.engine),
             history: Arc::clone(&self.history),
             shared: Arc::clone(&self.shared),
+            gpu: Arc::clone(&self.gpu),
             sink,
             score_development_builds: self.score_development_builds,
             id,
             kind,
             profile,
-            cfg,
+            plan,
             cancel,
         };
         let shared = Arc::clone(&self.shared);
@@ -172,27 +230,30 @@ struct RunContext {
     engine: Arc<Engine>,
     history: Arc<HistoryStore>,
     shared: Arc<Shared>,
+    gpu: Arc<dyn GpuBackend>,
     sink: Arc<dyn ProgressSink>,
     score_development_builds: bool,
     id: String,
     kind: BenchmarkKind,
     profile: BenchmarkProfile,
-    cfg: CpuRunConfig,
+    plan: RunPlan,
     cancel: CancelToken,
 }
 
 /// Clears the benchmark lock on any exit, including a panic that escapes
 /// the normal finalisation.
-struct LockGuard(Arc<Shared>);
+struct LockGuard(Option<Arc<Shared>>);
 impl Drop for LockGuard {
     fn drop(&mut self) {
-        *lock(&self.0.active) = None;
+        if let Some(shared) = &self.0 {
+            *lock(&shared.active) = None;
+        }
     }
 }
 
 impl RunContext {
     fn run(self) {
-        let _guard = LockGuard(Arc::clone(&self.shared));
+        let mut guard = LockGuard(Some(Arc::clone(&self.shared)));
         let reporter = Reporter::new(&self);
         let outcome = catch_unwind(AssertUnwindSafe(|| self.execute(&reporter)));
         let (state, message, result) = match outcome {
@@ -235,6 +296,9 @@ impl RunContext {
             status.live = None;
             let snapshot = status.clone();
             *active = None;
+            // A subsequent run may start as soon as this mutex is released.
+            // The old run's panic guard must never clear the new run's lock.
+            guard.0 = None;
             snapshot
         };
         if let Some(result) = &result {
@@ -253,7 +317,13 @@ impl RunContext {
     fn execute(&self, reporter: &Reporter) -> Result<BenchmarkResult, BenchmarkError> {
         let started_ms = unix_millis();
         let started = Instant::now();
-        reporter.set_state(BenchmarkState::Preflight, "Checking the system");
+        reporter.set_state(
+            BenchmarkState::Preflight,
+            match self.plan {
+                RunPlan::Cpu(_) => "Checking the system",
+                RunPlan::Gpu { .. } => "Checking graphics adapters",
+            },
+        );
 
         let background = self.engine.latest().map(|t| t.cpu.usage_percent);
         let mut env = environment::collect(self.engine.static_info(), background);
@@ -265,34 +335,87 @@ impl RunContext {
             return Err(BenchmarkError::Cancelled);
         }
 
-        let hooks = EngineHooks(&self.engine);
-        let out = run_cpu(&self.cfg, &hooks, &self.cancel, reporter)?;
-
-        reporter.set_state(BenchmarkState::Finalizing, "Calculating results");
-        let scores = if env.development_build {
-            None
-        } else {
-            scoring::cpu_scores(&out.workloads)
-        };
-        if scores.is_none() && !env.development_build {
-            warnings.push("Some measurements were unavailable, so no score was calculated.".into());
-        }
-        Ok(BenchmarkResult {
+        let mut result = BenchmarkResult {
             id: self.id.clone(),
             kind: self.kind,
             profile: self.profile,
             started_at_ms: started_ms,
-            duration_ms: started.elapsed().as_millis() as u64,
+            duration_ms: 0,
             method: scoring::cpu_method(),
-            environment: env,
-            stability: scoring::stability(&out.workloads, &warnings),
-            workloads: out.workloads,
-            sustained: out.sustained,
-            scores,
-            warnings,
+            environment: env.clone(),
+            workloads: Vec::new(),
+            sustained: None,
+            scores: None,
+            gpu: None,
+            gpu_score: None,
+            disk: None,
+            disk_score: None,
+            internet: None,
+            warnings: Vec::new(),
+            stability: super::model::Stability::High,
             outlier_method: "1.5×IQR; flagged, none removed".into(),
-            affinity: out.affinity,
-        })
+            affinity: "not pinned".into(),
+        };
+
+        match &self.plan {
+            RunPlan::Cpu(cfg) => {
+                let hooks = EngineHooks(&self.engine);
+                let out = run_cpu(cfg, &hooks, &self.cancel, reporter)?;
+                reporter.set_state(BenchmarkState::Finalizing, "Calculating results");
+                let scores = if env.development_build {
+                    None
+                } else {
+                    scoring::cpu_scores(&out.workloads)
+                };
+                if scores.is_none() && !env.development_build {
+                    warnings.push(
+                        "Some measurements were unavailable, so no score was calculated.".into(),
+                    );
+                }
+                result.stability = scoring::stability(&out.workloads, &warnings);
+                result.workloads = out.workloads;
+                result.sustained = out.sustained;
+                result.scores = scores;
+                result.affinity = out.affinity;
+            }
+            RunPlan::Gpu { config, adapter } => {
+                let profile = self.profile;
+                let (info, mut exec, cfg) = self.gpu.open(adapter.as_deref(), &|a| {
+                    config.clone().unwrap_or_else(|| {
+                        GpuRunConfig::for_profile(profile, a.device_type == GpuDeviceType::Discrete)
+                    })
+                })?;
+                let out = run_gpu(&mut *exec, &cfg, &self.cancel, reporter)?;
+                // Release the device before the (possibly slow) bookkeeping.
+                drop(exec);
+                reporter.set_state(BenchmarkState::Finalizing, "Calculating results");
+                let software = info.device_type == GpuDeviceType::Software;
+                let score = if env.development_build || software {
+                    None
+                } else {
+                    scoring::gpu_score(&out.workloads)
+                };
+                if score.is_none() && !env.development_build && !software {
+                    warnings.push(
+                        "Some measurements were unavailable, so no score was calculated.".into(),
+                    );
+                }
+                result.method = scoring::gpu_method();
+                result.stability = scoring::gpu_stability(&out.workloads, &warnings);
+                result.gpu_score = score;
+                result.sustained = None;
+                result.gpu = Some(GpuResult {
+                    notes: gpu::notes(&info, out.timing_method),
+                    adapter: info,
+                    timing_method: out.timing_method,
+                    workloads: out.workloads,
+                    sustained: out.sustained,
+                });
+            }
+        }
+        result.warnings = warnings;
+        result.duration_ms = started.elapsed().as_millis() as u64;
+        Ok(result)
     }
 }
 
@@ -447,6 +570,54 @@ mod tests {
     ) -> AppResult<BenchmarkStatus> {
         let sink: Arc<dyn ProgressSink> = sink.clone();
         c.start_with(BenchmarkKind::Cpu, BenchmarkProfile::Quick, cfg, sink)
+    }
+
+    #[test]
+    fn a_finished_runs_guard_cannot_release_the_next_runs_lock() {
+        use std::sync::{Barrier, mpsc};
+        struct Finishing {
+            entered: mpsc::Sender<()>,
+            release: Arc<Barrier>,
+            dropped: mpsc::Sender<()>,
+        }
+        impl ProgressSink for Finishing {
+            fn status(&self, _: &BenchmarkStatus) {}
+            fn finished(&self, _: &BenchmarkResult) {
+                self.entered.send(()).unwrap();
+                self.release.wait();
+            }
+        }
+        impl Drop for Finishing {
+            fn drop(&mut self) {
+                let _ = self.dropped.send(());
+            }
+        }
+        let c = coordinator();
+        let (entered, ready) = mpsc::channel();
+        let (dropped, done) = mpsc::channel();
+        let release = Arc::new(Barrier::new(2));
+        c.start_with(
+            BenchmarkKind::Cpu,
+            BenchmarkProfile::Quick,
+            CpuRunConfig::test(),
+            Arc::new(Finishing {
+                entered,
+                release: Arc::clone(&release),
+                dropped,
+            }),
+        )
+        .unwrap();
+        ready.recv_timeout(Duration::from_secs(30)).unwrap();
+        let mut long = CpuRunConfig::test();
+        long.int_chunk_steps = u64::MAX / 4096;
+        let sink = Arc::new(Recorder::default());
+        quick(&c, &sink, long).unwrap();
+        release.wait();
+        done.recv_timeout(Duration::from_secs(10)).unwrap();
+        let third = quick(&c, &sink, CpuRunConfig::test());
+        c.cancel();
+        wait_until_idle(&c);
+        assert!(matches!(third, Err(AppError::BenchmarkAlreadyRunning)));
     }
 
     #[test]
@@ -653,5 +824,219 @@ mod tests {
         assert_eq!(cpu_temperature(&[]), None);
         // Environment type is available to tests that need it.
         let _ = PowerSource::Unknown;
+    }
+
+    // ------------------------------------------------------------- GPU
+    use crate::benchmarks::gpu::adapters;
+    use crate::benchmarks::gpu::runner::GpuExecutor;
+    use crate::benchmarks::gpu::runner::tests::Fake;
+
+    struct FakeBackend {
+        adapters: Vec<GpuAdapterInfo>,
+        fail: Option<String>,
+    }
+
+    impl GpuBackend for FakeBackend {
+        fn adapters(&self) -> Result<Vec<GpuAdapterInfo>, BenchmarkError> {
+            Ok(self.adapters.clone())
+        }
+
+        fn open(
+            &self,
+            id: Option<&str>,
+            config_for: &dyn Fn(&GpuAdapterInfo) -> GpuRunConfig,
+        ) -> Result<(GpuAdapterInfo, Box<dyn GpuExecutor>, GpuRunConfig), BenchmarkError> {
+            if let Some(m) = &self.fail {
+                return Err(BenchmarkError::Failed(m.clone()));
+            }
+            let info = adapters::select(&self.adapters, id)?.clone();
+            let cfg = config_for(&info);
+            Ok((info, Box::new(Fake::default()), cfg))
+        }
+    }
+
+    fn adapter(id: &str, t: GpuDeviceType) -> GpuAdapterInfo {
+        GpuAdapterInfo {
+            id: id.into(),
+            name: format!("Test {id}"),
+            vendor_id: 1,
+            device_id: 2,
+            device_type: t,
+            backend: "vulkan".into(),
+            driver: "test".into(),
+            driver_info: "1.0".into(),
+            supports_timestamps: true,
+            max_buffer_bytes: 1 << 30,
+            max_storage_binding_bytes: 1 << 27,
+            max_workgroups_per_dimension: 65_535,
+            recommended: false,
+        }
+    }
+
+    fn gpu_coordinator(list: Vec<GpuAdapterInfo>, fail: Option<&str>) -> Coordinator {
+        coordinator().with_gpu_backend(Arc::new(FakeBackend {
+            adapters: list,
+            fail: fail.map(str::to_owned),
+        }))
+    }
+
+    fn start_gpu(
+        c: &Coordinator,
+        sink: &Arc<Recorder>,
+        adapter: Option<&str>,
+    ) -> AppResult<BenchmarkStatus> {
+        let sink: Arc<dyn ProgressSink> = sink.clone();
+        c.start_with(
+            BenchmarkKind::Gpu,
+            BenchmarkProfile::Quick,
+            RunPlan::Gpu {
+                config: Some(GpuRunConfig::test()),
+                adapter: adapter.map(str::to_owned),
+            },
+            sink,
+        )
+    }
+
+    #[test]
+    fn a_gpu_run_completes_scores_saves_and_records_the_adapter() {
+        let c = gpu_coordinator(
+            vec![
+                adapter("cpu-like", GpuDeviceType::Software),
+                adapter("igpu", GpuDeviceType::Integrated),
+            ],
+            None,
+        );
+        let sink = Arc::new(Recorder::default());
+        start_gpu(&c, &sink, None).expect("starts");
+        let done = wait_until_idle(&c);
+        assert_eq!(done.state, BenchmarkState::Completed, "{:?}", done.message);
+
+        let r = lock(&sink.results)[0].clone();
+        assert_eq!(r.kind, BenchmarkKind::Gpu);
+        assert_eq!(r.method.method_id, "gpu-compute-v1");
+        let g = r.gpu.as_ref().expect("gpu result");
+        // The software renderer is never the default.
+        assert_eq!(g.adapter.id, "igpu");
+        assert_eq!(g.workloads.len(), 3);
+        assert!(g.workloads.iter().all(|w| w.validated));
+        assert!(r.gpu_score.is_some_and(|s| s > 0));
+        assert!(r.scores.is_none() && r.workloads.is_empty());
+        assert!(g.notes.iter().any(|n| n.contains("shared system memory")));
+        assert!(r.id.starts_with("gpu-"));
+        // Saved, and survives a JSON round trip unchanged.
+        assert_eq!(c.history().len(), 1);
+        let json = serde_json::to_string(&r).unwrap();
+        assert_eq!(serde_json::from_str::<BenchmarkResult>(&json).unwrap(), r);
+    }
+
+    #[test]
+    fn a_software_renderer_is_run_on_request_but_never_scored() {
+        let c = gpu_coordinator(vec![adapter("llvmpipe", GpuDeviceType::Software)], None);
+        let sink = Arc::new(Recorder::default());
+        start_gpu(&c, &sink, Some("llvmpipe")).expect("starts");
+        assert_eq!(wait_until_idle(&c).state, BenchmarkState::Completed);
+        let r = lock(&sink.results)[0].clone();
+        assert_eq!(r.gpu_score, None);
+        assert!(
+            r.gpu
+                .unwrap()
+                .notes
+                .iter()
+                .any(|n| n.contains("software renderer"))
+        );
+        // Not scored, but also not a failure: no misleading "unavailable" warning.
+        assert!(!r.warnings.iter().any(|w| w.contains("unavailable")));
+    }
+
+    #[test]
+    fn no_adapter_fails_cleanly_and_frees_the_lock() {
+        let c = gpu_coordinator(vec![], None);
+        let sink = Arc::new(Recorder::default());
+        start_gpu(&c, &sink, None).expect("starts");
+        let done = wait_until_idle(&c);
+        assert_eq!(done.state, BenchmarkState::Failed);
+        assert!(
+            done.message
+                .is_some_and(|m| m.contains("No graphics adapter"))
+        );
+        assert!(c.history().is_empty());
+        // The app keeps working: a CPU benchmark can run right after.
+        quick(&c, &sink, CpuRunConfig::test()).expect("can start another");
+        assert_eq!(wait_until_idle(&c).state, BenchmarkState::Completed);
+    }
+
+    #[test]
+    fn a_driver_failure_is_reported_in_plain_words() {
+        let c = gpu_coordinator(
+            vec![adapter("igpu", GpuDeviceType::Integrated)],
+            Some("The graphics adapter could not be opened: driver said no"),
+        );
+        let sink = Arc::new(Recorder::default());
+        start_gpu(&c, &sink, None).expect("starts");
+        let done = wait_until_idle(&c);
+        assert_eq!(done.state, BenchmarkState::Failed);
+        assert!(
+            done.message
+                .is_some_and(|m| m.contains("could not be opened"))
+        );
+    }
+
+    #[test]
+    fn a_choice_of_a_vanished_adapter_is_an_error_not_a_silent_fallback() {
+        let c = gpu_coordinator(vec![adapter("igpu", GpuDeviceType::Integrated)], None);
+        let sink = Arc::new(Recorder::default());
+        start_gpu(&c, &sink, Some("gone")).expect("starts");
+        let done = wait_until_idle(&c);
+        assert_eq!(done.state, BenchmarkState::Failed);
+        assert!(
+            done.message
+                .is_some_and(|m| m.contains("no longer available"))
+        );
+    }
+
+    #[test]
+    fn cpu_and_gpu_benchmarks_share_one_lock() {
+        let c = gpu_coordinator(vec![adapter("igpu", GpuDeviceType::Integrated)], None);
+        let sink = Arc::new(Recorder::default());
+        let mut long = CpuRunConfig::test();
+        long.int_chunk_steps = u64::MAX / 4096;
+        quick(&c, &sink, long).expect("cpu starts");
+        assert!(matches!(
+            start_gpu(&c, &sink, None),
+            Err(AppError::BenchmarkAlreadyRunning)
+        ));
+        c.cancel();
+        wait_until_idle(&c);
+        start_gpu(&c, &sink, None).expect("gpu can start after");
+        assert_eq!(wait_until_idle(&c).state, BenchmarkState::Completed);
+    }
+
+    #[test]
+    fn development_builds_do_not_score_gpu_runs_either() {
+        let engine = Arc::new(Engine::start(MonitoringState::default()).expect("engine"));
+        let c = Coordinator::new(engine, None).with_gpu_backend(Arc::new(FakeBackend {
+            adapters: vec![adapter("igpu", GpuDeviceType::Integrated)],
+            fail: None,
+        }));
+        let sink = Arc::new(Recorder::default());
+        start_gpu(&c, &sink, None).expect("starts");
+        assert_eq!(wait_until_idle(&c).state, BenchmarkState::Completed);
+        if cfg!(debug_assertions) {
+            let r = lock(&sink.results)[0].clone();
+            assert!(r.environment.development_build && r.gpu_score.is_none());
+            assert!(c.history().is_empty());
+        }
+    }
+
+    #[test]
+    fn the_adapter_list_comes_from_the_backend() {
+        let c = gpu_coordinator(
+            vec![
+                adapter("a", GpuDeviceType::Discrete),
+                adapter("b", GpuDeviceType::Integrated),
+            ],
+            None,
+        );
+        assert_eq!(c.gpu_adapters().unwrap().len(), 2);
     }
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-static-info"
+description = "Enables the get_static_info command without any pre-configured scope."
+commands.allow = ["get_static_info"]
+
+[[permission]]
+identifier = "deny-get-static-info"
+description = "Denies the get_static_info command without any pre-configured scope."
+commands.deny = ["get_static_info"]

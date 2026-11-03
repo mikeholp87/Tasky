@@ -11,6 +11,7 @@ mod metrics;
 mod monitoring;
 mod process;
 mod settings;
+mod startup;
 mod system;
 
 pub use activity::*;
@@ -23,4 +24,5 @@ pub use metrics::*;
 pub use monitoring::*;
 pub use process::*;
 pub use settings::*;
+pub use startup::*;
 pub use system::*;

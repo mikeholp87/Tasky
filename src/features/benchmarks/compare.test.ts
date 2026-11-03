@@ -28,6 +28,11 @@ function result(over: Partial<BenchmarkResult> & { id: string }): BenchmarkResul
     workloads: [],
     sustained: null,
     scores: { singleCore: 1000, multiCore: 4000 },
+    gpu: null,
+    gpuScore: null,
+    disk: null,
+    diskScore: null,
+    internet: null,
     warnings: [],
     stability: "high",
     outlierMethod: "",
@@ -50,7 +55,7 @@ describe("comparison rules", () => {
   it("computes score changes in percent", () => {
     const before = result({ id: "a", scores: { singleCore: 1000, multiCore: 4000 } });
     const after = result({ id: "b", scores: { singleCore: 1100, multiCore: 3800 } });
-    expect(compareScores(after, before)).toEqual({ singleCore: 10, multiCore: -5 });
+    expect(compareScores(after, before)).toEqual({ singleCore: 10, multiCore: -5, gpu: null });
   });
 
   it("has nothing to compare without scores, e.g. a development build", () => {
@@ -83,6 +88,77 @@ describe("comparison rules", () => {
     expect(percentChange(null, 5)).toBeNull();
     expect(percentChange(5, Number.NaN)).toBeNull();
     expect(percentChange(200, 250)).toBe(25);
+  });
+});
+
+function gpuResult(
+  id: string,
+  startedAtMs: number,
+  adapterId: string,
+  score: number,
+  timing: "gpuTimestamps" | "wallClock" = "gpuTimestamps",
+): BenchmarkResult {
+  return result({
+    id,
+    kind: "gpu",
+    startedAtMs,
+    method: {
+      methodId: "gpu-compute-v1",
+      scoreVersion: "gpu-score-v1",
+      comparability: "crossPlatform",
+    },
+    scores: null,
+    gpuScore: score,
+    gpu: {
+      adapter: {
+        id: adapterId,
+        name: adapterId,
+        vendorId: 1,
+        deviceId: 2,
+        deviceType: "integrated",
+        backend: "vulkan",
+        driver: "d",
+        driverInfo: "i",
+        supportsTimestamps: true,
+        maxBufferBytes: 1,
+        maxStorageBindingBytes: 1,
+        maxWorkgroupsPerDimension: 65535,
+        recommended: true,
+      },
+      timingMethod: timing,
+      workloads: [],
+      sustained: null,
+      notes: [],
+    },
+  });
+}
+
+describe("GPU comparison rules", () => {
+  it("compares a GPU result only with the same adapter and timing method", () => {
+    const now = gpuResult("now", 5000, "vulkan-a", 1100);
+    const history = [
+      gpuResult("other-card", 4500, "vulkan-b", 3000),
+      gpuResult("wall-clock", 4400, "vulkan-a", 900, "wallClock"),
+      gpuResult("same", 4000, "vulkan-a", 1000),
+      result({ id: "cpu", startedAtMs: 4800 }),
+      now,
+    ];
+    expect(previousComparable(history, now)?.id).toBe("same");
+    expect(compareScores(now, gpuResult("same", 4000, "vulkan-a", 1000))?.gpu).toBeCloseTo(10);
+    expect(compareScores(now, gpuResult("c", 4000, "vulkan-b", 1000))).toBeNull();
+    expect(compareScores(now, gpuResult("w", 4000, "vulkan-a", 1000, "wallClock"))).toBeNull();
+  });
+
+  it("never compares a GPU result with a CPU one", () => {
+    const g = gpuResult("g", 5000, "vulkan-a", 1000);
+    expect(sameMethod(g, result({ id: "c" }))).toBe(false);
+    expect(compareScores(g, result({ id: "c" }))).toBeNull();
+  });
+
+  it("has nothing to compare when a GPU run was not scored", () => {
+    const unscored = gpuResult("u", 4000, "vulkan-a", 0);
+    unscored.gpuScore = null;
+    expect(compareScores(gpuResult("n", 5000, "vulkan-a", 1000), unscored)).toBeNull();
   });
 });
 

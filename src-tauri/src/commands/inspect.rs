@@ -2,6 +2,7 @@
 //! threads and the activity timeline. Each walks OS tables, so it runs on a
 //! blocking worker and is called by the UI only while its view is open.
 
+use super::blocking::run as blocking;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -10,7 +11,7 @@ use tauri_plugin_dialog::DialogExt;
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::{
     ActivityEvent, FileUserList, HardwareInfo, MemoryMap, ModuleInfo, OpenFileList, SocketList,
-    ThreadList,
+    StartupItem, ThreadList,
 };
 use tm_core::monitoring::unix_millis;
 use tm_core::platform;
@@ -18,12 +19,32 @@ use tm_core::platform;
 use crate::commands::validate;
 use crate::state::AppState;
 
-async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> AppResult<T> + Send + 'static,
-) -> AppResult<T> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| AppError::SystemQueryFailed(format!("background task failed: {e}")))?
+/// Programs that start at login (Startup page).
+#[tauri::command]
+pub async fn list_startup_items() -> AppResult<Vec<StartupItem>> {
+    blocking(platform::startup_items).await
+}
+
+/// Reversible: disabling hides the entry, it never deletes it.
+#[tauri::command]
+pub async fn set_startup_enabled(app: AppHandle, id: String, enabled: bool) -> AppResult<()> {
+    if id.len() > 255 || id.chars().any(char::is_control) {
+        return Err(AppError::InvalidArgument(
+            "That is not a valid startup entry.".into(),
+        ));
+    }
+    blocking(move || {
+        super::confirm::confirm(
+            &app,
+            &format!(
+                "{} startup entry {}? This changes what runs at your next login.",
+                if enabled { "Enable" } else { "Disable" },
+                id.escape_debug()
+            ),
+        )?;
+        platform::set_startup_enabled(&id, enabled)
+    })
+    .await
 }
 
 /// Every TCP/UDP socket with its owning process (Ports page).

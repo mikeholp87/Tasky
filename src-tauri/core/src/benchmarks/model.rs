@@ -5,13 +5,16 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::models::Platform;
+use crate::models::{InterfaceKind, Platform};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum BenchmarkKind {
     Cpu,
+    Gpu,
+    Disk,
+    Internet,
 }
 
 /// User-facing profiles. They change repetition counts and sizes only; the
@@ -194,6 +197,327 @@ pub enum Stability {
     Low,
 }
 
+/// What kind of graphics device an adapter is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum GpuDeviceType {
+    Discrete,
+    Integrated,
+    Virtual,
+    /// A renderer that runs on the CPU (e.g. llvmpipe). Not a GPU result.
+    Software,
+    Other,
+}
+
+/// A graphics adapter the benchmark can run on, as reported by the driver.
+/// Nothing is guessed: names and driver text are the driver's own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GpuAdapterInfo {
+    /// Stable within one enumeration; pass it back to select this adapter.
+    pub id: String,
+    pub name: String,
+    pub vendor_id: u32,
+    pub device_id: u32,
+    pub device_type: GpuDeviceType,
+    /// "vulkan", "dx12", ...
+    pub backend: String,
+    pub driver: String,
+    pub driver_info: String,
+    /// Can measure GPU execution time directly.
+    pub supports_timestamps: bool,
+    pub max_buffer_bytes: u64,
+    pub max_storage_binding_bytes: u64,
+    pub max_workgroups_per_dimension: u32,
+    /// The adapter the benchmark would pick by default.
+    pub recommended: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum GpuWorkloadId {
+    Integer,
+    FloatingPoint,
+    Memory,
+}
+
+/// How GPU execution time was measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum TimingMethod {
+    /// Timestamps written by the GPU around the dispatch.
+    GpuTimestamps,
+    /// Wall clock from submit until completion was confirmed; includes
+    /// driver and queue overhead.
+    WallClock,
+}
+
+/// All iterations of one GPU workload. `samples` are raw per-dispatch
+/// throughputs; the reported value is the median.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GpuWorkloadResult {
+    pub id: GpuWorkloadId,
+    pub label: String,
+    pub unit: String,
+    pub samples: Vec<f64>,
+    pub median: f64,
+    pub mean: f64,
+    pub min: f64,
+    pub max: f64,
+    pub std_dev: Option<f64>,
+    pub cv_percent: Option<f64>,
+    pub p95: Option<f64>,
+    pub outlier_indices: Vec<u32>,
+    /// Operations (or bytes) in one dispatch; known, not estimated.
+    pub work_per_dispatch: f64,
+    /// Median time of one dispatch.
+    pub dispatch_ms: f64,
+    /// The output was checked against a CPU reference.
+    pub validated: bool,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GpuResult {
+    pub adapter: GpuAdapterInfo,
+    pub timing_method: TimingMethod,
+    pub workloads: Vec<GpuWorkloadResult>,
+    /// Sustained phase (Extended); `mops` holds mega-operations per second.
+    pub sustained: Option<SustainedResult>,
+    /// Things worth knowing about this device, e.g. shared memory.
+    pub notes: Vec<String>,
+}
+
+// ------------------------------------------------------------------ disk
+
+/// How file I/O was done. Part of the method id: results measured with
+/// different modes are different measurements.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum IoMode {
+    /// `O_DIRECT`: bypasses the page cache, so the device is measured.
+    Direct,
+    /// Ordinary file I/O through the page cache: results reflect the cache.
+    Buffered,
+}
+
+/// A place the disk benchmark may create its temporary file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiskTargetInfo {
+    /// Stable id the UI passes back; the UI never supplies a path.
+    pub id: String,
+    pub label: String,
+    /// Folder the temporary file will be created in.
+    pub directory: String,
+    pub mount_point: String,
+    pub file_system: String,
+    /// Backing device, e.g. `/dev/nvme0n1p2`.
+    pub device: Option<String>,
+    pub free_bytes: u64,
+    pub total_bytes: u64,
+    pub recommended: bool,
+    /// Cautions about this location (e.g. a container's overlay filesystem).
+    pub notes: Vec<String>,
+}
+
+/// What the kernel says about the physical device, where it says anything.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiskDeviceInfo {
+    pub name: String,
+    pub model: Option<String>,
+    pub rotational: Option<bool>,
+    /// "nvme", "sata", "usb", ... when it can be told from the device path.
+    pub transport: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum DiskPhaseKind {
+    SequentialRead,
+    SequentialWrite,
+    RandomRead,
+    RandomWrite,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyBucket {
+    /// Exclusive upper bound of the bucket in microseconds.
+    pub upper_us: f64,
+    pub count: u64,
+}
+
+/// Per-operation latency. Percentiles are exact, computed from every
+/// individual sample, never from averaged intervals; the histogram is the
+/// condensed form kept in saved results.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LatencySummary {
+    pub samples: u64,
+    pub mean_us: f64,
+    pub p50_us: f64,
+    pub p95_us: f64,
+    pub p99_us: f64,
+    pub max_us: f64,
+    pub histogram: Vec<LatencyBucket>,
+}
+
+/// One phase of the disk test. `samples` are raw per-segment throughputs; the
+/// reported value is their median.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiskPhaseResult {
+    pub kind: DiskPhaseKind,
+    pub label: String,
+    pub block_bytes: u32,
+    /// Threads doing I/O at the same time.
+    pub concurrency: u32,
+    /// `true` only with direct I/O, where each thread's operation really is
+    /// outstanding at the device. With buffered I/O it is just concurrency.
+    pub queue_depth_exact: bool,
+    pub operations: u64,
+    pub bytes: u64,
+    pub seconds: f64,
+    /// MB/s (decimal), one per segment.
+    pub samples: Vec<f64>,
+    pub median_mbps: f64,
+    pub mean_mbps: f64,
+    pub min_mbps: f64,
+    pub max_mbps: f64,
+    pub cv_percent: Option<f64>,
+    pub outlier_indices: Vec<u32>,
+    pub median_iops: f64,
+    pub latency: Option<LatencySummary>,
+    /// Data read back matched what was written.
+    pub validated: bool,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiskResult {
+    pub target: DiskTargetInfo,
+    pub device: Option<DiskDeviceInfo>,
+    pub io_mode: IoMode,
+    /// Why buffered I/O was used, when direct I/O was not possible.
+    pub io_mode_note: Option<String>,
+    pub file_bytes: u64,
+    /// Actual bytes written to the file during the run (flash wear).
+    pub bytes_written: u64,
+    pub bytes_read: u64,
+    pub phases: Vec<DiskPhaseResult>,
+    pub notes: Vec<String>,
+}
+
+// -------------------------------------------------------------- internet
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyStats {
+    pub samples: u32,
+    pub min_ms: f64,
+    pub median_ms: f64,
+    pub p95_ms: f64,
+    pub max_ms: f64,
+    /// Mean absolute difference between consecutive round-trip times.
+    pub jitter_ms: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct TransferResult {
+    /// Megabits per second (decimal), from bytes actually moved.
+    pub median_mbps: f64,
+    pub mean_mbps: f64,
+    pub peak_mbps: f64,
+    /// One per measurement window, after the ramp-up is excluded.
+    pub samples: Vec<f64>,
+    pub bytes: u64,
+    pub seconds: f64,
+    pub connections: u32,
+    /// Latency measured while this transfer was saturating the link.
+    pub loaded_latency: Option<LatencyStats>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkPath {
+    /// Interface carrying the default route.
+    pub interface: Option<String>,
+    pub kind: Option<InterfaceKind>,
+    /// A VPN or tunnel looks active; results may reflect it.
+    pub vpn_suspected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct InternetResult {
+    pub provider: String,
+    pub host: String,
+    /// The server's data-centre code. Nothing about the user's own address or
+    /// location is recorded.
+    pub server_location: Option<String>,
+    pub path: NetworkPath,
+    pub idle_latency: Option<LatencyStats>,
+    pub download: Option<TransferResult>,
+    pub upload: Option<TransferResult>,
+    pub bytes_downloaded: u64,
+    pub bytes_uploaded: u64,
+    /// Always `None`: HTTP cannot measure packet loss, and a failed request is
+    /// not a lost packet.
+    pub packet_loss_percent: Option<f64>,
+    pub notes: Vec<String>,
+}
+
+/// What an internet run would do, shown to the user before they confirm.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct InternetPlan {
+    pub provider: String,
+    pub host: String,
+    pub max_download_bytes: u64,
+    pub max_upload_bytes: u64,
+    pub estimated_seconds: u32,
+}
+
+/// What a disk run would do, shown to the user before they run it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiskPlan {
+    pub target_id: String,
+    pub directory: String,
+    pub file_bytes: u64,
+    /// Approximate total written to the drive.
+    pub estimated_bytes_written: u64,
+    pub estimated_seconds: u32,
+    /// Why the run cannot happen here, e.g. not enough free space.
+    pub blocked: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -209,6 +533,20 @@ pub struct BenchmarkResult {
     pub sustained: Option<SustainedResult>,
     /// `None` for development builds, which are not scored.
     pub scores: Option<CpuScores>,
+    /// GPU runs only. Defaults keep history saved before GPU support loadable.
+    #[serde(default)]
+    pub gpu: Option<GpuResult>,
+    #[serde(default)]
+    pub gpu_score: Option<u32>,
+    /// Disk runs only.
+    #[serde(default)]
+    pub disk: Option<DiskResult>,
+    /// `None` unless direct I/O was used: buffered results reflect the cache.
+    #[serde(default)]
+    pub disk_score: Option<u32>,
+    /// Internet runs only. There is deliberately no internet score.
+    #[serde(default)]
+    pub internet: Option<InternetResult>,
     pub warnings: Vec<String>,
     pub stability: Stability,
     pub outlier_method: String,

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-find-file-users"
+description = "Enables the find_file_users command without any pre-configured scope."
+commands.allow = ["find_file_users"]
+
+[[permission]]
+identifier = "deny-find-file-users"
+description = "Denies the find_file_users command without any pre-configured scope."
+commands.deny = ["find_file_users"]

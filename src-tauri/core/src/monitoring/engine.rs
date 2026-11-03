@@ -84,14 +84,15 @@ fn write<T>(l: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
 }
 
 pub struct Engine {
-    control: mpsc::Sender<Control>,
+    control: mpsc::SyncSender<Control>,
+    refresh_requested: Mutex<Option<Instant>>,
     shared: Arc<Shared>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Engine {
     pub fn start(initial: MonitoringState) -> AppResult<Self> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(16);
         let (ready_tx, ready_rx) = mpsc::sync_channel::<AppResult<StaticSystemInfo>>(1);
         let (shared_tx, shared_rx) = mpsc::sync_channel::<Arc<Shared>>(1);
         let handle = thread::Builder::new()
@@ -148,6 +149,7 @@ impl Engine {
             .map_err(|_| AppError::EngineUnavailable)?;
         Ok(Self {
             control: tx,
+            refresh_requested: Mutex::new(None),
             shared,
             thread: Mutex::new(Some(handle)),
         })
@@ -162,13 +164,25 @@ impl Engine {
     }
 
     pub fn set_state(&self, state: MonitoringState) -> AppResult<MonitoringState> {
-        *write(&self.shared.state) = state;
+        crate::models::validate_interval(state.interval_ms)?;
+        let mut current = write(&self.shared.state);
         self.send(Control::SetState(state))?;
+        *current = state;
         Ok(state)
     }
 
     pub fn refresh_now(&self) -> AppResult<()> {
-        self.send(Control::RefreshNow)
+        self.refresh_at(Instant::now())
+    }
+
+    fn refresh_at(&self, now: Instant) -> AppResult<()> {
+        let mut last = lock(&self.refresh_requested);
+        if last.is_some_and(|t| now.saturating_duration_since(t) < Duration::from_millis(500)) {
+            return Ok(());
+        }
+        self.send(Control::RefreshNow)?;
+        *last = Some(now);
+        Ok(())
     }
 
     pub fn latest(&self) -> Option<Arc<MetricsTick>> {
@@ -269,9 +283,10 @@ impl Engine {
     }
 
     fn send(&self, msg: Control) -> AppResult<()> {
-        self.control
-            .send(msg)
-            .map_err(|_| AppError::EngineUnavailable)
+        self.control.try_send(msg).map_err(|e| match e {
+            mpsc::TrySendError::Full(_) => AppError::OperationBusy,
+            mpsc::TrySendError::Disconnected(_) => AppError::EngineUnavailable,
+        })
     }
 }
 
@@ -542,6 +557,20 @@ mod tests {
         engine.refresh_now().unwrap();
         assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
         engine.shutdown();
+    }
+
+    #[test]
+    fn repeated_refresh_requests_are_coalesced_at_the_backend() {
+        let engine = engine(true);
+        let sink = CountingSink::new(false);
+        engine.subscribe("refresh-limit".into(), sink.clone());
+        let now = Instant::now();
+        for _ in 0..10_000 {
+            engine.refresh_at(now).unwrap();
+        }
+        assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
+        engine.shutdown();
+        assert_eq!(sink.count.load(Ordering::SeqCst), 1);
     }
 
     #[test]

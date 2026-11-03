@@ -7,12 +7,15 @@
 //! combined CPU score: weighting single against multi would be arbitrary.
 
 use super::model::{
-    Comparability, CpuMode, CpuScores, MethodInfo, Stability, WorkloadId, WorkloadResult,
+    Comparability, CpuMode, CpuScores, GpuWorkloadId, GpuWorkloadResult, MethodInfo, Stability,
+    WorkloadId, WorkloadResult,
 };
 use super::stats;
 
 pub const CPU_METHOD_ID: &str = "cpu-method-v1";
 pub const SCORE_VERSION: &str = "score-v1";
+pub const GPU_METHOD_ID: &str = "gpu-compute-v1";
+pub const GPU_SCORE_VERSION: &str = "gpu-score-v1";
 
 pub fn cpu_method() -> MethodInfo {
     MethodInfo {
@@ -20,6 +23,28 @@ pub fn cpu_method() -> MethodInfo {
         score_version: SCORE_VERSION.into(),
         // Same deterministic code and constants on every platform.
         comparability: Comparability::CrossPlatform,
+    }
+}
+
+pub fn gpu_method() -> MethodInfo {
+    MethodInfo {
+        method_id: GPU_METHOD_ID.into(),
+        score_version: GPU_SCORE_VERSION.into(),
+        // The same WGSL shaders run on every platform. Backend (Vulkan or
+        // DirectX 12), driver and timing method are recorded with each result.
+        comparability: Comparability::CrossPlatform,
+    }
+}
+
+/// GPU reference throughputs: rounded medians of repeated release-mode runs
+/// on the development machine's integrated GPU (Intel RPL-U graphics, Mesa
+/// 26.1.6, Vulkan), 2026-11-03. As with the CPU anchor this is arbitrary: it
+/// compares runs of this application, not other benchmark products.
+pub fn gpu_reference(id: GpuWorkloadId) -> f64 {
+    match id {
+        GpuWorkloadId::Integer => 270.0,
+        GpuWorkloadId::FloatingPoint => 490.0,
+        GpuWorkloadId::Memory => 31.0,
     }
 }
 
@@ -78,6 +103,35 @@ pub fn cpu_scores(workloads: &[WorkloadResult]) -> Option<CpuScores> {
     })
 }
 
+/// GPU score: the geometric mean of the three workloads' scores. `None`
+/// unless all three are present, validated against the CPU reference, and
+/// valid numbers; a missing or unchecked workload is never counted as zero.
+pub fn gpu_score(workloads: &[GpuWorkloadResult]) -> Option<u32> {
+    const ALL: [GpuWorkloadId; 3] = [
+        GpuWorkloadId::Integer,
+        GpuWorkloadId::FloatingPoint,
+        GpuWorkloadId::Memory,
+    ];
+    let scores: Option<Vec<f64>> = ALL
+        .iter()
+        .map(|id| {
+            workloads
+                .iter()
+                .find(|w| w.id == *id && w.validated && w.median.is_finite() && w.median > 0.0)
+                .map(|w| 1000.0 * w.median / gpu_reference(*id))
+        })
+        .collect();
+    let g = stats::geometric_mean(&scores?)?;
+    g.is_finite().then(|| g.round() as u32)
+}
+
+/// Stability of a GPU run; same rules as the CPU.
+pub fn gpu_stability(workloads: &[GpuWorkloadResult], warnings: &[String]) -> Stability {
+    let cvs: Vec<f64> = workloads.iter().filter_map(|w| w.cv_percent).collect();
+    let outliers = workloads.iter().map(|w| w.outlier_indices.len()).sum();
+    rate(&cvs, outliers, warnings)
+}
+
 /// How repeatable the run looked. A heuristic from the iteration-to-iteration
 /// spread (the typical workload, with a cap for the worst one), outliers and
 /// warnings; not a confidence interval.
@@ -86,9 +140,13 @@ pub fn cpu_scores(workloads: &[WorkloadResult]) -> Option<CpuScores> {
 /// condemn the whole run, but a very noisy one still lowers the rating.
 pub fn stability(workloads: &[WorkloadResult], warnings: &[String]) -> Stability {
     let cvs: Vec<f64> = workloads.iter().filter_map(|w| w.cv_percent).collect();
-    let typical = stats::median(&cvs).unwrap_or(0.0);
+    let outliers = workloads.iter().map(|w| w.outlier_indices.len()).sum();
+    rate(&cvs, outliers, warnings)
+}
+
+fn rate(cvs: &[f64], outliers: usize, warnings: &[String]) -> Stability {
+    let typical = stats::median(cvs).unwrap_or(0.0);
     let worst = cvs.iter().copied().fold(0.0_f64, f64::max);
-    let outliers: usize = workloads.iter().map(|w| w.outlier_indices.len()).sum();
     let mut level = if typical > 10.0 || worst > 25.0 {
         2
     } else if typical > 4.0 || worst > 10.0 {
@@ -225,5 +283,77 @@ mod tests {
             w.cv_percent = None;
         }
         assert_eq!(stability(&bare, &none), Stability::High);
+    }
+
+    fn gpu(id: GpuWorkloadId, median: f64, validated: bool, cv: f64) -> GpuWorkloadResult {
+        GpuWorkloadResult {
+            id,
+            label: String::new(),
+            unit: String::new(),
+            samples: vec![median],
+            median,
+            mean: median,
+            min: median,
+            max: median,
+            std_dev: None,
+            cv_percent: Some(cv),
+            p95: None,
+            outlier_indices: vec![],
+            work_per_dispatch: 1.0,
+            dispatch_ms: 1.0,
+            validated,
+            note: None,
+        }
+    }
+
+    fn gpu_machine(factor: f64) -> Vec<GpuWorkloadResult> {
+        [
+            GpuWorkloadId::Integer,
+            GpuWorkloadId::FloatingPoint,
+            GpuWorkloadId::Memory,
+        ]
+        .iter()
+        .map(|id| gpu(*id, gpu_reference(*id) * factor, true, 2.0))
+        .collect()
+    }
+
+    #[test]
+    fn gpu_scores_scale_linearly_from_the_reference() {
+        // Calculation fixtures, not real products.
+        for (factor, expected) in [(0.1, 100), (1.0, 1000), (8.0, 8000)] {
+            assert_eq!(gpu_score(&gpu_machine(factor)), Some(expected));
+        }
+        assert_eq!(gpu_score(&gpu_machine(1.37)), gpu_score(&gpu_machine(1.37)));
+    }
+
+    #[test]
+    fn a_gpu_score_needs_every_workload_validated_and_valid() {
+        let mut m = gpu_machine(1.0);
+        m[1].validated = false;
+        assert_eq!(gpu_score(&m), None, "unchecked output is never scored");
+        let mut missing = gpu_machine(1.0);
+        missing.pop();
+        assert_eq!(gpu_score(&missing), None);
+        let mut bad = gpu_machine(1.0);
+        bad[0].median = f64::NAN;
+        assert_eq!(gpu_score(&bad), None);
+        bad[0].median = 0.0;
+        assert_eq!(gpu_score(&bad), None);
+        assert_eq!(gpu_score(&[]), None);
+    }
+
+    #[test]
+    fn gpu_stability_uses_the_same_rules() {
+        let none: Vec<String> = vec![];
+        assert_eq!(gpu_stability(&gpu_machine(1.0), &none), Stability::High);
+        let noisy: Vec<GpuWorkloadResult> = gpu_machine(1.0)
+            .into_iter()
+            .map(|mut w| {
+                w.cv_percent = Some(15.0);
+                w
+            })
+            .collect();
+        assert_eq!(gpu_stability(&noisy, &none), Stability::Low);
+        assert_eq!(gpu_method().method_id, "gpu-compute-v1");
     }
 }

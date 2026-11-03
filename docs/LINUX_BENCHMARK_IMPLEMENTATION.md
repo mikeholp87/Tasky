@@ -1,7 +1,7 @@
 # Benchmark suite: implementation plan
 
-Written 2026-11-03. Status: **phase 1 complete** (framework + CPU); phases 2-5
-(disk, internet, GPU, full benchmark) are **not started**.
+Written 2026-11-03. Status: **phases 1 (framework + CPU) and 4 (GPU) complete**;
+phases 2 (disk), 3 (internet) and 5 (full benchmark) are **not started**.
 
 ## 1. Starting point
 
@@ -140,10 +140,15 @@ Added in phase 1: `sha2` (RustCrypto, MIT/Apache-2.0, pure Rust, the reference
 SHA-256) and `flate2` with its default pure-Rust `miniz_oxide` backend
 (MIT/Apache-2.0). Nothing else; affinity uses the existing `libc`.
 
-Deferred decisions, to be taken with the owner when each phase starts:
-`wgpu` (large dependency; GPU phase), an `io_uring` crate (only if queue-depth
-accuracy needs it), and the internet provider (which endpoint, and consent to
-use bandwidth).
+Added in the GPU phase: `wgpu` 30 (MIT/Apache-2.0, Rust 1.87+; default features
+off, only `std`, `parking_lot`, `wgsl`, plus `vulkan` on Linux and `dx12` and
+`vulkan` on Windows) and `pollster` (a tiny `block_on` for wgpu's async
+functions). `naga` is a test-only dependency (the same version wgpu uses) so
+the shaders are validated in CI without a GPU.
+
+Deferred decisions, to be taken with the owner when each phase starts: an
+`io_uring` crate (only if disk queue-depth accuracy needs it), and the internet
+provider (which endpoint, and consent to use bandwidth).
 
 ## 9. Phases
 

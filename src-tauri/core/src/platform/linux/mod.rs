@@ -1,5 +1,6 @@
 //! Linux implementation, backed by `/proc`.
 
+mod autostart;
 mod connections;
 mod control;
 mod hardware;
@@ -11,11 +12,19 @@ use std::collections::HashMap;
 use std::io::Read;
 
 pub use connections::connections;
-pub use control::{force_kill, is_critical, resume, set_priority, suspend, system_root, terminate};
+pub use control::{is_critical, perform_action, system_root};
 pub use hardware::hardware_info;
 pub use inspect::{find_file_users, memory_map, modules, open_files, sockets, threads};
 pub use net::interface_kind;
 pub use system::os_details;
+
+pub fn startup_items() -> crate::errors::AppResult<Vec<crate::models::StartupItem>> {
+    Ok(autostart::list(&autostart::Dirs::from_env()))
+}
+
+pub fn set_startup_enabled(id: &str, enabled: bool) -> crate::errors::AppResult<()> {
+    autostart::set_enabled(&autostart::Dirs::from_env(), id, enabled)
+}
 
 use super::{MemoryExtras, ProcessExtras, procfs};
 

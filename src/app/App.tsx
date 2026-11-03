@@ -18,6 +18,7 @@ import { PortsPage } from "@/features/ports/PortsPage";
 import { ProcessDetailsPage } from "@/features/process-details/ProcessDetailsPage";
 import { ProcessesPage } from "@/features/processes/ProcessesPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { StartupPage } from "@/features/startup/StartupPage";
 import { StoragePage } from "@/features/storage/StoragePage";
 import { SystemInfoPage } from "@/features/system-info/SystemInfoPage";
 import type { RouteId } from "./routes";
@@ -35,6 +36,7 @@ const PAGES: Record<RouteId, ComponentType> = {
   network: NetworkPage,
   "process-details": ProcessDetailsPage,
   ports: PortsPage,
+  startup: StartupPage,
   "file-finder": FileFinderPage,
   activity: ActivityPage,
   system: SystemInfoPage,

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { BenchmarkResult, BenchmarkStatus } from "@/types";
+import type { BenchmarkKind, BenchmarkResult, BenchmarkStatus, GpuAdapterInfo } from "@/types";
 
 const IDLE: BenchmarkStatus = {
   state: "idle",
@@ -25,11 +25,15 @@ interface BenchmarkState {
   latest: BenchmarkResult | null;
   /** A history entry the user opened; takes precedence over `latest`. */
   selectedId: string | null;
+  /** Graphics adapters; null until listed. */
+  adapters: GpuAdapterInfo[] | null;
+  adaptersError: string | null;
 
   setStatus: (status: BenchmarkStatus) => void;
   setHistory: (history: BenchmarkResult[]) => void;
   setLatest: (result: BenchmarkResult | null) => void;
   select: (id: string | null) => void;
+  setAdapters: (adapters: GpuAdapterInfo[] | null, error?: string | null) => void;
 }
 
 export const useBenchmarkStore = create<BenchmarkState>((set) => ({
@@ -37,11 +41,14 @@ export const useBenchmarkStore = create<BenchmarkState>((set) => ({
   history: [],
   latest: null,
   selectedId: null,
+  adapters: null,
+  adaptersError: null,
 
   setStatus: (status) => set({ status }),
   setHistory: (history) => set({ history }),
   setLatest: (latest) => set({ latest, selectedId: null }),
   select: (selectedId) => set({ selectedId }),
+  setAdapters: (adapters, error = null) => set({ adapters, adaptersError: error }),
 }));
 
 /** Whether a run is in progress (owns the benchmark lock). */
@@ -49,10 +56,15 @@ export function isActive(status: BenchmarkStatus): boolean {
   return !["idle", "completed", "cancelled", "failed"].includes(status.state);
 }
 
-/** The result to show: the one the user opened, else the latest run. */
-export function shownResult(state: BenchmarkState): BenchmarkResult | null {
-  if (state.selectedId) {
-    return state.history.find((r) => r.id === state.selectedId) ?? state.latest;
-  }
-  return state.latest ?? state.history[0] ?? null;
+/**
+ * The result to show in the card for `kind`: the one the user opened if it is
+ * of that kind, else the latest run of that kind, else the newest saved one.
+ */
+export function shownResultFor(state: BenchmarkState, kind: BenchmarkKind): BenchmarkResult | null {
+  const selected = state.selectedId
+    ? state.history.find((r) => r.id === state.selectedId)
+    : undefined;
+  if (selected?.kind === kind) return selected;
+  if (state.latest?.kind === kind) return state.latest;
+  return state.history.find((r) => r.kind === kind) ?? null;
 }

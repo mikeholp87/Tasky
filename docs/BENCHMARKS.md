@@ -4,9 +4,9 @@ What the Benchmarks page measures, how, and what the numbers do and do not
 mean. Implementation plan: [`LINUX_BENCHMARK_IMPLEMENTATION.md`](LINUX_BENCHMARK_IMPLEMENTATION.md).
 Validation data: [`LINUX_BENCHMARK_VALIDATION.md`](LINUX_BENCHMARK_VALIDATION.md).
 
-**Status:** only the CPU benchmark exists. GPU, storage, internet and the full
+**Status:** the CPU and GPU benchmarks exist. Storage, internet and the full
 system benchmark are not built yet. The suite is new and shared: Windows and
-Linux run the same code, with the same method.
+Linux run the same code, with the same methods.
 
 ## CPU (`cpu-method-v1`, scoring `score-v1`)
 
@@ -71,6 +71,66 @@ machine or container, and development builds. The benchmark never changes the
 system: no CPU governor, process priority, power profile or cache changes, and
 it needs no root.
 
+## GPU (`gpu-compute-v1`, scoring `gpu-score-v1`)
+
+Three workloads, run as WGSL compute shaders through `wgpu` (Vulkan on Linux;
+DirectX 12 or Vulkan on Windows). Every platform runs the same shaders.
+
+| Workload               | What is measured                                                                          | Unit           |
+| ---------------------- | ----------------------------------------------------------------------------------------- | -------------- |
+| Integer compute        | A dependent 32-bit multiply, add, shift, xor chain per invocation (5 operations per step) | Gops/s         |
+| Floating-point compute | Four fused multiply-add chains per invocation (8 operations per step)                     | GFLOPS         |
+| Memory bandwidth       | Read one buffer, write another, 32 bytes per element, repeated                            | GB/s (decimal) |
+
+How a run works:
+
+- **Adapters.** All adapters are listed with the driver's own name, device type,
+  backend and driver text. The default is chosen by device type, never by
+  vendor name: discrete, then integrated, then virtual, and a software renderer
+  only as a last resort. You can pick another adapter, and the result records
+  which one was tested.
+- **Known work.** Operations and bytes per dispatch are counted from the shader,
+  not estimated from elapsed time.
+- **Calibration.** Each workload is sized so one dispatch takes about 80 ms: long
+  enough to hide submission overhead, short enough to stay far from the driver
+  watchdog that resets a GPU after a second or two. Probes grow by at most 8x.
+  The first dispatch is discarded because it includes one-off shader compilation.
+- **Timing.** GPU timestamps when the device supports them; otherwise the wall
+  clock until completion is confirmed, which includes driver overhead. The
+  method is recorded in the result and shown on the page. A dispatch is only
+  timed after it has finished: the benchmark never measures `submit` and calls
+  that execution time.
+- **Warm-up, then iterations.** 12 warm-up dispatches (GPU clocks ramp up slowly),
+  then 9 (Quick), 15 (Standard) or 25 (Extended) measured ones; the reported
+  value is the median, every raw sample is stored, outliers are flagged and kept.
+- **Every result is checked.** After each workload the output is compared with a
+  CPU reference: integer results bit for bit on up to 2,048 sampled threads;
+  floating point against its mathematical solution within 1e-3 (single-precision
+  rounding stays under 1e-4); memory contents at both ends of the buffer. A
+  mismatch discards the run. A workload that was not verified is never scored.
+- **Extended** adds 30 s of repeated floating-point work in 1 s windows, reported
+  like the CPU sustained test.
+- **Safety.** Per-dispatch timeout (10 s), cancellation between dispatches, and a
+  device-lost, timeout or out-of-memory error ends the run with a plain message
+  and leaves the application working. Buffer sizes follow the adapter's real
+  limits.
+
+**Scores.** The GPU score is the geometric mean of the three workloads' scores,
+each `1000 x throughput / reference`. The references are the development
+machine's integrated GPU (Intel RPL-U graphics, Mesa 26.1.6, Vulkan): 270 Gops/s,
+490 GFLOPS and 31 GB/s. As with the CPU, this anchor is arbitrary and compares
+runs of this application, not other benchmark products.
+
+**What is not scored or not claimed:**
+
+- A **software renderer** (for example `llvmpipe`) can be run, but it describes the
+  CPU. It is never scored and the page says so.
+- On an **integrated GPU the memory test measures shared system memory**, not
+  dedicated video memory, and is not comparable with a discrete GPU's bandwidth.
+- **GPU utilization, clock speed and temperature are not measured** during the
+  test. No stable, vendor-neutral source exists, and none is invented.
+- GPU results compare only with the same adapter and the same timing method.
+
 ### Comparing results
 
 Two results compare only when `methodId` and `scoreVersion` match and the
@@ -78,10 +138,11 @@ profile is the same. Otherwise the page says: _These tests used different
 benchmark methodologies and should not be compared directly._ A single run is
 not proof of a real difference.
 
-| Benchmark              | Comparable across Windows and Linux?            |
-| ---------------------- | ----------------------------------------------- |
-| CPU `cpu-method-v1`    | Yes: identical deterministic code and constants |
-| GPU, storage, internet | Not built                                       |
+| Benchmark            | Comparable across Windows and Linux?                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CPU `cpu-method-v1`  | Yes: identical deterministic code and constants                                                                                                             |
+| GPU `gpu-compute-v1` | Same shaders and constants everywhere; backend (Vulkan or DirectX 12), driver and timing method are recorded and shown. Comparable only on the same adapter |
+| Storage, internet    | Not built                                                                                                                                                   |
 
 ### Limits to know about
 

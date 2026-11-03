@@ -55,19 +55,21 @@ impl HistoryStore {
     /// Saves to disk first, then updates memory, so memory never claims a
     /// result the disk does not have.
     pub fn add(&self, result: BenchmarkResult) -> AppResult<()> {
-        let mut next = self.list();
+        let mut current = self.lock();
+        let mut next = current.clone();
         next.insert(0, result);
         next.truncate(MAX_RESULTS);
         self.persist(&next)?;
-        *self.lock() = next;
+        *current = next;
         Ok(())
     }
 
     pub fn delete(&self, id: &str) -> AppResult<()> {
-        let mut next = self.list();
+        let mut current = self.lock();
+        let mut next = current.clone();
         next.retain(|r| r.id != id);
         self.persist(&next)?;
-        *self.lock() = next;
+        *current = next;
         Ok(())
     }
 
@@ -90,7 +92,7 @@ impl HistoryStore {
 }
 
 fn read_or_empty(path: &Path) -> Vec<BenchmarkResult> {
-    let text = match std::fs::read_to_string(path) {
+    let text = match crate::filesystem::read_text(path, 8 * 1024 * 1024) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
         Err(e) => {
@@ -99,7 +101,10 @@ fn read_or_empty(path: &Path) -> Vec<BenchmarkResult> {
         }
     };
     match serde_json::from_str::<File>(&text) {
-        Ok(f) if f.version == FORMAT_VERSION => f.results,
+        Ok(mut f) if f.version == FORMAT_VERSION => {
+            f.results.truncate(MAX_RESULTS);
+            f.results
+        }
         _ => {
             tracing::warn!("benchmark history is unreadable; keeping a copy and starting empty");
             let _ = std::fs::rename(path, path.with_extension("json.invalid"));
@@ -112,12 +117,7 @@ fn write_atomic(path: &Path, json: &str) -> AppResult<()> {
     let fail = |e: std::io::Error| {
         AppError::SystemQueryFailed(format!("cannot save benchmark history: {e}"))
     };
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(fail)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(fail)?;
-    std::fs::rename(&tmp, path).map_err(fail)
+    crate::filesystem::write_private_atomic(path, json.as_bytes()).map_err(fail)
 }
 
 #[cfg(test)]
@@ -152,6 +152,11 @@ pub(crate) mod tests {
             },
             workloads: vec![],
             sustained: None,
+            gpu: None,
+            gpu_score: None,
+            disk: None,
+            disk_score: None,
+            internet: None,
             scores: Some(CpuScores {
                 single_core: 1000,
                 multi_core: 2000,
@@ -193,6 +198,23 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn history_saved_before_gpu_support_still_loads() {
+        let dir = temp_dir("old-format");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut old = serde_json::to_value(sample("old")).unwrap();
+        let fields = old.as_object_mut().unwrap();
+        // Results written by the CPU-only version have neither field.
+        assert!(fields.remove("gpu").is_some());
+        assert!(fields.remove("gpuScore").is_some());
+        let file = serde_json::json!({ "version": 1, "results": [old] });
+        std::fs::write(dir.join(FILE_NAME), file.to_string()).unwrap();
+        let store = HistoryStore::load(Some(&dir));
+        assert_eq!(store.list().len(), 1);
+        assert!(store.list()[0].gpu.is_none() && store.list()[0].gpu_score.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn history_is_bounded() {
         let store = HistoryStore::load(None);
         for i in 0..MAX_RESULTS + 5 {
@@ -200,6 +222,40 @@ pub(crate) mod tests {
         }
         assert_eq!(store.list().len(), MAX_RESULTS);
         assert_eq!(store.list()[0].id, format!("r{}", MAX_RESULTS + 4));
+    }
+
+    #[test]
+    fn concurrent_updates_preserve_every_result_on_disk_and_in_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = HistoryStore::load(Some(dir.path()));
+        std::thread::scope(|scope| {
+            for i in 0..8 {
+                let store = &store;
+                scope.spawn(move || store.add(sample(&format!("r{i}"))).unwrap());
+            }
+        });
+        assert_eq!(store.list().len(), 8);
+        assert_eq!(HistoryStore::load(Some(dir.path())).list(), store.list());
+    }
+
+    #[test]
+    fn loaded_history_also_obeys_the_retention_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = File {
+            version: FORMAT_VERSION,
+            results: (0..MAX_RESULTS + 5)
+                .map(|i| sample(&format!("r{i}")))
+                .collect(),
+        };
+        std::fs::write(
+            dir.path().join(FILE_NAME),
+            serde_json::to_vec(&file).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            HistoryStore::load(Some(dir.path())).list().len(),
+            MAX_RESULTS
+        );
     }
 
     #[test]

@@ -1,8 +1,9 @@
 # Benchmark validation report
 
-What was actually run to check the CPU benchmark, and what was not. Date:
-2026-11-03. Only the CPU benchmark exists, so GPU, disk and internet sections
-are absent rather than empty.
+What was actually run to check the benchmarks, and what was not. Date:
+2026-11-03. The CPU and GPU benchmarks exist; disk, internet and the full
+benchmark do not, so they have no section rather than an empty one. The GPU
+validation follows the CPU one.
 
 ## Test machine
 
@@ -105,7 +106,125 @@ read from the `coretemp Package` sensor. Nothing was claimed about throttling.
 - **aarch64:** nothing x86-specific was written, but it was never built.
 - **Temperature and frequency during Quick and Standard:** shown live, but only
   the Extended run's windows were inspected.
-- **GPU, disk, internet, memory, full benchmark:** not built.
+- **Disk, internet, memory, full benchmark:** not built.
 - **Reference anchor:** measured on the same machine that scores about 1000 by
   construction. Scores from other hardware are meaningful relative to it, but
   no second machine was available to test that.
+
+---
+
+# GPU benchmark (`gpu-compute-v1`)
+
+## Test hardware
+
+The same machine, with its **integrated GPU: Intel RPL-U graphics, Mesa 26.1.6,
+Vulkan 1.4**, GPU timestamps supported. A second Vulkan adapter, `llvmpipe` (a
+software renderer on the CPU), was present and was used to test selection. The
+machine was a working desktop: the compositor and a browser were using the GPU,
+and another session was often compiling, which shares the processor's power
+budget with the integrated GPU (see "Sensitivity to load").
+
+## What was checked
+
+| Check                         | Result                                                                                                                                                                                                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adapters listed correctly     | Two Vulkan adapters, same names and types as `vulkaninfo --summary` (used only as a development cross-check): Intel RPL-U (integrated), llvmpipe (software). Enumeration 23-27 ms; opening the device 0.07-0.1 s |
+| Default selection             | Intel integrated GPU recommended; llvmpipe never the default. Unit-tested for discrete, integrated, virtual and software ordering, and ties                                                                      |
+| Shaders valid WGSL            | Parsed and validated with `naga` in CI, with no GPU                                                                                                                                                              |
+| Integer output exact          | Bit for bit against the CPU reference on sampled threads, on real hardware, every run                                                                                                                            |
+| Float output correct          | Within 1e-3 of the mathematical solution on every run. The CPU's own fused multiply-add stays under 1e-4 at 1 to 5,000 iterations (unit test), so the tolerance has margin                                       |
+| Memory output correct         | Contents at both ends of the buffer verified, including across back-to-back runs with odd and even pass counts (hardware test)                                                                                   |
+| **Validation can fail**       | Hardware test corrupts the device's output on purpose; the check returns "wrong output". A validator that cannot fail would prove nothing                                                                        |
+| Wrong output discards the run | Fake-device test: no score, plain message                                                                                                                                                                        |
+| Timeout is reported, not hung | Hardware test: a far too large job with a 1 ms timeout returns a timeout, and the device is still usable afterwards                                                                                              |
+| Device lost, out of memory    | Handled and turned into plain messages (fake-device tests). **A real device-lost event was not provoked**                                                                                                        |
+| Cancellation                  | Real coordinator, Standard profile cancelled 2.0 s in: stopped at 2.1 s, state Cancelled, history file not created                                                                                               |
+| One lock across CPU and GPU   | Unit test: a running CPU benchmark rejects a GPU start, and the reverse works after cancel                                                                                                                       |
+| Progress rate                 | 8-9 updates per second, under the limit of 10                                                                                                                                                                    |
+| No adapter at all             | Clear message ("A working Vulkan driver is needed"), the app keeps working, a CPU run can follow                                                                                                                 |
+| Software renderer             | Runs and verifies on `llvmpipe` (about 1 Gops/s against about 300 on the integrated GPU); flagged as not a GPU result and never scored                                                                           |
+| Old history still loads       | Unit test: results saved before GPU support load with the new fields empty                                                                                                                                       |
+| Windows target                | `cargo clippy --target x86_64-pc-windows-msvc` is clean with `wgpu`'s DirectX 12 and Vulkan backends. **Not run on Windows**                                                                                     |
+
+Test counts when this was written: 297 Rust tests in `tm-core` (including work
+from a parallel session), 178 frontend tests, plus 4 opt-in hardware tests.
+
+## Run times (release build, real coordinator, real GPU)
+
+| Profile  | Wall time                               |
+| -------- | --------------------------------------- |
+| Quick    | 3.9 s                                   |
+| Standard | 6.1 s                                   |
+| Extended | 38 s (includes the 30 s sustained test) |
+
+## Repeatability
+
+Run-to-run coefficient of variation of the per-run medians. This integrated GPU
+is noticeably less repeatable than the CPU: **about 5-12%**, depending on the
+workload and the day.
+
+| Configuration                                   | Runs | Floating point | Integer | Memory |
+| ----------------------------------------------- | ---- | -------------- | ------- | ------ |
+| Standard, 3 warm-up dispatches                  | 4    | 12.2%          | 7.1%    | 11.4%  |
+| Quick, 3 warm-up dispatches                     | 4    | 14.9%          | 13.8%   | 8.8%   |
+| Standard, 12 warm-up dispatches                 | 4    | 2.6%           | 11.3%   | 3.2%   |
+| Quick, 12 warm-up, 9 iterations                 | 5    | 7.5%           | 12.5%   | 6.6%   |
+| Standard, 12 warm-up, 15 iterations             | 5    | 9.1%           | 7.7%    | 10.5%  |
+| Quick, final code, quiet machine (load about 2) | 4    | 6.7%           | 10.1%   | 10.1%  |
+
+Within one run the spread between iterations is 4-17%, which is why the
+Stability rating is often Medium or Low on this hardware. That is a true
+statement about this GPU, not a flaw to hide.
+
+Experiments, including the ones that did not help:
+
+- **Longer warm-up** (3 to 12 dispatches) helped in one batch of runs (floating
+  point 12% to 2.6%) and not consistently in the next. It was kept: it costs
+  about a second.
+- **Longer dispatches (200 ms instead of 80 ms) were reverted.** Throughput fell
+  15-25% (the GPU slowed under longer continuous load) and integer and
+  floating-point spread did not improve.
+- **More Quick iterations** (5 to 9) did not clearly reduce the spread.
+
+## Sensitivity to load
+
+Floating-point throughput was 340-376 GFLOPS while the machine's load average
+was about 30 (a security scan and compiles running), against 494-577 GFLOPS at a
+load average of about 2. The integrated GPU shares the processor's power
+budget, so a busy CPU lowers the GPU score. The benchmark's preflight warns when
+other applications use more than 25% CPU, but it measures CPU load only.
+
+## Sustained test (Extended, real GPU)
+
+Peak 516 GFLOPS, median 459, last third 407: a **15.7% decline** over 30 s, with
+the note "Performance decreased by 16% during sustained load. Temperature or
+power limits may have contributed." No cause was claimed, and GPU clock and
+temperature were not read (not available through a vendor-neutral source).
+
+## Bugs found by measurement
+
+1. **Memory bandwidth read half its true value.** The byte count was divided
+   by 2 with no basis. Noticed because the work per dispatch did not match
+   passes x elements x 32 bytes; fixed.
+2. **Calibration was fooled by shader compilation.** On `llvmpipe` the first
+   dispatch included compile time, so the device looked slow and the smallest
+   possible size was chosen. The first dispatch is now discarded; a unit test
+   covers it.
+3. **The GPU warm-up was too short** (3 dispatches, about a quarter of a second)
+   for the clocks to ramp up; raised to 12.
+
+## Not validated
+
+- **Discrete GPUs, NVIDIA and AMD:** none available. Only an Intel integrated
+  GPU and a software renderer were tested.
+- **Hybrid graphics** selection on real hybrid hardware (two real GPUs).
+- **DirectX 12 and Windows:** compiled and linted only.
+- **Wall-clock timing path on real hardware:** the test GPU supports
+  timestamps. The fallback is tested with a fake device only.
+- **A real device-lost event or driver reset:** the handling is unit-tested with
+  injected faults; a driver reset was not provoked.
+- **GNOME, X11, Debian 12, Ubuntu, aarch64:** not run.
+- **Reference anchors** come from the same machine that scores about 1000 by
+  construction.
+- **Cross-check against another GPU benchmark:** none was run. Adapter details
+  matched `vulkaninfo`; throughput was not compared with any other tool.

@@ -13,9 +13,24 @@ export function sameMethod(a: BenchmarkResult, b: BenchmarkResult): boolean {
 }
 
 /**
+ * GPU results also need the same adapter and the same timing method: a
+ * different card, or timestamps against wall-clock timing, is a different
+ * measurement even under the same method id.
+ */
+function sameDevice(a: BenchmarkResult, b: BenchmarkResult): boolean {
+  if (a.kind !== "gpu") return true;
+  return (
+    a.gpu != null &&
+    b.gpu != null &&
+    a.gpu.adapter.id === b.gpu.adapter.id &&
+    a.gpu.timingMethod === b.gpu.timingMethod
+  );
+}
+
+/**
  * The newest saved result older than `current` that can be compared with it:
- * same method and the same profile (a Quick run and an Extended run do not
- * warm up the same way).
+ * same method, profile and (for GPUs) device. A Quick run and an Extended run
+ * do not warm up the same way.
  */
 export function previousComparable(
   history: readonly BenchmarkResult[],
@@ -24,7 +39,9 @@ export function previousComparable(
   let best: BenchmarkResult | null = null;
   for (const r of history) {
     if (r.id === current.id || r.startedAtMs >= current.startedAtMs) continue;
-    if (!sameMethod(r, current) || r.profile !== current.profile) continue;
+    if (!sameMethod(r, current) || r.profile !== current.profile || !sameDevice(r, current)) {
+      continue;
+    }
     if (best === null || r.startedAtMs > best.startedAtMs) best = r;
   }
   return best;
@@ -41,6 +58,8 @@ export function percentChange(from: number | null, to: number | null): number | 
 export interface ScoreDelta {
   singleCore: number | null;
   multiCore: number | null;
+  /** GPU score change; null for CPU results. */
+  gpu: number | null;
 }
 
 /**
@@ -52,9 +71,16 @@ export function compareScores(
   current: BenchmarkResult,
   previous: BenchmarkResult,
 ): ScoreDelta | null {
-  if (!sameMethod(current, previous) || !current.scores || !previous.scores) return null;
+  if (!sameMethod(current, previous)) return null;
+  if (current.kind === "gpu") {
+    if (!sameDevice(current, previous)) return null;
+    const gpu = percentChange(previous.gpuScore, current.gpuScore);
+    return gpu === null ? null : { singleCore: null, multiCore: null, gpu };
+  }
+  if (!current.scores || !previous.scores) return null;
   return {
     singleCore: percentChange(previous.scores.singleCore, current.scores.singleCore),
     multiCore: percentChange(previous.scores.multiCore, current.scores.multiCore),
+    gpu: null,
   };
 }

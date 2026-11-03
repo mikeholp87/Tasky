@@ -137,6 +137,18 @@ impl Settings {
                 "Too many column settings.".into(),
             ));
         }
+        if self
+            .visible_columns
+            .iter()
+            .chain(self.column_widths.keys())
+            .any(|key| key.is_empty() || key.len() > 64)
+            || self
+                .column_widths
+                .values()
+                .any(|width| !(16..=2_000).contains(width))
+        {
+            return Err(AppError::InvalidArgument("Invalid column settings.".into()));
+        }
         Ok(())
     }
 
@@ -165,6 +177,11 @@ impl Settings {
             .retain(|r| r.validate().is_ok() && ids.insert(r.id.clone()));
         self.alert_rules.truncate(MAX_ALERT_RULES);
         self.visible_columns.truncate(64);
+        self.visible_columns
+            .retain(|key| !key.is_empty() && key.len() <= 64);
+        self.column_widths.retain(|key, width| {
+            !key.is_empty() && key.len() <= 64 && (16..=2_000).contains(width)
+        });
         while self.column_widths.len() > 64 {
             self.column_widths.pop_last();
         }
@@ -180,6 +197,17 @@ mod tests {
     #[test]
     fn defaults_are_valid() {
         Settings::default().validate().unwrap();
+    }
+
+    #[test]
+    fn oversized_column_keys_and_widths_are_rejected_and_sanitized() {
+        let mut s = Settings::default();
+        s.visible_columns.push("x".repeat(65));
+        s.column_widths.insert("name".into(), u32::MAX);
+        assert!(s.validate().is_err());
+        let clean = s.sanitized();
+        assert!(clean.visible_columns.is_empty() && clean.column_widths.is_empty());
+        clean.validate().unwrap();
     }
 
     #[test]

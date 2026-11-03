@@ -1,90 +1,101 @@
-# Security model
+# Application security model
 
-Task Manager can end, suspend and reprioritize processes, so it treats process
-control as privileged and treats the webview as untrusted input.
+Task Manager treats the WebView and all OS-provided text as untrusted. It runs
+as the normal user and respects OS permission failures. Never run the GUI as
+root/Administrator to make a feature work. No elevation broker, shell runner,
+service-control command or arbitrary memory/file/HTTP command is provided.
 
-## Principles
+## IPC and frontend
 
-1. **The backend enforces; the UI only explains.** Every safety rule runs in
-   Rust on every request. A compromised or buggy frontend cannot skip them.
-2. **No shell, no generic execution.** There is no "run command" endpoint.
-   Process control uses native APIs (`TerminateProcess`, `SuspendThread`,
-   `kill(2)`, `setpriority(2)`); no shell commands are constructed.
-3. **Minimal Tauri permissions.** The capability file grants only
-   `core:default`. Notifications, dialogs, autostart, window state and "open
-   file location" are used from Rust only, so the frontend has no permission
-   to call those plugins directly.
-4. **The app runs unprivileged.** It never requests elevation. Operations the
-   OS denies return a clear `PermissionDenied` explaining that administrator
-   or root rights may be needed.
-5. **Local only.** No network requests and no telemetry. All data stays on
-   the machine.
+Only the local main window receives the explicitly selected `default`
+capability. The application command ACL is declared in `build.rs` and
+`permissions/main.toml`; plugin permissions alone do not scope application
+commands. JavaScript gets only event subscribe/unsubscribe plus the reviewed
+application commands. See TAURI_COMMAND_SECURITY.md for every command/plugin.
 
-## Command input validation
+Production DevTools are disabled. Scripts/fonts are bundled; the CSP disallows
+remote scripts, eval, frames, objects, forms and base-URL changes. Inline styles
+remain necessary for dynamic charts and layout. Navigation is restricted to
+bundled Tauri origins (plus localhost:1420 in debug builds). OS strings render
+as React text, never executable HTML. Clipboard writes require explicit UI
+actions. No sensitive data is persisted in browser storage.
 
-| Input                | Validation                                                                                                                           |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| PID                  | Accepted as `i64`; must be `1..=u32::MAX`, else `InvalidPid`.                                                                        |
-| PID identity         | Actions carry the process start time the user saw. If the PID now belongs to a different process (PID reuse), the action is refused. |
-| Refresh interval     | One of 500 / 1000 / 2000 / 5000 ms.                                                                                                  |
-| History range        | 1–3600 s.                                                                                                                            |
-| Settings             | Fully validated (`Settings::validate`); alert rules capped at 50, with bounded names, thresholds and durations.                      |
-| File-finder path     | Trimmed, non-empty, ≤ 4096 bytes, no NUL. Resolved (symlinks) by the platform code; a missing path is `InvalidArgument`. Read-only.  |
-| File / folder picker | Native dialog opened by Rust (`pick_path`); the webview gets the chosen path only, not a file-system permission.                     |
-| Export destinations  | Chosen by the user in a native save dialog opened by Rust. The frontend never supplies a path or file contents.                      |
-| "Open file location" | The path comes from the engine's own snapshot for the PID, never from the frontend.                                                  |
+## Process controls
 
-## Process protection
+Every action is a Rust enum; priority maps to fixed portable values, with no
+real-time class or arbitrary nice input. The backend validates positive PIDs,
+selection start time, current OS creation time, self/system protection and
+warning acknowledgement. A native dialog independently confirms disruptive
+and warned actions. A WebView boolean cannot replace that dialog.
 
-Protection rules (`core/src/process_control/protection.rs`) are pure and
-unit-tested:
+Linux signals use a lifetime-bound pidfd and fail closed when unavailable.
+Windows force-kill/priority act through the creation-time-validated handle;
+critical-process queries must succeed for disruptive actions. Thread suspend/
+resume validates the opened thread's owner and retains handles for rollback.
+The UI also explains unsaved-work and suspension risks.
 
-- **Blocked:** Task Manager itself; PID 0/4 (Windows kernel); PID 1 and
-  kernel threads (Linux); processes Windows flags with `IsProcessCritical`;
-  `csrss`, `wininit`, `smss`, `services`, `lsass`, `winlogon`, but **only
-  when their path is verified** under `%SystemRoot%\System32`.
-- **Warning (requires explicit acknowledgement):** critical names at
-  unverified paths; `svchost`, `explorer`, `dwm`; root-owned core Linux
-  daemons; root services started by init; raising priority to High.
+Residual limitations: selected start times currently have one-second
+resolution; Linux setpriority uses a numeric PID; Windows WM_CLOSE has an HWND
+reuse interval, and thread enumeration is not atomic. These are documented
+in SECURITY_AUDIT.md rather than described as fully race-free.
 
-Names alone never block. A process named `lsass.exe` in a Downloads folder
-gets a warning, not special protection.
+## Files and local history
 
-Dangerous actions always need confirmation in the UI. Force end uses stronger
-wording, and the Delete key only opens the dialog.
+Settings/history/startup saves and exports use exclusive random private temp
+files beside the destination, flush before atomic replacement, and do not
+truncate an existing symlink target. Newly created Unix directories are 0700
+and files 0600. Parent directories must be trustworthy: same-user directory
+replacement and Windows inherited ACLs require deployment review. Exports use
+a backend-owned native save dialog; the frontend cannot supply a destination
+or arbitrary contents. Intentional replacement of a selected file remains
+possible through that native dialog.
 
-## Inspection commands
+Local JSON and desktop-entry reads reject special files/symlinks and enforce
+byte limits while reading. Settings are capped at 256 KiB; benchmark history
+at 8 MiB/200 results. Corrupt JSON is kept aside when possible. History updates
+serialize disk and memory changes under one mutex. Monitoring/control queues,
+on-demand scans, per-process histories and total log output have hard bounds.
+Logs rotate daily, retain at most seven files and stop at 56 MiB total until
+rotation frees space; the application log directory is user-private on Unix.
 
-Ports, open files, modules, memory maps, threads and the file finder are
-read-only and run on a blocking worker only while their view is open. They
-read what the operating system already exposes to the current account:
-processes of other users that cannot be read are counted and reported, never
-guessed. Results are capped (sockets 20,000, open files 5,000, regions 20,000,
-file matches 2,000) and the path search stops after 4 seconds, with a
-"results may be incomplete" notice. Paths, ports and connection endpoints are
-shown locally and are not logged or exported; the activity timeline keeps
-process names and PIDs only, in memory, for the last 1,000 events.
+## Privacy
 
-## Sensitive data
+Process command lines, working directories, usernames, paths, destinations,
+hostname and alert filters may be sensitive. They stay local by default.
+Environments, credentials, browser profiles and process memory are not
+collected. Process action logs omit process names and command lines.
 
-- Command lines can contain passwords and tokens. They are:
-  - never logged;
-  - excluded from CSV/JSON exports unless the user ticks "Include command
-    lines", which comes with a warning;
-  - excluded from diagnostics unless the user opts in twice (process list,
-    then command lines).
-- Process environments are never read.
-- Logs contain process names and PIDs for actions taken, never arguments.
-- CSV exports neutralize spreadsheet formula injection: process names are
-  attacker-controlled, so values starting with `=`, `+`, `-` or `@` are
-  prefixed with `'`.
+Default diagnostics exclude processes, hostname, alert rules, alerts and recent
+logs. Enabling process information explicitly includes these identifiers;
+command lines need a second opt-in. Review exports before sharing: opted-in
+command lines can contain secrets, and redaction is not a guarantee. Machine
+summary export includes machine/volume/interface identifiers but no process
+list. Nothing is uploaded automatically.
 
-## Content Security Policy
+CSV fields are quoted correctly and prefixed with an apostrophe for formula
+markers, control-leading fields, or whitespace followed by a formula marker.
+JSON uses serde serialization. There is no executable HTML report export or
+process-dump feature.
 
-`default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost`.
-No remote scripts, fonts or images are loaded.
+## Benchmarks and networking
 
-## Reporting
+CPU/GPU profiles are backend constants, not arbitrary frontend resource
+settings. They share one backend lock; a finishing run cannot clear the next
+run's lock. CPU workers are capped at 256. GPU profiles bound buffer sizes and
+iterations; dispatches have deadlines and cancellation between dispatches.
+Device/driver calls may still block beyond application control. Do not infer
+real-device safety from fake-device tests.
 
-Please report vulnerabilities privately to the maintainers rather than in a
-public issue.
+No telemetry or Internet benchmark provider exists at the original audit
+baseline. New disk/Internet benchmark code appeared during the audit and must
+meet the requirements in NETWORK_SECURITY.md and SECURITY_CHECKLIST.md before
+release. OS domain/file-manager/mounted-filesystem activity is subject to OS
+policy even when the application does not initiate HTTP traffic.
+
+## Updates, release and reporting
+
+No auto-updater is configured. Distributed artifacts still require trustworthy
+signing/checksums and protected release credentials; a successful local bundle
+is not signed provenance. Dependency policies, advisories and CI controls are
+in SUPPLY_CHAIN_SECURITY.md. Remaining risks and exact validation status are
+in SECURITY_AUDIT.md. For private reporting, see the repository SECURITY.md.

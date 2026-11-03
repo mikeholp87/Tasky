@@ -29,7 +29,7 @@ fn map_io(e: &io::Error, pid: u32) -> AppError {
     match e.kind() {
         ErrorKind::NotFound => AppError::ProcessNotFound(pid),
         ErrorKind::PermissionDenied => AppError::PermissionDenied(format!(
-            "Access to process {pid} is denied. Details of other users' processes need root."
+            "Access to process {pid} is denied. This app respects the operating system's process permissions."
         )),
         _ => AppError::SystemQueryFailed(format!("process {pid}: {e}")),
     }
@@ -67,10 +67,18 @@ pub fn sockets() -> AppResult<SocketList> {
     // per holder; add if users report confusion with forking servers.
     let mut owner: HashMap<u64, u32> = HashMap::new();
     let mut inaccessible = 0u32;
-    for pid in pids() {
+    let mut truncated = false;
+    let started = Instant::now();
+    let mut scanned = 0usize;
+    'owners: for pid in pids() {
         match fs::read_dir(format!("/proc/{pid}/fd")) {
             Ok(dir) => {
                 for entry in dir.flatten() {
+                    if scanned >= 200_000 || started.elapsed() > SEARCH_BUDGET {
+                        truncated = true;
+                        break 'owners;
+                    }
+                    scanned += 1;
                     if let Some(inode) = fs::read_link(entry.path())
                         .ok()
                         .and_then(|t| procfs::socket_inode(&t.to_string_lossy()))
@@ -86,14 +94,16 @@ pub fn sockets() -> AppResult<SocketList> {
 
     let mut names: HashMap<u32, Option<String>> = HashMap::new();
     let mut sockets = Vec::new();
-    let mut truncated = false;
     'files: for (file, protocol) in [
         ("tcp", Protocol::Tcp),
         ("tcp6", Protocol::Tcp6),
         ("udp", Protocol::Udp),
         ("udp6", Protocol::Udp6),
     ] {
-        let Ok(text) = fs::read_to_string(format!("/proc/net/{file}")) else {
+        let Ok(text) = crate::filesystem::read_text(
+            std::path::Path::new(&format!("/proc/net/{file}")),
+            8 * 1024 * 1024,
+        ) else {
             continue;
         };
         for entry in text.lines().filter_map(procfs::parse_net_line) {
@@ -187,7 +197,10 @@ pub fn find_file_users(path: &str) -> AppResult<FileUserList> {
         let mut found: Vec<(FileUsage, String)> = Vec::new();
         let mut add = |usage: FileUsage, target: &str| {
             let clean = target.strip_suffix(" (deleted)").unwrap_or(target);
-            if procfs::path_matches(clean, &query, is_directory) && seen.insert(clean.to_owned()) {
+            if found.len() < MAX_FILE_USES
+                && procfs::path_matches(clean, &query, is_directory)
+                && seen.insert(clean.to_owned())
+            {
                 found.push((usage, clean.to_owned()));
             }
         };
@@ -195,6 +208,10 @@ pub fn find_file_users(path: &str) -> AppResult<FileUserList> {
         match fs::read_dir(format!("/proc/{pid}/fd")) {
             Ok(dir) => {
                 for entry in dir.flatten() {
+                    if started.elapsed() > SEARCH_BUDGET {
+                        truncated = true;
+                        break;
+                    }
                     if let Some(t) = link_string(&entry.path().to_string_lossy()) {
                         add(FileUsage::Open, &t);
                     }
@@ -212,8 +229,15 @@ pub fn find_file_users(path: &str) -> AppResult<FileUserList> {
         if let Some(t) = link_string(&format!("/proc/{pid}/exe")) {
             add(FileUsage::Executable, &t);
         }
-        if let Ok(maps) = fs::read_to_string(format!("/proc/{pid}/maps")) {
+        if let Ok(maps) = crate::filesystem::read_text(
+            std::path::Path::new(&format!("/proc/{pid}/maps")),
+            8 * 1024 * 1024,
+        ) {
             for entry in maps.lines().filter_map(procfs::parse_maps_line) {
+                if started.elapsed() > SEARCH_BUDGET {
+                    truncated = true;
+                    break;
+                }
                 if let Some(p) = entry.path.as_deref().filter(|p| p.starts_with('/')) {
                     add(FileUsage::Mapped, p);
                 }
@@ -246,11 +270,16 @@ pub fn find_file_users(path: &str) -> AppResult<FileUserList> {
 // ------------------------------------------------------- maps and modules
 
 fn regions(pid: u32) -> AppResult<Vec<Region>> {
-    let text = fs::read_to_string(format!("/proc/{pid}/maps")).map_err(|e| map_io(&e, pid))?;
+    let text = crate::filesystem::read_text(
+        std::path::Path::new(&format!("/proc/{pid}/maps")),
+        8 * 1024 * 1024,
+    )
+    .map_err(|e| map_io(&e, pid))?;
     let exe = link_string(&format!("/proc/{pid}/exe"));
     Ok(text
         .lines()
         .filter_map(procfs::parse_maps_line)
+        .take(crate::inspect::MAX_REGIONS + 1)
         .map(|e| Region {
             kind: classify_linux_region(e.path.as_deref(), exe.as_deref()),
             shared: e.perms.ends_with('s'),
@@ -309,6 +338,11 @@ pub fn threads(pid: u32) -> AppResult<Vec<RawThread>> {
     let boot = boot_time_secs();
     let mut out = Vec::new();
     for entry in dir.flatten() {
+        if out.len() >= 20_000 {
+            return Err(AppError::ActionUnavailable(
+                "Too many threads to inspect safely.".into(),
+            ));
+        }
         let Some(tid) = entry
             .file_name()
             .to_str()

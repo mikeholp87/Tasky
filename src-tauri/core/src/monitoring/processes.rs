@@ -50,6 +50,10 @@ impl ProcessTracker {
             .values()
             // Linux: never show individual threads.
             .filter(|p| p.thread_kind() != Some(sysinfo::ThreadKind::Userland))
+            // Exited but not yet reaped by the parent: only a process-table
+            // entry remains (no memory, no code running). Showing it makes a
+            // closed app look alive, so treat it as gone.
+            .filter(|p| !is_gone(ProcessState::from(p.status())))
             .map(|p| {
                 let pid = p.pid().as_u32();
                 let extra = extras.get(&pid).copied().unwrap_or_default();
@@ -90,6 +94,10 @@ impl ProcessTracker {
             })
             .collect()
     }
+}
+
+fn is_gone(state: ProcessState) -> bool {
+    matches!(state, ProcessState::Zombie | ProcessState::Dead)
 }
 
 /// sysinfo reports per-process CPU as a percentage of one core (0..N*100).
@@ -215,6 +223,33 @@ mod tests {
             rows.iter().filter(|r| r.restricted).count(),
             rows.iter().filter(|r| r.memory_bytes == 0).count(),
         );
+    }
+
+    /// A killed child that nobody reaped (zombie) must disappear from the list.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn exited_unreaped_child_is_not_listed() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let mut sys = System::new().unwrap();
+        let mut tracker = ProcessTracker::new();
+        let rows = tracker.sample(&mut sys, Duration::from_secs(1));
+        assert!(rows.iter().any(|r| r.pid == pid), "live child listed");
+
+        // SIGKILL without wait(): the child stays in the table as a zombie.
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .status();
+        std::thread::sleep(Duration::from_millis(300));
+        let rows = tracker.sample(&mut sys, Duration::from_secs(1));
+        assert!(
+            !rows.iter().any(|r| r.pid == pid),
+            "zombie must not be listed"
+        );
+        let _ = child.wait();
     }
 
     /// Integration: real enumeration finds this test process with sane data.

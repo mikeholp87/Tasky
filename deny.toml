@@ -1,0 +1,29 @@
+# Reviewed 2026-11-03. Keep exceptions narrow and revisit on Tauri upgrades.
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error is transitive through GTK3; Tauri migration required. See docs/SUPPLY_CHAIN_SECURITY.md." },
+  { id = "RUSTSEC-2026-0370", reason = "zvariant 5 is required by Tauri plugins' zbus 5; track upstream zbus 6 migration." },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names 4 is required by Tauri plugins' zbus 5; track upstream zbus 6 migration." },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5 is required by Tauri plugins' zbus 5; track upstream zbus 6 migration." },
+]
+
+[licenses]
+allow = [
+  "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause",
+  "BSD-3-Clause", "ISC", "Zlib", "Unicode-3.0", "MPL-2.0",
+]
+confidence-threshold = 0.8
+
+# Root-certificate data; its required license text is bundled with the app.
+exceptions = [
+  { crate = "webpki-roots@1.0.11", allow = ["CDLA-Permissive-2.0"] },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

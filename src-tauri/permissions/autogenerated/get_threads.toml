@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-threads"
+description = "Enables the get_threads command without any pre-configured scope."
+commands.allow = ["get_threads"]
+
+[[permission]]
+identifier = "deny-get-threads"
+description = "Denies the get_threads command without any pre-configured scope."
+commands.deny = ["get_threads"]

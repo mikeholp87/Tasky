@@ -97,6 +97,9 @@ enum Kind {
 fn table<Row: Copy>(kind: Kind, family: u32) -> Option<Vec<Row>> {
     let mut size = 0u32;
     for _ in 0..4 {
+        if size > 16 * 1024 * 1024 || align_of::<Row>() > align_of::<u32>() {
+            return None;
+        }
         // u32 backing keeps the buffer aligned for the row structs.
         let mut buf = vec![0u32; (size as usize).div_ceil(4).max(1)];
         let ptr = Some(buf.as_mut_ptr().cast());
@@ -122,7 +125,11 @@ fn table<Row: Copy>(kind: Kind, family: u32) -> Option<Vec<Row>> {
         let row_bytes = size_of::<Row>();
         // Rows start after the count, padded to the row alignment.
         let offset = align_of::<Row>().max(4);
-        if offset + count * row_bytes > buf.len() * 4 {
+        if count
+            .checked_mul(row_bytes)
+            .and_then(|bytes| offset.checked_add(bytes))
+            .is_none_or(|end| end > buf.len() * 4)
+        {
             return None;
         }
         // SAFETY: bounds checked above; Row is a plain-old-data FFI struct.

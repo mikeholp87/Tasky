@@ -85,6 +85,16 @@ pub fn hardware_info() -> crate::models::HardwareInfo {
     linux_only::hardware_info()
 }
 
+/// Programs that start at login. Linux only for now.
+pub fn startup_items() -> crate::errors::AppResult<Vec<crate::models::StartupItem>> {
+    linux_only::startup_items()
+}
+
+/// Enables or disables one startup program, reversibly.
+pub fn set_startup_enabled(id: &str, enabled: bool) -> crate::errors::AppResult<()> {
+    linux_only::set_startup_enabled(id, enabled)
+}
+
 /// Memory figures that sysinfo does not expose but the OS reports reliably.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MemoryExtras {
@@ -173,7 +183,7 @@ pub fn process_architecture(pid: u32) -> Option<String> {
 // Raw OS operations. Callers must go through `process_control`, which adds
 // validation, PID-reuse checks and protection rules.
 
-pub(crate) use imp::{force_kill, resume, set_priority, suspend, terminate};
+pub(crate) use imp::perform_action;
 
 /// Windows `IsProcessCritical`; `None` elsewhere or when it cannot be read.
 pub fn is_critical(pid: u32) -> Option<bool> {
@@ -240,5 +250,17 @@ mod fallback {
 
     pub fn hardware_info() -> crate::models::HardwareInfo {
         crate::models::HardwareInfo::default()
+    }
+
+    pub fn startup_items() -> crate::errors::AppResult<Vec<crate::models::StartupItem>> {
+        Err(unsupported())
+    }
+
+    pub fn set_startup_enabled(_id: &str, _enabled: bool) -> crate::errors::AppResult<()> {
+        Err(unsupported())
+    }
+
+    fn unsupported() -> crate::errors::AppError {
+        crate::errors::AppError::UnsupportedOperation("Startup items".into())
     }
 }

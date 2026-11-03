@@ -2,7 +2,10 @@
 import type { BenchmarkKind } from "./BenchmarkKind";
 import type { BenchmarkProfile } from "./BenchmarkProfile";
 import type { CpuScores } from "./CpuScores";
+import type { DiskResult } from "./DiskResult";
 import type { Environment } from "./Environment";
+import type { GpuResult } from "./GpuResult";
+import type { InternetResult } from "./InternetResult";
 import type { MethodInfo } from "./MethodInfo";
 import type { Stability } from "./Stability";
 import type { SustainedResult } from "./SustainedResult";
@@ -12,7 +15,23 @@ export type BenchmarkResult = { id: string, kind: BenchmarkKind, profile: Benchm
 /**
  * `None` for development builds, which are not scored.
  */
-scores: CpuScores | null, warnings: Array<string>, stability: Stability, outlierMethod: string, 
+scores: CpuScores | null, 
+/**
+ * GPU runs only. Defaults keep history saved before GPU support loadable.
+ */
+gpu: GpuResult | null, gpuScore: number | null, 
+/**
+ * Disk runs only.
+ */
+disk: DiskResult | null, 
+/**
+ * `None` unless direct I/O was used: buffered results reflect the cache.
+ */
+diskScore: number | null, 
+/**
+ * Internet runs only. There is deliberately no internet score.
+ */
+internet: InternetResult | null, warnings: Array<string>, stability: Stability, outlierMethod: string, 
 /**
  * What happened with thread pinning, e.g. "not pinned".
  */

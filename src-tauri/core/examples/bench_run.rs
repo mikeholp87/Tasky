@@ -46,6 +46,11 @@ fn main() {
         Some("extended") => BenchmarkProfile::Extended,
         _ => BenchmarkProfile::Standard,
     };
+    let kind = if args.iter().any(|a| a == "gpu") {
+        BenchmarkKind::Gpu
+    } else {
+        BenchmarkKind::Cpu
+    };
     let cancel_after: Option<u64> = args
         .iter()
         .find_map(|a| a.strip_prefix("cancel-after=")?.parse().ok());
@@ -58,7 +63,7 @@ fn main() {
     let sink = Arc::new(Print::default());
     let t0 = Instant::now();
     coord
-        .start(BenchmarkKind::Cpu, profile, sink.clone())
+        .start(kind, profile, None, sink.clone())
         .expect("starts");
     println!("started {profile:?}");
     loop {
@@ -93,6 +98,29 @@ fn main() {
             r.stability,
             r.affinity
         );
+        println!(
+            "gpu score {:?}  method {}  warnings {:?}",
+            r.gpu_score, r.method.method_id, r.warnings
+        );
+        if let Some(g) = &r.gpu {
+            println!(
+                "adapter {} ({:?}, {}) timing {:?}",
+                g.adapter.name, g.adapter.device_type, g.adapter.backend, g.timing_method
+            );
+            for w in &g.workloads {
+                println!(
+                    "  {:<24} {:>9.2} {:<7} cv {:>5.2}% validated {}",
+                    w.label,
+                    w.median,
+                    w.unit,
+                    w.cv_percent.unwrap_or(0.0),
+                    w.validated
+                );
+            }
+            for n in &g.notes {
+                println!("  note: {n}");
+            }
+        }
         println!("env {:?}", r.environment);
         println!("warnings {:?}", r.warnings);
         if let Some(s) = &r.sustained {

@@ -2,6 +2,7 @@
 //! snapshot and written to a path the user picks in a native save dialog;
 //! the frontend never supplies file contents or paths.
 
+use super::blocking::run as blocking;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -43,16 +44,13 @@ fn save_with_dialog<R: Runtime>(
         return Ok(None);
     };
     let path = file.into_path().map_err(failed)?;
-    std::fs::write(&path, contents).map_err(failed)?;
+    if contents.len() > 32 * 1024 * 1024 {
+        return Err(AppError::InvalidArgument(
+            "Export exceeds the 32 MiB limit.".into(),
+        ));
+    }
+    tm_core::filesystem::write_private_atomic(&path, contents.as_bytes()).map_err(failed)?;
     Ok(Some(path.to_string_lossy().into_owned()))
-}
-
-async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> AppResult<T> + Send + 'static,
-) -> AppResult<T> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(failed)?
 }
 
 fn timestamp() -> String {
@@ -71,6 +69,9 @@ pub async fn export_processes<R: Runtime>(
 ) -> AppResult<Option<String>> {
     let engine = Arc::clone(&state.engine);
     blocking(move || {
+        if include_command_lines {
+            super::confirm::confirm(&app, "This export includes process command lines, which may contain passwords or tokens. Continue with this sensitive export?")?;
+        }
         let tick = engine.latest().ok_or(AppError::EngineUnavailable)?;
         let (contents, ext, label) = match format {
             ExportFormat::Csv => (
@@ -115,10 +116,10 @@ pub async fn export_system_summary<R: Runtime>(
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Diagnostics<'a> {
+struct Diagnostics {
     generated_at_ms: u64,
-    app_version: &'a str,
-    system: &'a StaticSystemInfo,
+    app_version: String,
+    system: StaticSystemInfo,
     monitoring: MonitoringState,
     settings: Settings,
     last_poll_duration_ms: Option<f64>,
@@ -140,43 +141,19 @@ pub async fn export_diagnostics<R: Runtime>(
     include_command_lines: bool,
 ) -> AppResult<Option<String>> {
     let engine = Arc::clone(&state.engine);
-    let mut settings = state.settings.get();
-    // Column layout is UI noise, not diagnostic information.
-    settings.visible_columns.clear();
-    settings.column_widths.clear();
+    let settings = state.settings.get();
     let recent_log = state.logging.recent();
     blocking(move || {
-        let tick = engine.latest();
-        let processes = include_processes.then(|| {
-            tick.as_ref()
-                .map(|t| {
-                    t.processes
-                        .iter()
-                        .cloned()
-                        .map(|mut p| {
-                            if !include_command_lines {
-                                p.cmd = None;
-                            }
-                            p
-                        })
-                        .collect()
-                })
-                .unwrap_or_default()
-        });
-        let info = engine.static_info();
-        let diagnostics = Diagnostics {
-            generated_at_ms: tm_core::monitoring::unix_millis(),
-            app_version: &info.app_version,
-            system: info,
-            monitoring: engine.state(),
-            settings,
-            last_poll_duration_ms: tick.as_ref().map(|t| t.engine.poll_duration_ms),
-            process_count: tick.as_ref().map(|t| t.processes.len()),
-            last_payload_bytes: tick.as_ref().map(|t| t.engine.last_payload_bytes),
-            recent_log,
-            recent_alerts: engine.recent_alerts(),
-            processes,
-        };
+        if include_processes {
+            let message = if include_command_lines {
+                "Diagnostics will include process information and command lines, which may contain passwords or tokens, plus hostname, alert rules and recent errors. Continue?"
+            } else {
+                "Diagnostics will include process information, hostname, alert rules and recent errors, which may be private. Continue?"
+            };
+            super::confirm::confirm(&app, message)?;
+        }
+        let mut diagnostics = collect_diagnostics(&engine, settings, recent_log);
+        diagnostics.apply_privacy(include_processes, include_command_lines);
         let json = serde_json::to_string_pretty(&diagnostics).map_err(failed)?;
         save_with_dialog(
             &app,
@@ -186,4 +163,80 @@ pub async fn export_diagnostics<R: Runtime>(
         )
     })
     .await
+}
+
+fn collect_diagnostics(
+    engine: &tm_core::monitoring::Engine,
+    settings: Settings,
+    recent_log: Vec<LogRecord>,
+) -> Diagnostics {
+    let tick = engine.latest();
+    let info = engine.static_info();
+    Diagnostics {
+        generated_at_ms: tm_core::monitoring::unix_millis(),
+        app_version: info.app_version.clone(),
+        system: info.clone(),
+        monitoring: engine.state(),
+        settings,
+        last_poll_duration_ms: tick.as_ref().map(|t| t.engine.poll_duration_ms),
+        process_count: tick.as_ref().map(|t| t.processes.len()),
+        last_payload_bytes: tick.as_ref().map(|t| t.engine.last_payload_bytes),
+        recent_log,
+        recent_alerts: engine.recent_alerts(),
+        processes: tick.as_ref().map(|t| t.processes.clone()),
+    }
+}
+
+impl Diagnostics {
+    fn apply_privacy(&mut self, include_processes: bool, include_command_lines: bool) {
+        self.settings.visible_columns.clear();
+        self.settings.column_widths.clear();
+        if !include_processes {
+            self.system.hostname = None;
+            self.settings.alert_rules.clear();
+            self.recent_log.clear();
+            self.recent_alerts.clear();
+            self.processes = None;
+        } else if !include_command_lines && let Some(processes) = &mut self.processes {
+            for process in processes {
+                process.cmd = None;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_diagnostics_exclude_indirect_process_identifiers() {
+        let engine = tm_core::monitoring::Engine::start(MonitoringState {
+            paused: true,
+            interval_ms: 1000,
+        })
+        .unwrap();
+        let logs = vec![LogRecord {
+            timestamp_ms: 1,
+            level: "WARN".into(),
+            target: "test".into(),
+            message: "private-process-name".into(),
+        }];
+        let mut d = collect_diagnostics(&engine, Settings::default(), logs);
+        d.system.hostname = Some("private-hostname".into());
+        d.settings.alert_rules[0].name = "private-rule-name".into();
+        d.recent_alerts.push(AlertEvent {
+            rule_id: "private-rule".into(),
+            rule_name: "private-process".into(),
+            timestamp_ms: 1,
+            message: "private-process exceeded its limit".into(),
+            pid: Some(42),
+        });
+        d.processes = Some(Vec::new());
+        d.apply_privacy(false, true); // Command-line opt-in cannot override process exclusion.
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(!json.contains("private-"));
+        assert!(d.processes.is_none() && d.recent_alerts.is_empty() && d.recent_log.is_empty());
+        engine.shutdown();
+    }
 }

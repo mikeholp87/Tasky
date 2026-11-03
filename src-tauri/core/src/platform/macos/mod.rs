@@ -55,27 +55,12 @@ pub fn threads(_pid: u32) -> crate::errors::AppResult<Vec<crate::inspect::RawThr
     unsupported("Listing threads")
 }
 
-pub fn terminate(_pid: u32) -> crate::errors::AppResult<()> {
-    unsupported("Ending processes")
-}
-
-pub fn force_kill(_pid: u32) -> crate::errors::AppResult<()> {
-    unsupported("Ending processes")
-}
-
-pub fn suspend(_pid: u32) -> crate::errors::AppResult<()> {
-    unsupported("Suspending processes")
-}
-
-pub fn resume(_pid: u32) -> crate::errors::AppResult<()> {
-    unsupported("Resuming processes")
-}
-
-pub fn set_priority(
+pub fn perform_action(
     _pid: u32,
-    _level: crate::models::PriorityLevel,
+    _start_time: u64,
+    _action: crate::models::ProcessAction,
 ) -> crate::errors::AppResult<()> {
-    unsupported("Changing priority")
+    unsupported("Controlling processes")
 }
 
 pub fn is_critical(_pid: u32) -> Option<bool> {

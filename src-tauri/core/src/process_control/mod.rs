@@ -74,11 +74,12 @@ pub fn perform(engine: &Engine, req: ActionRequest) -> AppResult<ActionOutcome> 
         _ => {}
     }
 
+    platform::perform_action(req.pid, req.start_time, req.action)?;
+
     let pid = req.pid;
     let name = &row.name;
     let message = match req.action {
         ProcessAction::Terminate => {
-            platform::terminate(pid)?;
             if cfg!(windows) {
                 format!("Asked {name} (PID {pid}) to close. It may prompt to save first.")
             } else {
@@ -86,26 +87,22 @@ pub fn perform(engine: &Engine, req: ActionRequest) -> AppResult<ActionOutcome> 
             }
         }
         ProcessAction::ForceKill => {
-            platform::force_kill(pid)?;
             format!("Ended {name} (PID {pid}).")
         }
         ProcessAction::Suspend => {
-            platform::suspend(pid)?;
             engine.set_suspended(pid, row.start_time, true);
             format!("Suspended {name} (PID {pid}).")
         }
         ProcessAction::Resume => {
-            platform::resume(pid)?;
             engine.set_suspended(pid, row.start_time, false);
             format!("Resumed {name} (PID {pid}).")
         }
-        ProcessAction::SetPriority { priority } => {
-            platform::set_priority(pid, priority)?;
+        ProcessAction::SetPriority { .. } => {
             format!("Changed the priority of {name} (PID {pid}).")
         }
     };
-    // Process names are not sensitive; command lines are never logged.
-    tracing::info!(pid, name = %name, action = ?req.action, "process action performed");
+    // Process identifiers can contain private or misleading text.
+    tracing::info!(pid, action = ?req.action, "process action performed");
     let what = match req.action {
         ProcessAction::Terminate => "Asked to close",
         ProcessAction::ForceKill => "Force ended",
@@ -179,6 +176,14 @@ mod tests {
         // A stale start time (PID reuse) is refused.
         let stale = perform(&engine, req(ProcessAction::ForceKill, row.start_time + 1));
         assert!(matches!(stale, Err(AppError::ProcessNotFound(_))));
+
+        // The OS boundary must reject a mismatched lifetime independently of
+        // the monitoring cache. No signal is sent to this disposable child.
+        assert!(matches!(
+            platform::perform_action(pid, row.start_time + 1, ProcessAction::ForceKill),
+            Err(AppError::ProcessNotFound(_))
+        ));
+        assert!(child.try_wait().unwrap().is_none());
 
         perform(&engine, req(ProcessAction::Suspend, row.start_time)).unwrap();
         wait_for_row(&engine, pid, |r| r.status == ProcessState::Stopped);

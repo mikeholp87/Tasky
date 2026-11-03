@@ -135,6 +135,7 @@ fn rm_error(what: &str, code: WIN32_ERROR) -> AppError {
 /// Applications and services holding `path` open, via Restart Manager.
 /// <https://learn.microsoft.com/windows/win32/rstmgr/restart-manager-portal>
 pub fn find_file_users(path: &str) -> AppResult<FileUserList> {
+    validate_local_path(path)?;
     let resolved = std::fs::canonicalize(path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {
             AppError::InvalidArgument("That path does not exist.".into())
@@ -185,22 +186,40 @@ pub fn find_file_users(path: &str) -> AppResult<FileUserList> {
     }
 
     let mut infos: Vec<RM_PROCESS_INFO> = Vec::new();
+    let mut complete = false;
     let (mut needed, mut count, mut reasons) = (0u32, 0u32, 0u32);
     for _ in 0..5 {
         let buffer = (!infos.is_empty()).then_some(infos.as_mut_ptr());
         // SAFETY: when `buffer` is set it addresses `count` initialised entries.
         let rc = unsafe { RmGetList(session.0, &mut needed, &mut count, buffer, &mut reasons) };
         if rc == NO_ERROR {
+            if count as usize > infos.len() {
+                return Err(AppError::SystemQueryFailed(
+                    "Invalid file-user count.".into(),
+                ));
+            }
             infos.truncate(count as usize);
+            complete = true;
             break;
         }
         if rc == ERROR_MORE_DATA {
             // The set can grow between calls; leave headroom.
+            if needed > 2_000 {
+                return Err(AppError::ActionUnavailable(
+                    "Too many file users to inspect safely.".into(),
+                ));
+            }
             infos.resize(needed as usize + 4, RM_PROCESS_INFO::default());
             count = u32::try_from(infos.len()).unwrap_or(u32::MAX);
             continue;
         }
         return Err(rm_error("list", rc));
+    }
+
+    if !complete {
+        return Err(AppError::ActionUnavailable(
+            "File users changed repeatedly; try again.".into(),
+        ));
     }
 
     list.uses = infos
@@ -222,6 +241,22 @@ pub fn find_file_users(path: &str) -> AppResult<FileUserList> {
     Ok(list)
 }
 
+/// Reject network/device namespaces before canonicalization can invoke an OS
+/// network handler. Mapped drives and local reparse points remain OS policy.
+fn validate_local_path(path: &str) -> AppResult<()> {
+    use std::path::{Component, Path, Prefix};
+    let mut parts = Path::new(path).components();
+    let drive = matches!(parts.next(), Some(Component::Prefix(p)) if matches!(p.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_)));
+    if drive && matches!(parts.next(), Some(Component::RootDir)) {
+        Ok(())
+    } else {
+        Err(AppError::InvalidArgument(
+            "Choose an absolute local drive path; network and device paths are not supported."
+                .into(),
+        ))
+    }
+}
+
 // ------------------------------------------------------ modules and memory
 
 fn module_error(pid: u32, e: &::windows::core::Error) -> AppError {
@@ -229,7 +264,7 @@ fn module_error(pid: u32, e: &::windows::core::Error) -> AppError {
     if e.code() == ERROR_PARTIAL_COPY.to_hresult() {
         AppError::PermissionDenied(
             "Windows would not let this app read that process's modules. \
-             Running as administrator may allow it."
+             This feature respects Windows process permissions."
                 .into(),
         )
     } else {
@@ -426,6 +461,21 @@ fn thread_times(tid: u32) -> (u64, Option<u64>) {
 mod tests {
     use super::*;
     use std::net::TcpListener;
+
+    #[test]
+    fn rejects_network_and_device_paths_before_any_os_lookup() {
+        for path in [
+            r"\\example.invalid\share\a",
+            r"\\?\UNC\example.invalid\share\a",
+            r"\\.\PhysicalDrive0",
+            r"C:relative",
+            "relative",
+        ] {
+            assert!(validate_local_path(path).is_err());
+        }
+        assert!(validate_local_path(r"C:\Users\example\file.txt").is_ok());
+        assert!(validate_local_path(r"\\?\C:\Users\example\file.txt").is_ok());
+    }
 
     #[test]
     fn own_listener_and_modules_are_visible() {

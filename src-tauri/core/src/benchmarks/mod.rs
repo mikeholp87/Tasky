@@ -6,7 +6,9 @@
 pub mod cancel;
 pub mod coordinator;
 pub mod cpu;
+pub mod disk;
 pub mod environment;
+pub mod gpu;
 pub mod history;
 pub mod model;
 pub mod scoring;

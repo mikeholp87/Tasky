@@ -92,7 +92,7 @@ impl CpuRunConfig {
             slice_len: 256 << 10,
             sustained,
             window: Duration::from_secs(1),
-            workers: logical_cpus.max(1),
+            workers: logical_cpus.clamp(1, 256),
             pin_single: false,
         }
     }
@@ -616,6 +616,18 @@ pub fn analyze_sustained(windows: Vec<SustainedWindow>) -> Option<SustainedResul
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn profile_worker_count_is_bounded_even_with_extreme_topology() {
+        assert_eq!(
+            CpuRunConfig::for_profile(BenchmarkProfile::Quick, 0).workers,
+            1
+        );
+        assert_eq!(
+            CpuRunConfig::for_profile(BenchmarkProfile::Extended, usize::MAX).workers,
+            256
+        );
+    }
 
     struct NoHooks;
     impl CpuHooks for NoHooks {

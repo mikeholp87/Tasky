@@ -53,6 +53,14 @@ describe("ProcessesPage", () => {
     expect(dataRows()[0]).toHaveAttribute("data-pid", "100");
   });
 
+  it("renders malicious OS names as text without creating HTML elements", () => {
+    const name = "<img src=x onerror=alert(1)>";
+    useMetricsStore.setState({ tick: makeTick([{ ...processes[0]!, name }]) });
+    const { container } = render(<ProcessesPage />);
+    expect(screen.getByText(name)).toBeInTheDocument();
+    expect(container.querySelector("img, script, iframe")).toBeNull();
+  });
+
   it("filters instantly as the user types", async () => {
     render(<ProcessesPage />);
     await userEvent.type(screen.getByRole("searchbox", { name: "Search processes" }), "python");

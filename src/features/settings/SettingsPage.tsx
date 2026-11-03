@@ -287,7 +287,7 @@ function DiagnosticsExport({ disabled }: { disabled: boolean }) {
         <div>
           <div className="font-medium">Export diagnostics</div>
           <div className="text-fg-muted">
-            App version, system details, settings, performance and recent errors.
+            App version, system details, preferences and performance. Review before sharing.
           </div>
         </div>
         <button
@@ -305,7 +305,7 @@ function DiagnosticsExport({ disabled }: { disabled: boolean }) {
           checked={processes}
           onChange={(e) => setProcesses(e.target.checked)}
         />
-        Include the process list
+        Include process list, hostname, alert rules and recent errors (may be sensitive)
       </label>
       <label className={cn("flex items-center gap-2 text-fg-muted", !processes && "opacity-50")}>
         <input

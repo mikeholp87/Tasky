@@ -45,10 +45,11 @@ builds only), then capture the page.
   - Server-side protection for critical system processes and for Task Manager
     itself.
 - **Benchmarks:** a repeatable CPU benchmark (single-core and multi-core:
-  integer, floating point, SHA-256, compression) with scores, run history and
-  safe comparison between results. Runs on Windows and Linux with the same
-  method; GPU, storage and internet tests are not built yet. See
-  [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+  integer, floating point, SHA-256, compression) and a GPU compute benchmark
+  (integer, floating point, memory bandwidth, with every result checked against
+  a CPU reference), with scores, run history and safe comparison between
+  results. Runs on Windows and Linux with the same methods; storage and
+  internet tests are not built yet. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 - **Performance:** large CPU, memory, disk and network graphs over
   60 s / 5 min / 15 min / 1 h.
 - **CPU, Memory, Storage, Network pages:**

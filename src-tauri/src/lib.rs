@@ -4,6 +4,7 @@
 mod commands;
 mod desktop;
 mod logging;
+mod security;
 mod settings;
 mod state;
 
@@ -29,6 +30,11 @@ pub fn run() {
             desktop::show_main_window(app);
         }))
         .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("navigation-policy")
+                .on_navigation(|_, url| security::navigation_allowed(url))
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -124,12 +130,15 @@ pub fn run() {
             commands::monitoring::refresh_now,
             commands::monitoring::set_memory_detail,
             commands::benchmarks::start_benchmark,
+            commands::benchmarks::list_gpu_adapters,
             commands::benchmarks::cancel_benchmark,
             commands::benchmarks::get_benchmark_status,
             commands::benchmarks::get_benchmark_history,
             commands::benchmarks::delete_benchmark_result,
             commands::processes::get_process_details,
             commands::inspect::list_sockets,
+            commands::inspect::list_startup_items,
+            commands::inspect::set_startup_enabled,
             commands::inspect::get_open_files,
             commands::inspect::find_file_users,
             commands::inspect::get_memory_map,

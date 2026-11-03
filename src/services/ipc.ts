@@ -7,6 +7,7 @@ import type {
   ActivityEvent,
   AppError,
   BenchmarkKind,
+  GpuAdapterInfo,
   BenchmarkProfile,
   BenchmarkResult,
   BenchmarkStatus,
@@ -26,6 +27,7 @@ import type {
   AlertEvent,
   Settings,
   SocketList,
+  StartupItem,
   StaticSystemInfo,
   ThreadList,
 } from "@/types";
@@ -42,6 +44,8 @@ const ERROR_KINDS: Record<ErrorKind, true> = {
   invalidArgument: true,
   processProtected: true,
   actionUnavailable: true,
+  operationCancelled: true,
+  operationBusy: true,
   engineUnavailable: true,
   benchmarkAlreadyRunning: true,
   benchmarkFailed: true,
@@ -92,8 +96,9 @@ export const backend = {
 
   refreshNow: () => call<void>("refresh_now"),
 
-  startBenchmark: (kind: BenchmarkKind, profile: BenchmarkProfile) =>
-    call<BenchmarkStatus>("start_benchmark", { kind, profile }),
+  startBenchmark: (kind: BenchmarkKind, profile: BenchmarkProfile, adapter?: string) =>
+    call<BenchmarkStatus>("start_benchmark", { kind, profile, adapter: adapter ?? null }),
+  listGpuAdapters: () => call<GpuAdapterInfo[]>("list_gpu_adapters"),
   cancelBenchmark: () => call<void>("cancel_benchmark"),
   getBenchmarkStatus: () => call<BenchmarkStatus>("get_benchmark_status"),
   getBenchmarkHistory: () => call<BenchmarkResult[]>("get_benchmark_history"),
@@ -117,6 +122,9 @@ export const backend = {
 
   /** On-demand inspection; each call walks OS tables, so call only while its view is open. */
   listSockets: () => call<SocketList>("list_sockets"),
+  listStartupItems: () => call<StartupItem[]>("list_startup_items"),
+  setStartupEnabled: (id: string, enabled: boolean) =>
+    call<void>("set_startup_enabled", { id, enabled }),
   getOpenFiles: (pid: number) => call<OpenFileList>("get_open_files", { pid }),
   findFileUsers: (path: string) => call<FileUserList>("find_file_users", { path }),
   getMemoryMap: (pid: number) => call<MemoryMap>("get_memory_map", { pid }),

@@ -5,6 +5,7 @@
 pub mod benchmarks;
 pub mod errors;
 pub mod export;
+pub mod filesystem;
 pub mod inspect;
 pub mod models;
 pub mod monitoring;

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reveal-executable"
+description = "Enables the reveal_executable command without any pre-configured scope."
+commands.allow = ["reveal_executable"]
+
+[[permission]]
+identifier = "deny-reveal-executable"
+description = "Denies the reveal_executable command without any pre-configured scope."
+commands.deny = ["reveal_executable"]

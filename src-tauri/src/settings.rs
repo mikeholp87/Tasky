@@ -37,16 +37,17 @@ impl SettingsStore {
     /// Validates, persists and stores `next`. Returns the stored settings.
     pub fn save(&self, next: Settings) -> AppResult<Settings> {
         next.validate()?;
+        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
         if let Some(path) = &self.path {
             write_atomic(path, &next)?;
         }
-        *self.current.write().unwrap_or_else(PoisonError::into_inner) = next.clone();
+        *current = next.clone();
         Ok(next)
     }
 }
 
 fn read_or_default(path: &Path) -> Settings {
-    let text = match std::fs::read_to_string(path) {
+    let text = match tm_core::filesystem::read_text(path, 256 * 1024) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Settings::default(),
         Err(e) => {
@@ -68,13 +69,8 @@ fn write_atomic(path: &Path, settings: &Settings) -> AppResult<()> {
     let fail = |e: &dyn std::fmt::Display| {
         AppError::SystemQueryFailed(format!("could not save settings: {e}"))
     };
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| fail(&e))?;
-    }
     let json = serde_json::to_string_pretty(settings).map_err(|e| fail(&e))?;
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(|e| fail(&e))?;
-    std::fs::rename(&tmp, path).map_err(|e| fail(&e))
+    tm_core::filesystem::write_private_atomic(path, json.as_bytes()).map_err(|e| fail(&e))
 }
 
 #[cfg(test)]
