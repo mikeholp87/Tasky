@@ -264,6 +264,80 @@ pub fn uevent_devtype(text: &str) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
+/// Firmware placeholder values that carry no information.
+fn is_placeholder(value: &str) -> bool {
+    let v = value.trim().to_ascii_lowercase();
+    v.is_empty()
+        || matches!(
+            v.as_str(),
+            "to be filled by o.e.m."
+                | "to be filled by oem"
+                | "default string"
+                | "system product name"
+                | "system manufacturer"
+                | "system version"
+                | "not specified"
+                | "not applicable"
+                | "none"
+                | "unknown"
+                | "o.e.m."
+                | "oem"
+        )
+}
+
+/// A DMI string, or `None` when it is empty or a vendor placeholder.
+pub fn clean_dmi(text: &str) -> Option<String> {
+    let t = text.trim();
+    (!is_placeholder(t)).then(|| t.to_owned())
+}
+
+/// SMBIOS chassis type code (`/sys/class/dmi/id/chassis_type`) as a name.
+pub fn chassis_name(code: &str) -> Option<&'static str> {
+    Some(match code.trim().parse::<u32>().ok()? {
+        3 | 4 | 5 | 6 | 7 | 15 | 16 => "Desktop",
+        8 | 9 | 10 | 14 => "Laptop",
+        11 => "Handheld",
+        13 => "All-in-one",
+        17 | 23 | 25 | 28 => "Server",
+        30 => "Tablet",
+        31 | 32 => "Convertible",
+        35 | 36 => "Mini PC",
+        _ => return None,
+    })
+}
+
+/// A sysfs cache size such as `32K`, `1024K` or `8M`, in bytes.
+pub fn parse_cache_size(text: &str) -> Option<u64> {
+    let t = text.trim();
+    let split = t.find(|c: char| !c.is_ascii_digit()).unwrap_or(t.len());
+    let (digits, unit) = t.split_at(split);
+    let n: u64 = digits.parse().ok()?;
+    match unit.trim().to_ascii_uppercase().as_str() {
+        "K" => n.checked_mul(1024),
+        "M" => n.checked_mul(1024 * 1024),
+        "" => Some(n),
+        _ => None,
+    }
+}
+
+/// Hardware virtualization the CPU offers, from the `flags` line of `/proc/cpuinfo`.
+pub fn cpu_virtualization(cpuinfo: &str) -> Option<&'static str> {
+    let flags = cpuinfo.lines().find(|l| l.starts_with("flags"))?;
+    let has = |f: &str| flags.split_whitespace().any(|x| x == f);
+    if has("vmx") {
+        Some("Intel VT-x")
+    } else if has("svm") {
+        Some("AMD-V")
+    } else {
+        None
+    }
+}
+
+/// Full-charge capacity relative to design capacity, as a percentage.
+pub fn battery_health(full: u64, design: u64) -> Option<u8> {
+    (design > 0 && full > 0).then(|| ((full * 100 + design / 2) / design).min(100) as u8)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -475,5 +549,48 @@ mod tests {
             Some("wlan")
         );
         assert_eq!(uevent_devtype("INTERFACE=eth0\n"), None);
+    }
+
+    #[test]
+    fn cleans_dmi_strings() {
+        assert_eq!(clean_dmi(" LENOVO\n"), Some("LENOVO".into()));
+        assert_eq!(clean_dmi("To Be Filled By O.E.M."), None);
+        assert_eq!(clean_dmi("Default string"), None);
+        assert_eq!(clean_dmi("  "), None);
+    }
+
+    #[test]
+    fn names_chassis_types() {
+        assert_eq!(chassis_name("10\n"), Some("Laptop"));
+        assert_eq!(chassis_name("3"), Some("Desktop"));
+        assert_eq!(chassis_name("1"), None);
+        assert_eq!(chassis_name("x"), None);
+    }
+
+    #[test]
+    fn parses_cache_sizes() {
+        assert_eq!(parse_cache_size("32K\n"), Some(32 * 1024));
+        assert_eq!(parse_cache_size("8M"), Some(8 * 1024 * 1024));
+        assert_eq!(parse_cache_size("512"), Some(512));
+        assert_eq!(parse_cache_size("lots"), None);
+        assert_eq!(parse_cache_size(""), None);
+    }
+
+    #[test]
+    fn detects_cpu_virtualization_flags() {
+        let intel = "processor : 0\nflags\t\t: fpu vme vmx sse\n";
+        let amd = "flags : fpu svm";
+        assert_eq!(cpu_virtualization(intel), Some("Intel VT-x"));
+        assert_eq!(cpu_virtualization(amd), Some("AMD-V"));
+        assert_eq!(cpu_virtualization("flags : fpu sse"), None);
+        assert_eq!(cpu_virtualization("model name : x"), None);
+    }
+
+    #[test]
+    fn computes_battery_health() {
+        assert_eq!(battery_health(42_000, 50_000), Some(84));
+        assert_eq!(battery_health(51_000, 50_000), Some(100), "capped");
+        assert_eq!(battery_health(0, 50_000), None);
+        assert_eq!(battery_health(1, 0), None);
     }
 }

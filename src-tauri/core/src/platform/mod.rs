@@ -79,6 +79,12 @@ pub fn interface_kind(name: &str) -> crate::models::InterfaceKind {
     linux_only::interface_kind(name)
 }
 
+/// Machine identity, CPU details and batteries beyond what sysinfo reports.
+/// Fields the platform cannot supply are empty.
+pub fn hardware_info() -> crate::models::HardwareInfo {
+    linux_only::hardware_info()
+}
+
 /// Memory figures that sysinfo does not expose but the OS reports reliably.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MemoryExtras {
@@ -230,5 +236,9 @@ mod fallback {
 
     pub fn is_virtualized() -> bool {
         false
+    }
+
+    pub fn hardware_info() -> crate::models::HardwareInfo {
+        crate::models::HardwareInfo::default()
     }
 }

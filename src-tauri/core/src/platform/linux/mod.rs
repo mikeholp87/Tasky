@@ -2,6 +2,7 @@
 
 mod connections;
 mod control;
+mod hardware;
 mod inspect;
 mod net;
 mod system;
@@ -11,6 +12,7 @@ use std::io::Read;
 
 pub use connections::connections;
 pub use control::{force_kill, is_critical, resume, set_priority, suspend, system_root, terminate};
+pub use hardware::hardware_info;
 pub use inspect::{find_file_users, memory_map, modules, open_files, sockets, threads};
 pub use net::interface_kind;
 pub use system::os_details;

@@ -137,6 +137,7 @@ pub fn run() {
             commands::inspect::get_threads,
             commands::inspect::get_activity,
             commands::inspect::pick_path,
+            commands::inspect::get_hardware_info,
             commands::control::assess_process_action,
             commands::control::perform_process_action,
             commands::control::reveal_executable,

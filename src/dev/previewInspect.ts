@@ -5,6 +5,7 @@
  */
 import type {
   FileUserList,
+  HardwareInfo,
   MemoryMap,
   MemoryRegion,
   ModuleInfo,
@@ -165,6 +166,42 @@ function fileUsers(path: string): FileUserList {
   };
 }
 
+const HARDWARE: HardwareInfo = {
+  machine: {
+    vendor: "LENOVO",
+    model: "ThinkPad X1 Carbon Gen 11",
+    board: "LENOVO 21HM",
+    biosVendor: "LENOVO",
+    biosVersion: "N3XET54W (1.30)",
+    biosDate: "03/14/2024",
+    chassis: "Laptop",
+  },
+  cpu: {
+    maxMhz: 4_800,
+    minMhz: 400,
+    governor: "powersave",
+    caches: [
+      { level: 1, kind: "Data", sizeBytes: 48 * 1024 },
+      { level: 1, kind: "Instruction", sizeBytes: 32 * 1024 },
+      { level: 2, kind: "Unified", sizeBytes: 1_280 * 1024 },
+      { level: 3, kind: "Unified", sizeBytes: 12 * 1024 * 1024 },
+    ],
+    virtualization: "Intel VT-x",
+    virtualized: false,
+  },
+  batteries: [
+    {
+      name: "BAT0",
+      percent: 82,
+      status: "Discharging",
+      technology: "Li-poly",
+      cycleCount: 143,
+      healthPercent: 91,
+    },
+  ],
+  powerSource: "battery",
+};
+
 const NOT_HANDLED = Symbol("not handled");
 
 /** Returns the stub reply for an inspection command, or `NOT_HANDLED`. */
@@ -182,6 +219,8 @@ export function inspectPreview(cmd: string, args: unknown): unknown {
       return threads();
     case "find_file_users":
       return fileUsers((args as { path: string }).path);
+    case "get_hardware_info":
+      return HARDWARE;
     case "pick_path":
       return "/home/demo/Videos/video.mp4";
     case "get_activity":

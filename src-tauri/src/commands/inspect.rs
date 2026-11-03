@@ -9,7 +9,8 @@ use tauri::{AppHandle, Runtime, State};
 use tauri_plugin_dialog::DialogExt;
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::{
-    ActivityEvent, FileUserList, MemoryMap, ModuleInfo, OpenFileList, SocketList, ThreadList,
+    ActivityEvent, FileUserList, HardwareInfo, MemoryMap, ModuleInfo, OpenFileList, SocketList,
+    ThreadList,
 };
 use tm_core::monitoring::unix_millis;
 use tm_core::platform;
@@ -107,4 +108,10 @@ pub async fn pick_path<R: Runtime>(
         Ok(Some(path.to_string_lossy().into_owned()))
     })
     .await
+}
+
+/// Machine identity, CPU caches and batteries for the System Information page.
+#[tauri::command]
+pub async fn get_hardware_info() -> AppResult<HardwareInfo> {
+    blocking(|| Ok(platform::hardware_info())).await
 }

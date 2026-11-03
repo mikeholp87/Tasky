@@ -68,3 +68,8 @@ export type { SocketEntry } from "./generated/SocketEntry";
 export type { SocketList } from "./generated/SocketList";
 export type { ThreadInfo } from "./generated/ThreadInfo";
 export type { ThreadList } from "./generated/ThreadList";
+export type { BatteryInfo } from "./generated/BatteryInfo";
+export type { CacheInfo } from "./generated/CacheInfo";
+export type { CpuDetails } from "./generated/CpuDetails";
+export type { HardwareInfo } from "./generated/HardwareInfo";
+export type { MachineInfo } from "./generated/MachineInfo";

@@ -12,6 +12,7 @@ import type {
   BenchmarkStatus,
   ErrorKind,
   FileUserList,
+  HardwareInfo,
   HistoryPoint,
   MemoryMap,
   MetricsTick,
@@ -123,6 +124,7 @@ export const backend = {
   getThreads: (pid: number) => call<ThreadList>("get_threads", { pid }),
   /** Native file/folder picker; resolves to the chosen path or null if cancelled. */
   pickPath: (directory: boolean) => call<string | null>("pick_path", { directory }),
+  getHardwareInfo: () => call<HardwareInfo>("get_hardware_info"),
   getActivity: (after: number) => call<ActivityEvent[]>("get_activity", { after }),
 
   revealExecutable: (pid: number) => call<void>("reveal_executable", { pid }),
