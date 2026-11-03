@@ -73,3 +73,29 @@ export const STATIC_INFO: StaticSystemInfo = {
   container: null,
   initSystem: "systemd",
 };
+
+/** A process row with neutral defaults; override only what a test cares about. */
+export function makeProcessRow(overrides: Partial<ProcessRow> = {}): ProcessRow {
+  return {
+    pid: 1,
+    parentPid: null,
+    name: "proc",
+    status: "sleeping",
+    cpuPercent: 0,
+    memoryBytes: 0,
+    virtualMemoryBytes: 0,
+    diskReadPerSec: 0,
+    diskWritePerSec: 0,
+    user: null,
+    startTime: 100,
+    threads: null,
+    priority: null,
+    exe: null,
+    cmd: null,
+    sessionId: null,
+    kernelThread: false,
+    pssBytes: null,
+    restricted: false,
+    ...overrides,
+  };
+}

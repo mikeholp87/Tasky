@@ -161,6 +161,7 @@ mod tests {
             cmd: Some(cmd.into()),
             session_id: None,
             kernel_thread: false,
+            pss_bytes: None,
             restricted: false,
         }
     }

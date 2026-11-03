@@ -49,6 +49,10 @@ fn main() {
         interval_ms: 500,
     })
     .expect("engine starts");
+    // PSS=1 turns on per-process shared-memory sampling, as the Memory page does.
+    if std::env::var_os("PSS").is_some() {
+        engine.set_memory_detail(true);
+    }
     let capture = Arc::new(Capture::default());
     engine.subscribe("probe".into(), capture.clone());
     std::thread::sleep(Duration::from_millis(500 * cycles as u64 + 250));
@@ -110,6 +114,31 @@ fn main() {
             .filter(|p| p.threads.is_none())
             .count()
     );
+
+    let with_pss = last
+        .processes
+        .iter()
+        .filter(|p| p.pss_bytes.is_some())
+        .count();
+    println!("processes with PSS: {with_pss} of {}", last.processes.len());
+    let mut by_app: std::collections::HashMap<String, (u64, u64, usize)> = Default::default();
+    for p in &last.processes {
+        let key = p.exe.clone().unwrap_or_else(|| p.name.clone());
+        let e = by_app.entry(key).or_default();
+        e.0 += p.pss_bytes.unwrap_or(p.memory_bytes);
+        e.1 += p.memory_bytes;
+        e.2 += 1;
+    }
+    let mut apps: Vec<_> = by_app.into_iter().collect();
+    apps.sort_by_key(|(_, v)| std::cmp::Reverse(v.0));
+    for (name, (pss, rss, n)) in apps.iter().take(5) {
+        println!(
+            "  {:<34} n={n:<3} PSS-or-RSS {:>6} MB  RSS sum {:>6} MB",
+            name.rsplit('/').next().unwrap_or(name),
+            pss >> 20,
+            rss >> 20
+        );
+    }
 
     // Skip the first tick: it primes caches (exe, cmd, users).
     let steady: Vec<_> = ticks.iter().skip(1).collect();

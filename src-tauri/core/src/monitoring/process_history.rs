@@ -73,6 +73,7 @@ mod tests {
             cmd: None,
             session_id: None,
             kernel_thread: false,
+            pss_bytes: None,
             restricted: false,
         }
     }

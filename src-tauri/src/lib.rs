@@ -12,6 +12,7 @@ use std::sync::atomic::AtomicBool;
 
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
+use tm_core::benchmarks::coordinator::Coordinator;
 use tm_core::models::MonitoringState;
 use tm_core::monitoring::Engine;
 
@@ -49,8 +50,13 @@ pub fn run() {
                 paused: false,
                 interval_ms: s.refresh_interval_ms,
             })?);
+            let benchmarks = Arc::new(Coordinator::new(
+                Arc::clone(&engine),
+                paths.app_data_dir().ok().as_deref(),
+            ));
             let state = AppState {
                 engine: Arc::clone(&engine),
+                benchmarks,
                 settings,
                 logging,
                 visibility: Arc::new(WindowVisibility::default()),
@@ -115,6 +121,12 @@ pub fn run() {
             commands::monitoring::get_monitoring_state,
             commands::monitoring::set_monitoring_state,
             commands::monitoring::refresh_now,
+            commands::monitoring::set_memory_detail,
+            commands::benchmarks::start_benchmark,
+            commands::benchmarks::cancel_benchmark,
+            commands::benchmarks::get_benchmark_status,
+            commands::benchmarks::get_benchmark_history,
+            commands::benchmarks::delete_benchmark_result,
             commands::processes::get_process_details,
             commands::control::assess_process_action,
             commands::control::perform_process_action,
@@ -134,6 +146,8 @@ pub fn run() {
         if let RunEvent::Exit = event
             && let Some(state) = handle.try_state::<AppState>()
         {
+            // Stop a running benchmark so its workers do not outlive the app.
+            state.benchmarks.cancel();
             state.engine.shutdown();
         }
     });

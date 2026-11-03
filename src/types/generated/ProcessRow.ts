@@ -32,6 +32,12 @@ cmd: string | null, sessionId: number | null,
  */
 kernelThread: boolean, 
 /**
+ * Linux: proportional set size, where shared pages are split between the
+ * processes sharing them. Only filled while the Memory page is open, and
+ * `None` for processes the system will not describe (other users').
+ */
+pssBytes: number | null, 
+/**
  * The OS refused per-process queries (protected process, other user,
  * no elevation). CPU and disk values are unknown, not zero.
  */

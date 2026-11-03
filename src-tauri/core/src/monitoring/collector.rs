@@ -11,7 +11,12 @@ use crate::models::{
     StaticSystemInfo,
 };
 use crate::monitoring::{
-    cpu, disks::DiskTracker, memory, network::NetworkTracker, processes::ProcessTracker,
+    cpu,
+    disks::DiskTracker,
+    memory,
+    memory_detail::{self, MemoryDetailTracker},
+    network::NetworkTracker,
+    processes::ProcessTracker,
     sensors::SensorTracker,
 };
 use crate::platform;
@@ -22,6 +27,7 @@ pub struct Collector {
     networks: NetworkTracker,
     processes: ProcessTracker,
     sensors: SensorTracker,
+    memory_detail: MemoryDetailTracker,
     last_sample: Instant,
     seq: u64,
 }
@@ -39,6 +45,7 @@ impl Collector {
             networks: NetworkTracker::new(),
             processes: ProcessTracker::new(),
             sensors: SensorTracker::new(),
+            memory_detail: MemoryDetailTracker::default(),
             last_sample: Instant::now(),
             seq: 0,
         })
@@ -77,7 +84,14 @@ impl Collector {
         }
     }
 
-    pub fn sample(&mut self, interval_ms: u32, last_payload_bytes: u32) -> MetricsTick {
+    /// `memory_detail` asks for per-process PSS; it costs extra reads, so it is
+    /// only on while the UI shows it.
+    pub fn sample(
+        &mut self,
+        interval_ms: u32,
+        last_payload_bytes: u32,
+        memory_detail: bool,
+    ) -> MetricsTick {
         let started = Instant::now();
         let elapsed = started.duration_since(self.last_sample);
         self.last_sample = started;
@@ -90,7 +104,17 @@ impl Collector {
         let memory = memory::snapshot(&self.sys, platform::memory_extras());
         let disks = self.disks.sample(started, elapsed);
         let networks = self.networks.sample(elapsed);
-        let processes = self.processes.sample(&mut self.sys, elapsed);
+        let mut processes = self.processes.sample(&mut self.sys, elapsed);
+        if memory_detail {
+            self.memory_detail.update(
+                &mut processes,
+                started,
+                memory_detail::BUDGET,
+                platform::proportional_memory,
+            );
+        } else {
+            self.memory_detail.clear();
+        }
         let process_count = u32::try_from(processes.len()).unwrap_or(u32::MAX);
         let (gpus, temperatures) = self.sensors.sample(started);
 

@@ -154,9 +154,11 @@ Test the app under the native KDE Wayland session and under XWayland
 
 ## 18. Benchmarks
 
-The repository contains **no** benchmark code (CPU, GPU, disk or internet).
-There is nothing to port; building a benchmark suite is a separate feature
-and is not part of this pass.
+The repository contained **no** benchmark code (CPU, GPU, disk or internet), so
+there was nothing to port and building a benchmark suite was kept out of this
+pass. A shared CPU benchmark was added afterwards; see
+[`BENCHMARKS.md`](BENCHMARKS.md) and
+[`LINUX_BENCHMARK_IMPLEMENTATION.md`](LINUX_BENCHMARK_IMPLEMENTATION.md).
 
 ## 19. Permissions
 

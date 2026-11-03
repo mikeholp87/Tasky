@@ -9,6 +9,7 @@ mod disks;
 pub mod engine;
 pub mod history;
 mod memory;
+mod memory_detail;
 mod network;
 mod process_history;
 mod processes;

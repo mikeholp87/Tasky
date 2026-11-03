@@ -21,6 +21,7 @@ function p(pid: number, parentPid: number | null, name: string, startTime = 100)
     cmd: null,
     sessionId: null,
     kernelThread: false,
+    pssBytes: null,
     restricted: false,
   };
 }

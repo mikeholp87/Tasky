@@ -62,6 +62,7 @@ export function mockProcesses(count: number, nowSecs: number, seed = 42): Proces
       cmd: `${name} --flag-${i} --config /etc/${name}/${i}.conf`,
       sessionId: 1,
       kernelThread: false,
+      pssBytes: null,
       restricted: false,
     });
   }

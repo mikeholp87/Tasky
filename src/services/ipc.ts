@@ -5,6 +5,10 @@
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import type {
   AppError,
+  BenchmarkKind,
+  BenchmarkProfile,
+  BenchmarkResult,
+  BenchmarkStatus,
   ErrorKind,
   HistoryPoint,
   MetricsTick,
@@ -31,6 +35,8 @@ const ERROR_KINDS: Record<ErrorKind, true> = {
   processProtected: true,
   actionUnavailable: true,
   engineUnavailable: true,
+  benchmarkAlreadyRunning: true,
+  benchmarkFailed: true,
 };
 
 function isAppError(value: unknown): value is AppError {
@@ -77,6 +83,16 @@ export const backend = {
     }),
 
   refreshNow: () => call<void>("refresh_now"),
+
+  startBenchmark: (kind: BenchmarkKind, profile: BenchmarkProfile) =>
+    call<BenchmarkStatus>("start_benchmark", { kind, profile }),
+  cancelBenchmark: () => call<void>("cancel_benchmark"),
+  getBenchmarkStatus: () => call<BenchmarkStatus>("get_benchmark_status"),
+  getBenchmarkHistory: () => call<BenchmarkResult[]>("get_benchmark_history"),
+  deleteBenchmarkResult: (id: string) => call<void>("delete_benchmark_result", { id }),
+
+  /** Per-process shared-memory accounting; extra reads, so only while it is shown. */
+  setMemoryDetail: (enabled: boolean) => call<void>("set_memory_detail", { enabled }),
 
   getProcessDetails: (pid: number) => call<ProcessDetails>("get_process_details", { pid }),
 

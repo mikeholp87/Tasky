@@ -10,6 +10,7 @@ import { useSettingsStore, type ThemePreference } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import type { HistoryPoint, MetricsTick } from "@/types";
 import type { RouteId } from "@/app/routes";
+import { installBenchmarkPreview } from "./previewBenchmarks";
 
 const CORES = 12;
 const GIB = 1024 ** 3;
@@ -38,7 +39,16 @@ function sample(tMs: number): { point: HistoryPoint; tick: MetricsTick } {
     diskRead: 8e6 * wave(t, 50, 3),
     diskWrite: 3e6 * wave(t, 37, 4),
   };
-  const tick = makeTick(mockProcesses(220, Math.floor(tMs / 1000)), {
+  // Sample shared-memory accounting: PSS is below resident memory, and
+  // root-owned processes are unreadable, like on a real system.
+  const processes = mockProcesses(220, Math.floor(tMs / 1000)).map((r) => ({
+    ...r,
+    // Scaled so the sample adds up to a plausible share of 32 GB.
+    memoryBytes: Math.round(r.memoryBytes * 0.12),
+    exe: r.exe ?? `/usr/bin/${r.name}`,
+    pssBytes: r.user === "root" ? null : Math.round(r.memoryBytes * 0.12 * 0.6),
+  }));
+  const tick = makeTick(processes, {
     timestampMs: tMs,
     cpu: {
       usagePercent: cpu,
@@ -126,6 +136,10 @@ metrics.setStaticInfo({
   totalMemoryBytes: 32 * GIB,
   bootTimeSecs: Math.floor(now / 1000) - 3 * 86_400 - 4 * 3_600,
 });
+{
+  const first = sample(now);
+  installBenchmarkPreview(useMetricsStore.getState().staticInfo ?? STATIC_INFO, first.tick);
+}
 metrics.backfillHistory(
   Array.from({ length: 600 }, (_, i) => sample(now - (600 - i) * 1000).point),
 );

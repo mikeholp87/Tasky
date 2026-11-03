@@ -17,6 +17,8 @@ pub enum ErrorKind {
     ProcessProtected,
     ActionUnavailable,
     EngineUnavailable,
+    BenchmarkAlreadyRunning,
+    BenchmarkFailed,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -41,6 +43,10 @@ pub enum AppError {
     ActionUnavailable(String),
     #[error("The monitoring engine is not running.")]
     EngineUnavailable,
+    #[error("Another benchmark is currently running.")]
+    BenchmarkAlreadyRunning,
+    #[error("The benchmark could not finish: {0}")]
+    BenchmarkFailed(String),
 }
 
 impl AppError {
@@ -55,6 +61,8 @@ impl AppError {
             Self::ProcessProtected(_) => ErrorKind::ProcessProtected,
             Self::ActionUnavailable(_) => ErrorKind::ActionUnavailable,
             Self::EngineUnavailable => ErrorKind::EngineUnavailable,
+            Self::BenchmarkAlreadyRunning => ErrorKind::BenchmarkAlreadyRunning,
+            Self::BenchmarkFailed(_) => ErrorKind::BenchmarkFailed,
         }
     }
 }

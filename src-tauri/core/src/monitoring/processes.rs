@@ -85,6 +85,7 @@ impl ProcessTracker {
                     cmd: join_cmd(p.cmd()),
                     session_id: p.session_id().map(|s| s.as_u32()),
                     kernel_thread: p.thread_kind() == Some(sysinfo::ThreadKind::Kernel),
+                    pss_bytes: None,
                 }
             })
             .collect()

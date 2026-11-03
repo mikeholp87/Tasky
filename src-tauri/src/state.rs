@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use tm_core::benchmarks::coordinator::Coordinator;
 use tm_core::monitoring::Engine;
 
 use crate::desktop::WindowVisibility;
@@ -11,6 +12,7 @@ use crate::settings::SettingsStore;
 pub struct AppState {
     /// Shared so blocking work can run off the async executor.
     pub engine: Arc<Engine>,
+    pub benchmarks: Arc<Coordinator>,
     pub settings: SettingsStore,
     pub logging: Logging,
     pub visibility: Arc<WindowVisibility>,

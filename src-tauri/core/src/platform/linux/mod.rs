@@ -51,6 +51,75 @@ pub fn process_extras(pids: &[u32]) -> HashMap<u32, ProcessExtras> {
         .collect()
 }
 
+/// Pins the calling thread to the `slot`-th CPU this process may run on.
+/// Only this thread's affinity changes, and it ends with the thread. `false`
+/// when the system refuses (restricted containers, cgroups).
+pub fn pin_current_thread(slot: usize) -> bool {
+    // SAFETY: `set` is a plain bitset that is fully initialised by CPU_ZERO
+    // before use; both syscalls only read or write it and the given size.
+    unsafe {
+        let mut allowed: libc::cpu_set_t = std::mem::zeroed();
+        libc::CPU_ZERO(&mut allowed);
+        let size = std::mem::size_of::<libc::cpu_set_t>();
+        if libc::sched_getaffinity(0, size, &mut allowed) != 0 {
+            return false;
+        }
+        let cpus: Vec<usize> = (0..libc::CPU_SETSIZE as usize)
+            .filter(|&c| libc::CPU_ISSET(c, &allowed))
+            .collect();
+        let Some(&cpu) = cpus.get(slot % cpus.len().max(1)) else {
+            return false;
+        };
+        let mut one: libc::cpu_set_t = std::mem::zeroed();
+        libc::CPU_ZERO(&mut one);
+        libc::CPU_SET(cpu, &mut one);
+        libc::sched_setaffinity(0, size, &one) == 0
+    }
+}
+
+pub fn power_source() -> crate::benchmarks::PowerSource {
+    let read = |dir: &std::path::Path, f: &str| {
+        std::fs::read_to_string(dir.join(f))
+            .ok()
+            .map(|s| s.trim().to_owned())
+    };
+    let supplies: Vec<super::linux_facts::PowerSupply> =
+        std::fs::read_dir("/sys/class/power_supply")
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| {
+                let dir = e.path();
+                super::linux_facts::PowerSupply {
+                    kind: read(&dir, "type").unwrap_or_default(),
+                    online: read(&dir, "online").map(|v| v == "1"),
+                    status: read(&dir, "status"),
+                }
+            })
+            .collect();
+    super::linux_facts::power_source(&supplies)
+}
+
+/// cpufreq governor of CPU 0, e.g. "powersave". Recorded, never changed.
+pub fn cpu_governor() -> Option<String> {
+    std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+}
+
+pub fn is_virtualized() -> bool {
+    std::fs::read_to_string("/proc/cpuinfo")
+        .is_ok_and(|t| super::linux_facts::cpuinfo_has_hypervisor(&t))
+}
+
+/// Proportional set size of `pid`. `None` when the kernel refuses access (a
+/// process of another user needs ptrace rights) or the process has exited.
+pub fn proportional_memory(pid: u32) -> Option<u64> {
+    let text = std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).ok()?;
+    procfs::parse_smaps_rollup(&text).pss
+}
+
 /// sysinfo's user list resolves Unix uids via the passwd database already.
 pub fn account_name(_uid: &sysinfo::Uid) -> Option<String> {
     None

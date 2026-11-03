@@ -46,6 +46,33 @@ pub fn os_details() -> OsDetails {
     linux_only::os_details()
 }
 
+/// Pins the calling thread to the `slot`-th CPU the process may use. `false`
+/// where unsupported or refused; never fatal.
+pub fn pin_current_thread(slot: usize) -> bool {
+    linux_only::pin_current_thread(slot)
+}
+
+/// AC or battery where the OS says so.
+pub fn power_source() -> crate::benchmarks::PowerSource {
+    linux_only::power_source()
+}
+
+/// The CPU frequency governor, where one exists.
+pub fn cpu_governor() -> Option<String> {
+    linux_only::cpu_governor()
+}
+
+/// Running under a hypervisor, where the OS can tell.
+pub fn is_virtualized() -> bool {
+    linux_only::is_virtualized()
+}
+
+/// Proportional set size (shared pages split between the processes sharing
+/// them) in bytes. `None` where the OS has no such figure or denies access.
+pub fn proportional_memory(pid: u32) -> Option<u64> {
+    linux_only::proportional_memory(pid)
+}
+
 /// Kind of a network interface; `Unknown` where the OS gives no reliable
 /// signal. Callers cache it per interface name.
 pub fn interface_kind(name: &str) -> crate::models::InterfaceKind {
@@ -148,5 +175,25 @@ mod fallback {
 
     pub fn interface_kind(_name: &str) -> crate::models::InterfaceKind {
         crate::models::InterfaceKind::Unknown
+    }
+
+    pub fn proportional_memory(_pid: u32) -> Option<u64> {
+        None
+    }
+
+    pub fn pin_current_thread(_slot: usize) -> bool {
+        false
+    }
+
+    pub fn power_source() -> crate::benchmarks::PowerSource {
+        crate::benchmarks::PowerSource::Unknown
+    }
+
+    pub fn cpu_governor() -> Option<String> {
+        None
+    }
+
+    pub fn is_virtualized() -> bool {
+        false
     }
 }

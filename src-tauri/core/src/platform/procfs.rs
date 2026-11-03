@@ -37,6 +37,33 @@ fn parse_kb(value: &str) -> Option<u64> {
     }
 }
 
+/// Memory totals from `/proc/[pid]/smaps_rollup`, in bytes.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SmapsRollup {
+    pub rss: Option<u64>,
+    /// Proportional set size: private pages plus each shared page divided by
+    /// the number of processes sharing it. Summing PSS over processes does
+    /// not count shared memory twice, unlike RSS.
+    pub pss: Option<u64>,
+}
+
+/// Parses `/proc/[pid]/smaps_rollup`. Lines are `Key:   123 kB`; unknown or
+/// malformed lines are ignored.
+pub fn parse_smaps_rollup(text: &str) -> SmapsRollup {
+    let mut out = SmapsRollup::default();
+    for line in text.lines() {
+        let Some((key, rest)) = line.split_once(':') else {
+            continue;
+        };
+        match key {
+            "Rss" => out.rss = parse_kb(rest),
+            "Pss" => out.pss = parse_kb(rest),
+            _ => {}
+        }
+    }
+    out
+}
+
 /// Selected fields of `/proc/[pid]/stat`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Stat {
@@ -173,6 +200,25 @@ pub fn parse_diskstats(text: &str) -> std::collections::HashMap<String, DiskStat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_smaps_rollup() {
+        let text = "55d0c8a00000-7ffd1a3c5000 ---p 00000000 00:00 0                          [rollup]\n\
+                    Rss:              204800 kB\n\
+                    Pss:              102400 kB\n\
+                    Pss_Anon:          51200 kB\n\
+                    Shared_Clean:      80000 kB\n\
+                    Bogus line\n";
+        assert_eq!(
+            parse_smaps_rollup(text),
+            SmapsRollup {
+                rss: Some(204_800 * 1024),
+                pss: Some(102_400 * 1024)
+            }
+        );
+        assert_eq!(parse_smaps_rollup(""), SmapsRollup::default());
+        assert_eq!(parse_smaps_rollup("Pss: lots kB").pss, None);
+    }
 
     #[test]
     fn parses_diskstats() {

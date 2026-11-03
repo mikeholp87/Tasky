@@ -144,6 +144,51 @@ pub fn container(
         .then(|| "WSL".into())
 }
 
+/// One entry of `/sys/class/power_supply`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PowerSupply {
+    /// `type`: "Mains", "Battery", "USB", ...
+    pub kind: String,
+    /// `online` (mains-type supplies).
+    pub online: Option<bool>,
+    /// `status` (batteries): "Charging", "Discharging", "Full", ...
+    pub status: Option<String>,
+}
+
+/// AC or battery from the power supplies. No entries means a desktop or an
+/// unreadable sysfs, which is "unknown", not "AC".
+pub fn power_source(supplies: &[PowerSupply]) -> crate::benchmarks::PowerSource {
+    use crate::benchmarks::PowerSource;
+    if supplies
+        .iter()
+        .any(|s| s.kind.eq_ignore_ascii_case("mains") && s.online == Some(true))
+    {
+        return PowerSource::Ac;
+    }
+    let battery = supplies
+        .iter()
+        .find(|s| s.kind.eq_ignore_ascii_case("battery"));
+    match battery.and_then(|b| b.status.as_deref()) {
+        Some(st) if st.eq_ignore_ascii_case("discharging") => PowerSource::Battery,
+        // A battery that is charging or full is on external power.
+        Some(st) if st.eq_ignore_ascii_case("charging") || st.eq_ignore_ascii_case("full") => {
+            PowerSource::Ac
+        }
+        _ if battery.is_some() && supplies.iter().any(|s| s.online == Some(false)) => {
+            PowerSource::Battery
+        }
+        _ => PowerSource::Unknown,
+    }
+}
+
+/// Whether `/proc/cpuinfo` lists the `hypervisor` CPU flag, which the kernel
+/// sets when it runs under a hypervisor.
+pub fn cpuinfo_has_hypervisor(text: &str) -> bool {
+    text.lines()
+        .filter(|l| l.starts_with("flags"))
+        .any(|l| l.split_whitespace().any(|f| f == "hypervisor"))
+}
+
 /// Attributes of `/sys/class/net/<iface>` that identify its kind.
 #[derive(Debug, Clone, Default)]
 pub struct NetFacts {
@@ -222,6 +267,47 @@ pub fn uevent_devtype(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn power_source_from_supplies() {
+        use crate::benchmarks::PowerSource as P;
+        let mains = |on| PowerSupply {
+            kind: "Mains".into(),
+            online: Some(on),
+            status: None,
+        };
+        let battery = |st: &str| PowerSupply {
+            kind: "Battery".into(),
+            online: None,
+            status: Some(st.into()),
+        };
+        assert_eq!(power_source(&[mains(true), battery("Charging")]), P::Ac);
+        assert_eq!(
+            power_source(&[mains(false), battery("Discharging")]),
+            P::Battery
+        );
+        assert_eq!(power_source(&[battery("Discharging")]), P::Battery);
+        assert_eq!(power_source(&[battery("Full")]), P::Ac);
+        // Battery with no usable status but mains offline.
+        assert_eq!(
+            power_source(&[mains(false), battery("Unknown")]),
+            P::Battery
+        );
+        // Desktop: nothing to go on.
+        assert_eq!(power_source(&[]), P::Unknown);
+        assert_eq!(power_source(&[battery("Unknown")]), P::Unknown);
+    }
+
+    #[test]
+    fn hypervisor_flag() {
+        assert!(cpuinfo_has_hypervisor(
+            "processor : 0\nflags : fpu vme hypervisor lahf_lm\n"
+        ));
+        assert!(!cpuinfo_has_hypervisor(
+            "flags : fpu vme sse\nmodel name : hypervisor-like\n"
+        ));
+        assert!(!cpuinfo_has_hypervisor(""));
+    }
 
     #[test]
     fn os_release_variants() {

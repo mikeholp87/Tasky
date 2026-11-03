@@ -64,6 +64,8 @@ struct Shared {
     /// Linux kernel threads are dropped from ticks unless enabled: they are
     /// often over half of all rows and cannot be acted on.
     include_kernel_threads: AtomicBool,
+    /// The UI is showing per-process shared-memory accounting (extra reads).
+    memory_detail: AtomicBool,
     alert_log: Mutex<RingBuffer<AlertEvent>>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
 }
@@ -126,6 +128,7 @@ impl Engine {
             suspended: Mutex::new(HashSet::new()),
             alert_rules: RwLock::new(Vec::new()),
             include_kernel_threads: AtomicBool::new(false),
+            memory_detail: AtomicBool::new(false),
             alert_log: Mutex::new(RingBuffer::new(ALERT_LOG_LEN)),
             sinks: Mutex::new(HashMap::new()),
         });
@@ -174,6 +177,11 @@ impl Engine {
     /// Resizes the system history buffer (e.g. from the "history length" setting).
     pub fn set_history_capacity(&self, points: usize) {
         write(&self.shared.history).set_capacity(points.clamp(60, MAX_HISTORY_POINTS));
+    }
+
+    /// Turns per-process proportional memory (PSS) sampling on or off.
+    pub fn set_memory_detail(&self, enabled: bool) {
+        self.shared.memory_detail.store(enabled, Ordering::Relaxed);
     }
 
     /// Whether kernel threads appear in process lists (takes effect next tick).
@@ -282,7 +290,11 @@ impl Worker {
     /// Collects, evaluates, publishes and delivers one sample.
     fn tick(&mut self, state: &MonitoringState) {
         let shared = &*self.shared;
-        let mut sample = self.collector.sample(state.interval_ms, self.last_payload);
+        let mut sample = self.collector.sample(
+            state.interval_ms,
+            self.last_payload,
+            shared.memory_detail.load(Ordering::Relaxed),
+        );
         if !shared.include_kernel_threads.load(Ordering::Relaxed) {
             sample.processes.retain(|p| !p.kernel_thread);
             sample.engine.process_count = u32::try_from(sample.processes.len()).unwrap_or(u32::MAX);

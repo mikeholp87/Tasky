@@ -2,6 +2,7 @@
 //! abstraction layer. It has no UI or Tauri dependency, so it can be tested
 //! (and type-checked for other operating systems) on its own.
 
+pub mod benchmarks;
 pub mod errors;
 pub mod export;
 pub mod models;
