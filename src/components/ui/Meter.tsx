@@ -3,8 +3,8 @@ import { cn } from "@/lib/cn";
 import { usageLevel, type UsageLevel } from "@/utils/levels";
 
 const FILL: Record<UsageLevel, string> = {
-  normal: "bg-accent",
-  warning: "bg-warn",
+  normal: "",
+  warning: "bg-warn-bar",
   critical: "bg-crit",
 };
 
@@ -14,10 +14,18 @@ interface MeterProps {
   label: string;
   className?: string;
   size?: "sm" | "md";
+  /** CSS variable for the fill while usage is normal, e.g. "--res-mem". */
+  color?: string;
 }
 
 /** Horizontal usage bar. Exposed to assistive tech as a meter. */
-export const Meter = memo(function Meter({ percent, label, className, size = "md" }: MeterProps) {
+export const Meter = memo(function Meter({
+  percent,
+  label,
+  className,
+  size = "md",
+  color,
+}: MeterProps) {
   const clamped = Math.min(100, Math.max(0, percent));
   return (
     <div
@@ -37,7 +45,12 @@ export const Meter = memo(function Meter({ percent, label, className, size = "md
           "h-full rounded-full transition-[width] duration-300",
           FILL[usageLevel(clamped)],
         )}
-        style={{ width: `${clamped}%` }}
+        style={{
+          width: `${clamped}%`,
+          ...(usageLevel(clamped) === "normal"
+            ? { background: `var(${color ?? "--accent"})` }
+            : {}),
+        }}
       />
     </div>
   );

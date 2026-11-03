@@ -13,8 +13,8 @@ import { formatBytes, formatBytesPerSecond } from "@/utils/format";
 import { INTERFACE_KIND_LABEL, visibleInterfaces } from "@/utils/system";
 
 const SERIES: readonly DeviceChartSeries[] = [
-  { label: "Download", key: "rx", colorVar: "--chart-1" },
-  { label: "Upload", key: "tx", colorVar: "--chart-2", fill: false },
+  { label: "Download", key: "rx", colorVar: "--res-net" },
+  { label: "Upload", key: "tx", colorVar: "--res-net-2", fill: false },
 ];
 
 export function NetworkPage() {
@@ -71,11 +71,11 @@ function InterfaceCard({ iface: n }: { iface: NetworkInterfaceSnapshot }) {
         <div className="space-y-3">
           <div className="flex gap-6">
             <span className="num flex items-center gap-1 text-xl font-semibold">
-              <ArrowDown size={16} className="text-[var(--chart-1)]" aria-label="Download" />
+              <ArrowDown size={16} className="text-[var(--res-net)]" aria-label="Download" />
               {formatBytesPerSecond(n.rxBytesPerSec)}
             </span>
             <span className="num flex items-center gap-1 text-xl font-semibold">
-              <ArrowUp size={16} className="text-[var(--chart-2)]" aria-label="Upload" />
+              <ArrowUp size={16} className="text-[var(--res-net-2)]" aria-label="Upload" />
               {formatBytesPerSecond(n.txBytesPerSec)}
             </span>
           </div>

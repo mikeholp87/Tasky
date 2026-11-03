@@ -24,11 +24,11 @@ import {
 import { useProcessDetails } from "./useProcessDetails";
 
 const HISTORY_SECONDS = 300;
-const CPU_SERIES: readonly LineSeries[] = [{ label: "CPU", colorVar: "--chart-1" }];
-const MEM_SERIES: readonly LineSeries[] = [{ label: "Memory", colorVar: "--chart-2" }];
+const CPU_SERIES: readonly LineSeries[] = [{ label: "CPU", colorVar: "--res-cpu" }];
+const MEM_SERIES: readonly LineSeries[] = [{ label: "Memory", colorVar: "--res-mem" }];
 const IO_SERIES: readonly LineSeries[] = [
-  { label: "Read", colorVar: "--chart-1" },
-  { label: "Write", colorVar: "--chart-2", fill: false },
+  { label: "Read", colorVar: "--res-disk" },
+  { label: "Write", colorVar: "--res-disk-2", fill: false },
 ];
 const bytesAxis = (v: number) => formatBytes(v);
 

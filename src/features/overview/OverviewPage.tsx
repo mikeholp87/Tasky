@@ -1,4 +1,13 @@
-import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick, Network, Server } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Network,
+  Server,
+} from "lucide-react";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
@@ -12,6 +21,7 @@ import {
 } from "@/components/charts/series";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList } from "@/components/ui/KeyValueList";
+import { CoreStrip } from "@/components/ui/CoreStrip";
 import { Meter } from "@/components/ui/Meter";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -60,7 +70,7 @@ function BigValue({
 }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <span className="num text-3xl font-semibold tracking-tight">{value}</span>
+      <span className="num text-4xl font-medium leading-none tracking-tight">{value}</span>
       {sub && <span className="num text-fg-muted">{sub}</span>}
       {warning && (
         <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[11px] font-medium text-warn">
@@ -92,7 +102,8 @@ function CpuCard() {
           sub={[cores, formatFrequency(cpu.frequencyMhz)].filter(Boolean).join(" · ")}
           warning={levelLabel(usageLevel(cpu.usagePercent), "CPU")}
         />
-        <Meter percent={cpu.usagePercent} label="CPU usage" />
+        <CoreStrip perCore={cpu.perCore} height={44} fill />
+        <Meter percent={cpu.usagePercent} label="CPU usage" color="--res-cpu" />
         <TimeSeriesChart
           series={CPU_SERIES}
           seconds={CHART_SECONDS}
@@ -131,7 +142,7 @@ function MemoryCard() {
           sub={formatPercent(mem.usedPercent)}
           warning={levelLabel(usageLevel(mem.usedPercent), "memory")}
         />
-        <Meter percent={mem.usedPercent} label="Memory usage" />
+        <Meter percent={mem.usedPercent} label="Memory usage" color="--res-mem" />
         <TimeSeriesChart
           series={MEMORY_SERIES}
           seconds={CHART_SECONDS}
@@ -178,7 +189,12 @@ function StorageCard() {
                 {formatBytes(d.availableBytes)} free of {formatBytes(d.totalBytes)}
               </span>
             </div>
-            <Meter percent={d.usedPercent} label={`${d.mountPoint} used`} size="sm" />
+            <Meter
+              percent={d.usedPercent}
+              label={`${d.mountPoint} used`}
+              size="sm"
+              color="--res-disk"
+            />
             {d.readBytesPerSec != null && (
               <div className="num mt-1 text-[12px] text-fg-subtle">
                 Read {formatBytesPerSecond(d.readBytesPerSec)} · Write{" "}
@@ -211,11 +227,11 @@ function NetworkCard() {
       <div className="space-y-3 px-4 pb-4 pt-2">
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
           <span className="num flex items-center gap-1 text-2xl font-semibold">
-            <ArrowDown size={18} className="text-[var(--chart-1)]" aria-label="Download" />
+            <ArrowDown size={18} className="text-[var(--res-net)]" aria-label="Download" />
             {formatBytesPerSecond(rx)}
           </span>
           <span className="num flex items-center gap-1 text-2xl font-semibold">
-            <ArrowUp size={18} className="text-[var(--chart-2)]" aria-label="Upload" />
+            <ArrowUp size={18} className="text-[var(--res-net-2)]" aria-label="Upload" />
             {formatBytesPerSecond(tx)}
           </span>
         </div>
@@ -264,7 +280,10 @@ function SystemCard() {
       <div className="grid gap-x-10 gap-y-1.5 px-4 pb-4 pt-3 md:grid-cols-2">
         <KeyValueList
           items={[
-            { label: "Operating system", value: info.longOsVersion ?? info.osName ?? "—" },
+            {
+              label: "Operating system",
+              value: info.distribution ?? info.longOsVersion ?? info.osName ?? "—",
+            },
             { label: "Kernel", value: info.kernelVersion ?? "—" },
             { label: "Hostname", value: info.hostname ?? "—" },
             { label: "Architecture", value: info.architecture },
@@ -289,9 +308,10 @@ function DetailsLink({ onClick, label }: { onClick: () => void; label: string })
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="rounded px-1.5 py-0.5 text-[12px] text-fg-muted hover:bg-surface-2 hover:text-fg"
+      className="flex items-center gap-0.5 rounded-md py-0.5 pl-2 pr-1 text-[12px] text-fg-muted hover:bg-surface-2 hover:text-fg"
     >
-      Details →
+      Details
+      <ChevronRight size={14} aria-hidden />
     </button>
   );
 }

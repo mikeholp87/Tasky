@@ -9,6 +9,18 @@ const GROUP_LABELS: Record<RouteDef["group"], string | null> = {
   tools: "Tools",
 };
 
+/** Four load bars: the same motif as the per-core strip. */
+function LogoMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className="size-6 shrink-0">
+      <rect x="3" y="12" width="3.5" height="9" rx="1" fill="var(--res-net)" />
+      <rect x="8.5" y="6" width="3.5" height="15" rx="1" fill="var(--res-cpu)" />
+      <rect x="14" y="9" width="3.5" height="12" rx="1" fill="var(--res-mem)" />
+      <rect x="19.5" y="3" width="3.5" height="18" rx="1" fill="var(--accent)" />
+    </svg>
+  );
+}
+
 export const Sidebar = memo(function Sidebar() {
   const route = useUiStore((s) => s.route);
   const navigate = useUiStore((s) => s.navigate);
@@ -20,22 +32,17 @@ export const Sidebar = memo(function Sidebar() {
   return (
     <nav
       aria-label="Primary"
-      className="flex w-52 shrink-0 flex-col border-r border-border bg-surface"
+      className="flex w-56 shrink-0 flex-col border-r border-border bg-surface"
     >
       <div className="flex h-12 items-center gap-2 px-4">
-        <span
-          aria-hidden
-          className="grid size-6 place-items-center rounded-md bg-accent text-[11px] font-bold text-accent-fg"
-        >
-          TM
-        </span>
-        <span className="font-semibold">Task Manager</span>
+        <LogoMark />
+        <span className="font-semibold tracking-tight">Task Manager</span>
       </div>
       <div className="flex-1 overflow-y-auto px-2 pb-3">
         {groups.map((group) => (
           <div key={group.id} className="mt-2">
             {GROUP_LABELS[group.id] && (
-              <div className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+              <div className="px-2.5 pb-1 pt-3 text-[12px] font-medium text-fg-subtle">
                 {GROUP_LABELS[group.id]}
               </div>
             )}
@@ -50,9 +57,10 @@ export const Sidebar = memo(function Sidebar() {
                       onClick={() => navigate(item.id)}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-fg-muted transition-colors",
+                        "relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-fg-muted transition-colors",
                         "hover:bg-surface-2 hover:text-fg",
-                        active && "bg-accent-soft font-medium text-fg hover:bg-accent-soft",
+                        active &&
+                          "bg-surface-2 font-medium text-fg before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-accent",
                       )}
                     >
                       <Icon

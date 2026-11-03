@@ -13,11 +13,11 @@ import { formatBytes, formatBytesPerSecond, formatPercent } from "@/utils/format
 import { levelLabel, usageLevel } from "@/utils/levels";
 
 const THROUGHPUT: readonly DeviceChartSeries[] = [
-  { label: "Read", key: "read", colorVar: "--chart-1" },
-  { label: "Write", key: "write", colorVar: "--chart-2", fill: false },
+  { label: "Read", key: "read", colorVar: "--res-disk" },
+  { label: "Write", key: "write", colorVar: "--res-disk-2", fill: false },
 ];
 const ACTIVE: readonly DeviceChartSeries[] = [
-  { label: "Active time", key: "active", colorVar: "--chart-1" },
+  { label: "Active time", key: "active", colorVar: "--res-disk" },
 ];
 
 const KIND_LABEL = { ssd: "SSD", hdd: "HDD", unknown: "Unknown type" } as const;
@@ -72,7 +72,11 @@ function DiskCard({ disk: d }: { disk: DiskSnapshot }) {
               </span>
             )}
           </div>
-          <Meter percent={d.usedPercent} label={`${d.mountPoint} capacity used`} />
+          <Meter
+            percent={d.usedPercent}
+            label={`${d.mountPoint} capacity used`}
+            color="--res-disk"
+          />
           <KeyValueList
             items={[
               {

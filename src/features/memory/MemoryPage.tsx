@@ -47,7 +47,7 @@ export function MemoryPage() {
           <Card>
             <CardHeader title="Physical memory" />
             <div className="space-y-3 px-4 pb-4 pt-3">
-              <Meter percent={mem.usedPercent} label="Physical memory used" />
+              <Meter percent={mem.usedPercent} label="Physical memory used" color="--res-mem" />
               <KeyValueList
                 items={[
                   { label: "Total", value: formatBytes(mem.totalBytes) },
@@ -77,7 +77,7 @@ export function MemoryPage() {
             <div className="space-y-3 px-4 pb-4 pt-3">
               {mem.swapTotalBytes > 0 ? (
                 <>
-                  <Meter percent={swapPct} label="Swap used" />
+                  <Meter percent={swapPct} label="Swap used" color="--res-mem" />
                   <KeyValueList
                     items={[
                       { label: "Total", value: formatBytes(mem.swapTotalBytes) },
