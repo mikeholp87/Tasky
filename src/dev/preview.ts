@@ -115,7 +115,17 @@ function sample(tMs: number): { point: HistoryPoint; tick: MetricsTick } {
 const params = new URLSearchParams(location.search);
 const metrics = useMetricsStore.getState();
 const now = Date.now();
-metrics.setStaticInfo({ ...STATIC_INFO, logicalCoreCount: CORES, physicalCoreCount: 10 });
+metrics.setStaticInfo({
+  ...STATIC_INFO,
+  hostname: "demo-host",
+  kernelVersion: "6.12.48-amd64",
+  cpuBrand: "Demo CPU (12 threads)",
+  cpuVendor: "GenuineIntel",
+  logicalCoreCount: CORES,
+  physicalCoreCount: 10,
+  totalMemoryBytes: 32 * GIB,
+  bootTimeSecs: Math.floor(now / 1000) - 3 * 86_400 - 4 * 3_600,
+});
 metrics.backfillHistory(
   Array.from({ length: 600 }, (_, i) => sample(now - (600 - i) * 1000).point),
 );

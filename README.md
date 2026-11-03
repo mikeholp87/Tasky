@@ -1,5 +1,9 @@
 # Task Manager
 
+![Task Manager overview in the dark theme: CPU with a per-core load strip, memory, storage and network](docs/screenshots/overview-dark.png)
+
+<sub>Overview in the dark theme. Screenshots use synthetic sample data, not a real machine.</sub>
+
 A fast, private, cross-platform task manager and system monitor for Windows
 and Linux. It shows what your computer is doing in real time (processes, CPU,
 memory, storage and network) and lets you safely end, suspend or reprioritize
@@ -10,10 +14,14 @@ telemetry, no network access, works fully offline.
 
 ## Screenshots
 
-Screenshots are not committed because they reveal the host's process list,
-hostname and network addresses. To add some, capture them on a clean demo
-machine (or with **Mock processes** enabled in a development build: System
-Information → Monitoring diagnostics) and place them in `docs/screenshots/`.
+![Process table in the light theme with CPU and memory heat mapping](docs/screenshots/processes-light.png)
+
+<sub>Processes in the light theme.</sub>
+
+The screenshots are generated from synthetic data so they never reveal a real
+process list, hostname or network address. To refresh them, run `npm run dev`
+and open `http://localhost:1420/?preview&theme=dark&route=overview` (dev
+builds only), then capture the page.
 
 ## Features
 
