@@ -9,12 +9,18 @@ const MAX_ACTIVE: usize = 8;
 struct Permit;
 impl Permit {
     fn acquire() -> AppResult<Self> {
-        ACTIVE
-            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |n| {
-                (n < MAX_ACTIVE).then_some(n + 1)
-            })
-            .map(|_| Self)
-            .map_err(|_| AppError::OperationBusy)
+        // A CAS loop rather than `fetch_update`, which newer Rust deprecates
+        // for `try_update` (stable only from 1.95; our minimum is 1.90).
+        let mut n = ACTIVE.load(Ordering::Relaxed);
+        loop {
+            if n >= MAX_ACTIVE {
+                return Err(AppError::OperationBusy);
+            }
+            match ACTIVE.compare_exchange_weak(n, n + 1, Ordering::AcqRel, Ordering::Relaxed) {
+                Ok(_) => return Ok(Self),
+                Err(current) => n = current,
+            }
+        }
     }
 }
 impl Drop for Permit {
