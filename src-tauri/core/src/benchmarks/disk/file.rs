@@ -284,7 +284,10 @@ mod tests {
     fn creating_and_dropping_leaves_nothing_behind() {
         let d = tmp();
         {
-            let f = BenchFile::create(d.path(), "disk-1-0", true).expect("creates");
+            // Buffered: this test is about cleanup, and a direct-I/O file
+            // rejects the unaligned write below on real disk filesystems
+            // (tmpfs silently falls back, which hid that locally).
+            let f = BenchFile::create(d.path(), "disk-1-0", false).expect("creates");
             assert!(f.path().exists());
             assert!(f.path().starts_with(d.path().join(DIR_NAME)));
             f.file().write_all_at(b"hello", 0).unwrap();

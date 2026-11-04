@@ -150,6 +150,22 @@ pub fn process_architecture(pid: u32) -> Option<String> {
 
 /// Operation counts and busy time per mounted device from `/proc/diskstats`.
 /// Device-mapper names (e.g. `/dev/mapper/root`) are resolved to `dm-N`.
+/// Kernel name (as in `/proc/diskstats`) of the block device a mount lives
+/// on, from its device number. Covers mount sources that are not a node
+/// named like the kernel's, such as `/dev/root`. `None` for filesystems with
+/// no single backing device (e.g. btrfs subvolumes report an anonymous one).
+fn block_name_of_mount(mount: &str) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    let dev = std::fs::metadata(mount).ok()?.dev();
+    let link = std::fs::read_link(format!(
+        "/sys/dev/block/{}:{}",
+        libc::major(dev),
+        libc::minor(dev)
+    ))
+    .ok()?;
+    Some(link.file_name()?.to_str()?.to_owned())
+}
+
 pub fn disk_io_counters(disks: &[(String, String)]) -> HashMap<String, super::DiskIoCounters> {
     let Ok(text) = std::fs::read_to_string("/proc/diskstats") else {
         return HashMap::new();
@@ -158,9 +174,12 @@ pub fn disk_io_counters(disks: &[(String, String)]) -> HashMap<String, super::Di
     disks
         .iter()
         .filter_map(|(device, mount)| {
-            let resolved = std::fs::canonicalize(device).ok()?;
-            let name = resolved.file_name()?.to_str()?;
-            let s = stats.get(name)?;
+            let by_node = std::fs::canonicalize(device)
+                .ok()
+                .and_then(|p| Some(p.file_name()?.to_str()?.to_owned()))
+                .filter(|n| stats.contains_key(n.as_str()));
+            let name = by_node.or_else(|| block_name_of_mount(mount))?;
+            let s = stats.get(name.as_str())?;
             Some((
                 mount.clone(),
                 super::DiskIoCounters {
@@ -173,4 +192,24 @@ pub fn disk_io_counters(disks: &[(String, String)]) -> HashMap<String, super::Di
             ))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A mount whose source node is unusable (as `/dev/root` can be) is still
+    /// matched to its disk by device number.
+    #[test]
+    fn disk_counters_fall_back_to_the_mount_device() {
+        let known = std::fs::read_to_string("/proc/diskstats")
+            .map(|t| procfs::parse_diskstats(&t))
+            .unwrap_or_default();
+        // Skip where `/` has no single backing disk (some containers).
+        let Some(name) = block_name_of_mount("/").filter(|n| known.contains_key(n.as_str())) else {
+            return;
+        };
+        let got = disk_io_counters(&[("/dev/no-such-node".into(), "/".into())]);
+        assert!(got.contains_key("/"), "no counters for {name}");
+    }
 }
