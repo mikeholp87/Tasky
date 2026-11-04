@@ -5,7 +5,8 @@
 <sub>Overview in the dark theme. Screenshots use synthetic sample data, not a real machine.</sub>
 
 A fast, private, cross-platform task manager and system monitor for Windows
-and Linux. It shows what your computer is doing in real time (processes, CPU,
+and Linux, with a native Linux port that works on both **KDE Plasma** and
+**GNOME**. It shows what your computer is doing in real time (processes, CPU,
 memory, storage and network) and lets you safely end, suspend or reprioritize
 processes.
 
@@ -14,6 +15,8 @@ telemetry, works fully offline. The only network use is the optional internet
 benchmark, which runs only when you press its button and confirm the dialog.
 
 ## Screenshots
+
+Captured on Linux (Debian, ext4, `wlo1`).
 
 ![Process table in the light theme with CPU and memory heat mapping](docs/screenshots/processes-light.png)
 
@@ -84,8 +87,12 @@ builds only), then capture the page.
 | OS                                         | Status                                               |
 | ------------------------------------------ | ---------------------------------------------------- |
 | Windows 11 (x64)                           | Supported (primary)                                  |
-| Debian / Ubuntu and other mainstream Linux | Supported                                            |
+| Debian / Ubuntu and other mainstream Linux | Supported; works on KDE Plasma and GNOME             |
 | macOS                                      | Not yet; the architecture has a platform slot for it |
+
+**Linux desktops:** the Linux port is available and compatible with both
+KDE Plasma and GNOME. On GNOME the system tray needs the AppIndicator
+extension. Packages: `.deb`, `.rpm` and AppImage (see Building).
 
 Platform differences are documented in
 [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).
