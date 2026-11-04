@@ -414,8 +414,8 @@ impl Executor {
             GpuWorkloadId::Memory => [0, 0, self.mem_count, 0],
         };
         let mut bytes = [0u8; 16];
-        for (chunk, w) in bytes.chunks_exact_mut(4).zip(words) {
-            chunk.copy_from_slice(&w.to_le_bytes());
+        for (chunk, w) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(words) {
+            *chunk = w.to_le_bytes();
         }
         bytes
     }
@@ -459,10 +459,8 @@ fn map_and_copy(
 }
 
 fn le_u32(bytes: &[u8]) -> Vec<u32> {
-    bytes
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect()
+    let (words, _) = bytes.as_chunks::<4>();
+    words.iter().map(|c| u32::from_le_bytes(*c)).collect()
 }
 
 /// Thread indices to check: spread over the whole range, and few enough that
