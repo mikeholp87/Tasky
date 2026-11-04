@@ -74,8 +74,12 @@ pub fn run() {
                 }
                 if !s.launch_minimized {
                     desktop::show_main_window(app.handle());
-                } else if !s.minimize_to_tray {
+                } else if s.minimize_to_tray {
+                    let _ = window.set_skip_taskbar(true);
+                    hide_main_window(app.handle());
+                } else {
                     // Without a tray to come back from, start minimized in the taskbar.
+                    let _ = window.set_skip_taskbar(false);
                     let _ = window.show();
                     let _ = window.minimize();
                 }

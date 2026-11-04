@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { type ChartSeries, TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import {
   CPU_SERIES,
+  coreSeries,
   DISK_SERIES,
   GPU_SERIES,
   GPU_TEMP_SERIES,
@@ -21,6 +22,7 @@ import { KeyValueList, Unavailable } from "@/components/ui/KeyValueList";
 import { Meter } from "@/components/ui/Meter";
 import { cn } from "@/lib/cn";
 import { useMetricsStore } from "@/stores/metricsStore";
+import { useUiStore } from "@/stores/uiStore";
 import type { MetricsTick, StaticSystemInfo } from "@/types";
 import {
   formatBytes,
@@ -106,10 +108,13 @@ export function PerformancePage() {
   const info = useMetricsStore((s) => s.staticInfo);
   const [selected, setSelected] = useState<Resource>("cpu");
   const [seconds, setSeconds] = useState<number>(60);
+  const [cpuGraphMode, setCpuGraphMode] = useState<"overall" | "cores">("overall");
   const def = RESOURCES.find((r) => r.id === selected) as ResourceDef;
+  const rangeLabel = RANGES.find((r) => r.seconds === seconds)?.label;
+  const subtitle = tick ? resourceHardwareSubtitle(selected, tick, info) : null;
 
   return (
-    <>
+    <div className="flex min-h-full flex-col">
       <PageHeader
         title="Performance"
         description="Live resource history, kept in memory for up to one hour."
@@ -118,8 +123,8 @@ export function PerformancePage() {
       {!tick ? (
         <ConnectionNotice />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          <nav aria-label="Resources" className="space-y-2">
+        <div className="grid flex-1 items-stretch gap-4 lg:grid-cols-[260px_1fr]">
+          <nav aria-label="Resources" className="flex flex-col gap-2">
             {RESOURCES.map((r) => (
               <button
                 key={r.id}
@@ -127,7 +132,7 @@ export function PerformancePage() {
                 aria-pressed={selected === r.id}
                 onClick={() => setSelected(r.id)}
                 className={cn(
-                  "block w-full rounded-lg border p-3 text-left",
+                  "block w-full rounded-lg border p-3 text-left transition-colors",
                   selected === r.id
                     ? "border-accent bg-accent-soft"
                     : "border-border bg-surface hover:bg-surface-2",
@@ -153,25 +158,68 @@ export function PerformancePage() {
             ))}
           </nav>
 
-          <Card className="min-w-0 p-4">
-            <div className="mb-3 flex items-baseline justify-between gap-3">
-              <div className="flex min-w-0 items-baseline gap-2.5">
+          <Card className="flex min-w-0 flex-col p-4">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
                 <h2 className="text-base font-semibold">{def.label}</h2>
-                {selected === "gpu" && tick.gpus[0] && (
-                  <span className="truncate text-fg-muted">{tick.gpus[0].name}</span>
-                )}
+                {subtitle && <span className="truncate text-[13px] text-fg-muted">{subtitle}</span>}
               </div>
-              <Legend series={def.series} />
+              <div className="flex items-center gap-3">
+                {selected === "cpu" && tick.cpu.perCore.length > 0 && (
+                  <div
+                    role="radiogroup"
+                    aria-label="CPU graph view"
+                    className="flex gap-0.5 rounded-md bg-surface-2 p-0.5 text-[11px]"
+                  >
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={cpuGraphMode === "overall"}
+                      onClick={() => setCpuGraphMode("overall")}
+                      className={cn(
+                        "rounded px-2 py-0.5 text-fg-muted transition-colors",
+                        cpuGraphMode === "overall" && "bg-surface font-medium text-fg shadow-sm",
+                      )}
+                    >
+                      Overall
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={cpuGraphMode === "cores"}
+                      onClick={() => setCpuGraphMode("cores")}
+                      className={cn(
+                        "rounded px-2 py-0.5 text-fg-muted transition-colors",
+                        cpuGraphMode === "cores" && "bg-surface font-medium text-fg shadow-sm",
+                      )}
+                    >
+                      Logical processors
+                    </button>
+                  </div>
+                )}
+                <Legend series={def.series} />
+              </div>
             </div>
-            <TimeSeriesChart
-              series={def.series}
-              seconds={seconds}
-              height={320}
-              yMax={def.yMax}
-              minYMax={def.minYMax}
-              formatValue={def.format}
-              ariaLabel={`${def.label} over the last ${RANGES.find((r) => r.seconds === seconds)?.label}`}
-            />
+
+            {selected === "cpu" && cpuGraphMode === "cores" && tick.cpu.perCore.length > 0 ? (
+              <CpuLogicalProcessorsChartGrid
+                perCore={tick.cpu.perCore}
+                seconds={seconds}
+                rangeLabel={rangeLabel}
+              />
+            ) : (
+              <TimeSeriesChart
+                series={def.series}
+                seconds={seconds}
+                height={280}
+                yMax={def.yMax}
+                minYMax={def.minYMax}
+                formatValue={def.format}
+                ariaLabel={`${def.label} over the last ${rangeLabel}`}
+              />
+            )}
+
+            <HeroKpiStrip resource={selected} tick={tick} info={info} />
 
             {selected === "cpu" && <CpuCoreStrip perCore={tick.cpu.perCore} />}
 
@@ -196,7 +244,7 @@ export function PerformancePage() {
                     height={120}
                     yMax={100}
                     formatValue={percentAxis}
-                    ariaLabel={`GPU VRAM usage over the last ${RANGES.find((r) => r.seconds === seconds)?.label}`}
+                    ariaLabel={`GPU VRAM usage over the last ${rangeLabel}`}
                   />
                 </div>
                 <div>
@@ -212,7 +260,7 @@ export function PerformancePage() {
                     height={120}
                     yMax={100}
                     formatValue={tempAxis}
-                    ariaLabel={`GPU temperature over the last ${RANGES.find((r) => r.seconds === seconds)?.label}`}
+                    ariaLabel={`GPU temperature over the last ${rangeLabel}`}
                   />
                 </div>
               </div>
@@ -221,10 +269,257 @@ export function PerformancePage() {
             <div className="mt-4 grid gap-x-10 gap-y-4 border-t border-border pt-4 md:grid-cols-3">
               <Stats resource={selected} tick={tick} info={info} />
             </div>
+
+            <TopResourceProcesses resource={selected} tick={tick} />
           </Card>
         </div>
       )}
-    </>
+    </div>
+  );
+}
+
+function resourceHardwareSubtitle(
+  resource: Resource,
+  tick: MetricsTick,
+  info: StaticSystemInfo | null,
+): string | null {
+  switch (resource) {
+    case "cpu": {
+      const parts: string[] = [];
+      if (info?.cpuBrand) parts.push(info.cpuBrand);
+      if (info?.physicalCoreCount != null && info?.logicalCoreCount != null) {
+        parts.push(`${info.physicalCoreCount}C / ${info.logicalCoreCount}T`);
+      } else if (info?.logicalCoreCount != null) {
+        parts.push(`${info.logicalCoreCount} Logical Processors`);
+      }
+      return parts.length > 0 ? parts.join(" · ") : null;
+    }
+    case "memory":
+      return `${formatBytes(tick.memory.totalBytes)} Physical RAM`;
+    case "disk": {
+      const totalDiskBytes = tick.disks.reduce((s, d) => s + d.totalBytes, 0);
+      return `${tick.disks.length} Mounted ${tick.disks.length === 1 ? "Drive" : "Drives"} · ${formatBytes(totalDiskBytes)} Total`;
+    }
+    case "network": {
+      const primary = tick.networks.find((n) => n.isPrimary) ?? tick.networks[0];
+      if (!primary) return "No active interfaces";
+      const ip = primary.ipv4[0];
+      return ip ? `${primary.name} · ${ip}` : primary.name;
+    }
+    case "gpu":
+      return tick.gpus[0]?.name ?? "No dedicated GPU detected";
+  }
+}
+
+function HeroKpiStrip({
+  resource,
+  tick,
+  info,
+}: {
+  resource: Resource;
+  tick: MetricsTick;
+  info: StaticSystemInfo | null;
+}) {
+  let cards: { label: string; value: string; sub?: string }[];
+
+  switch (resource) {
+    case "cpu": {
+      const la = tick.cpu.loadAverage;
+      cards = [
+        {
+          label: "Utilization",
+          value: formatPercent(tick.cpu.usagePercent),
+          sub: `${tick.cpu.perCore.length} logical processors`,
+        },
+        {
+          label: "Clock Speed",
+          value: formatFrequency(tick.cpu.frequencyMhz),
+          sub: info?.architecture ?? undefined,
+        },
+        {
+          label: "Load Average (1m)",
+          value: la ? la.one.toFixed(2) : "—",
+          sub: la ? `5m ${la.five.toFixed(2)} · 15m ${la.fifteen.toFixed(2)}` : undefined,
+        },
+        {
+          label: "Processes",
+          value: formatCount(tick.engine.processCount),
+          sub: `Uptime ${formatDuration(uptimeSeconds(info?.bootTimeSecs ?? null, tick.timestampMs))}`,
+        },
+      ];
+      break;
+    }
+    case "memory": {
+      const m = tick.memory;
+      const swapPct = m.swapTotalBytes > 0 ? (m.swapUsedBytes / m.swapTotalBytes) * 100 : 0;
+      cards = [
+        {
+          label: "In Use",
+          value: formatBytes(m.usedBytes),
+          sub: `${formatPercent(m.usedPercent)} of ${formatBytes(m.totalBytes)}`,
+        },
+        {
+          label: "Available",
+          value: formatBytes(m.availableBytes),
+          sub: "Ready for allocation",
+        },
+        {
+          label: "Page Cache",
+          value: m.cachedBytes != null ? formatBytes(m.cachedBytes) : "—",
+          sub: m.buffersBytes != null ? `Buffers ${formatBytes(m.buffersBytes)}` : undefined,
+        },
+        {
+          label: "Swap Used",
+          value: m.swapTotalBytes > 0 ? formatBytes(m.swapUsedBytes) : "—",
+          sub:
+            m.swapTotalBytes > 0
+              ? `${formatPercent(swapPct, 0)} of ${formatBytes(m.swapTotalBytes)}`
+              : "No swap configured",
+        },
+      ];
+      break;
+    }
+    case "disk": {
+      const readIops = tick.disks.reduce((s, d) => s + (d.readOpsPerSec ?? 0), 0);
+      const writeIops = tick.disks.reduce((s, d) => s + (d.writeOpsPerSec ?? 0), 0);
+      const active = tick.disks.map((d) => d.activePercent).filter((a): a is number => a != null);
+      cards = [
+        {
+          label: "Read Rate",
+          value: formatBytesPerSecond(tick.point.diskRead),
+          sub: `${formatCount(readIops)} read IOPS`,
+        },
+        {
+          label: "Write Rate",
+          value: formatBytesPerSecond(tick.point.diskWrite),
+          sub: `${formatCount(writeIops)} write IOPS`,
+        },
+        {
+          label: "Combined IOPS",
+          value: formatCount(readIops + writeIops),
+          sub: `Throughput ${formatBytesPerSecond(tick.point.diskRead + tick.point.diskWrite)}`,
+        },
+        {
+          label: "Active Time",
+          value: active.length > 0 ? formatPercent(Math.max(...active)) : "—",
+          sub: `Across ${tick.disks.length} mounted ${tick.disks.length === 1 ? "drive" : "drives"}`,
+        },
+      ];
+      break;
+    }
+    case "network": {
+      const totalRx = tick.networks.reduce((s, n) => s + n.totalRxBytes, 0);
+      const totalTx = tick.networks.reduce((s, n) => s + n.totalTxBytes, 0);
+      cards = [
+        {
+          label: "Download Rate",
+          value: formatBytesPerSecond(tick.point.netRx),
+          sub: "Inbound traffic",
+        },
+        {
+          label: "Upload Rate",
+          value: formatBytesPerSecond(tick.point.netTx),
+          sub: "Outbound traffic",
+        },
+        {
+          label: "Total Received",
+          value: formatBytes(totalRx),
+          sub: `${tick.networks.length} active ${tick.networks.length === 1 ? "interface" : "interfaces"}`,
+        },
+        {
+          label: "Total Sent",
+          value: formatBytes(totalTx),
+          sub: `Combined ${formatBytesPerSecond(tick.point.netRx + tick.point.netTx)}`,
+        },
+      ];
+      break;
+    }
+    case "gpu": {
+      const gpu = tick.gpus[0];
+      const vramPct =
+        gpu && gpu.totalVramBytes > 0 ? (gpu.usedVramBytes / gpu.totalVramBytes) * 100 : null;
+      cards = [
+        {
+          label: "Core Load",
+          value: gpu ? formatPercent(gpu.usagePercent ?? tick.point.gpuUsage) : "—",
+          sub: gpu?.clockMhz != null ? `Clock ${formatFrequency(gpu.clockMhz)}` : undefined,
+        },
+        {
+          label: "VRAM Used",
+          value: gpu ? formatBytes(gpu.usedVramBytes) : "—",
+          sub:
+            gpu && vramPct != null
+              ? `${formatPercent(vramPct, 0)} of ${formatBytes(gpu.totalVramBytes)}`
+              : undefined,
+        },
+        {
+          label: "Temperature",
+          value: gpu?.temperatureCelsius != null ? `${Math.round(gpu.temperatureCelsius)} °C` : "—",
+          sub:
+            gpu?.fanSpeedPercent != null
+              ? `Fan ${formatPercent(gpu.fanSpeedPercent, 0)}`
+              : undefined,
+        },
+        {
+          label: "Power Draw",
+          value: gpu?.powerWatts != null ? `${gpu.powerWatts.toFixed(1)} W` : "—",
+          sub:
+            gpu?.powerLimitWatts != null
+              ? `Limit ${gpu.powerLimitWatts.toFixed(0)} W`
+              : undefined,
+        },
+      ];
+      break;
+    }
+  }
+
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      {cards.map((c) => (
+        <div
+          key={c.label}
+          className="rounded-md border border-border bg-surface-2/30 px-3 py-2.5"
+        >
+          <div className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
+            {c.label}
+          </div>
+          <div className="num mt-0.5 text-lg font-semibold text-fg">{c.value}</div>
+          {c.sub && <div className="num mt-0.5 truncate text-[11px] text-fg-subtle">{c.sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CpuLogicalProcessorsChartGrid({
+  perCore,
+  seconds,
+  rangeLabel,
+}: {
+  perCore: readonly number[];
+  seconds: number;
+  rangeLabel?: string;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4">
+      {perCore.map((pct, i) => (
+        <div key={i} className="rounded-md border border-border bg-surface-2/25 p-2.5">
+          <div className="mb-1 flex items-baseline justify-between gap-1 text-[11px]">
+            <span className="whitespace-nowrap font-medium text-fg-muted">CPU {i}</span>
+            <span className="num font-semibold text-fg">{formatPercent(pct, 0)}</span>
+          </div>
+          <TimeSeriesChart
+            series={coreSeries(i)}
+            seconds={seconds}
+            height={56}
+            yMax={100}
+            formatValue={percentAxis}
+            sparkline
+            ariaLabel={`CPU ${i} over the last ${rangeLabel}`}
+          />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -241,19 +536,19 @@ function CpuCoreStrip({ perCore }: { perCore: readonly number[] }) {
           {formatPercent(Math.min(...perCore), 0)}
         </span>
       </div>
-      <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 xl:grid-cols-12">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(115px,1fr))] gap-2">
         {perCore.map((pct, i) => {
           const level = usageLevel(pct);
           return (
             <div
               key={i}
-              className="rounded border border-border bg-surface-2/40 px-2 py-1.5"
+              className="rounded border border-border bg-surface-2/40 px-2.5 py-1.5"
             >
-              <div className="mb-1 flex items-baseline justify-between gap-1 text-[11px]">
-                <span className="text-fg-muted">CPU {i}</span>
+              <div className="mb-1 flex items-baseline justify-between gap-1.5 text-[11px]">
+                <span className="whitespace-nowrap text-fg-muted">CPU {i}</span>
                 <span
                   className={cn(
-                    "num font-semibold",
+                    "num whitespace-nowrap font-semibold",
                     level === "critical" && "text-crit",
                     level === "warning" && "text-warn",
                   )}
@@ -263,6 +558,76 @@ function CpuCoreStrip({ perCore }: { perCore: readonly number[] }) {
               </div>
               <Meter percent={pct} label={`CPU ${i} utilization`} size="sm" />
             </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TopResourceProcesses({ resource, tick }: { resource: Resource; tick: MetricsTick }) {
+  const openProcess = useUiStore((s) => s.openProcess);
+  const navigate = useUiStore((s) => s.navigate);
+  if (tick.processes.length === 0) return null;
+
+  const sortMode: "cpu" | "memory" | "disk" =
+    resource === "memory" ? "memory" : resource === "disk" ? "disk" : "cpu";
+
+  const top = [...tick.processes]
+    .sort((a, b) => {
+      if (sortMode === "memory") return b.memoryBytes - a.memoryBytes;
+      if (sortMode === "disk") {
+        return b.diskReadPerSec + b.diskWritePerSec - (a.diskReadPerSec + a.diskWritePerSec);
+      }
+      return b.cpuPercent - a.cpuPercent;
+    })
+    .slice(0, 5);
+
+  const metricLabel =
+    sortMode === "memory" ? "Memory" : sortMode === "disk" ? "Disk I/O" : "CPU";
+
+  return (
+    <div className="mt-auto border-t border-border pt-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-[12px] font-semibold uppercase tracking-wide text-fg-muted">
+          Top Processes by {metricLabel}
+        </span>
+        <button
+          type="button"
+          onClick={() => navigate("processes")}
+          className="text-[12px] font-medium text-accent hover:underline"
+        >
+          View all processes →
+        </button>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-5">
+        {top.map((p) => {
+          const primaryMetric =
+            sortMode === "memory"
+              ? formatBytes(p.memoryBytes)
+              : sortMode === "disk"
+                ? formatBytesPerSecond(p.diskReadPerSec + p.diskWritePerSec)
+                : formatPercent(p.cpuPercent);
+          const secondaryMetric =
+            sortMode === "memory"
+              ? `CPU ${formatPercent(p.cpuPercent)}`
+              : `Mem ${formatBytes(p.memoryBytes)}`;
+          return (
+            <button
+              key={p.pid}
+              type="button"
+              onClick={() => openProcess(p.pid)}
+              className="flex flex-col justify-between rounded-md border border-border bg-surface-2/25 px-2.5 py-2 text-left transition-colors hover:border-border-strong hover:bg-surface-2"
+            >
+              <div className="flex items-baseline justify-between gap-1.5">
+                <span className="truncate font-medium text-fg">{p.name}</span>
+                <span className="num shrink-0 text-[11px] text-fg-subtle">#{p.pid}</span>
+              </div>
+              <div className="mt-1.5 flex items-baseline justify-between gap-1 text-[11px]">
+                <span className="num font-semibold text-fg">{primaryMetric}</span>
+                <span className="num truncate text-fg-muted">{secondaryMetric}</span>
+              </div>
+            </button>
           );
         })}
       </div>

@@ -40,8 +40,10 @@ impl WindowVisibility {
 
 pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.set_skip_taskbar(false);
         let _ = window.unminimize();
         let _ = window.show();
+        let _ = window.set_skip_taskbar(false);
         let _ = window.set_focus();
         if let Some(state) = app.try_state::<AppState>() {
             state.visibility.set(true);
@@ -53,7 +55,9 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
 
 pub fn hide_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.set_skip_taskbar(true);
         let _ = window.hide();
+        let _ = window.set_skip_taskbar(true);
     }
     if let Some(state) = app.try_state::<AppState>() {
         state.visibility.set(false);
@@ -87,6 +91,13 @@ pub struct TrayItems<R: Runtime> {
 
 pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayItems<R>> {
     let open = MenuItem::with_id(app, "open", "Open Task Manager", true, None::<&str>)?;
+    let hide_to_tray = MenuItem::with_id(
+        app,
+        "hide_to_tray",
+        "Hide to Tray (Dock Hidden)",
+        true,
+        None::<&str>,
+    )?;
 
     let cpu_item = MenuItem::with_id(app, "stat_cpu", "CPU: —", true, None::<&str>)?;
     let mem_item = MenuItem::with_id(app, "stat_mem", "Memory: —", true, None::<&str>)?;
@@ -172,6 +183,7 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayItems<R>>
         app,
         &[
             &open,
+            &hide_to_tray,
             &PredefinedMenuItem::separator(app)?,
             &cpu_item,
             &mem_item,
@@ -199,6 +211,9 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayItems<R>>
             "open" | "stat_cpu" | "stat_mem" | "stat_gpu" | "stat_net" => {
                 show_main_window(app);
             }
+            "hide_to_tray" => {
+                hide_main_window(app);
+            }
             "mode_combined" => set_tray_mode(app, TrayGraphMode::CombinedBars),
             "mode_cpu" => set_tray_mode(app, TrayGraphMode::CpuSparkline),
             "mode_mem" => set_tray_mode(app, TrayGraphMode::MemorySparkline),
@@ -217,7 +232,16 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayItems<R>>
                 ..
             } = event
             {
-                show_main_window(tray.app_handle());
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window(MAIN_WINDOW)
+                    && window.is_visible().unwrap_or(false)
+                    && !window.is_minimized().unwrap_or(false)
+                    && window.is_focused().unwrap_or(false)
+                {
+                    hide_main_window(app);
+                } else {
+                    show_main_window(app);
+                }
             }
         })
         .build(app)?;
@@ -270,7 +294,7 @@ fn set_tray_mode<R: Runtime>(app: &AppHandle<R>, mode: TrayGraphMode) {
     if let Some(state) = app.try_state::<AppState>()
         && let Some(latest) = state.engine.latest()
     {
-        let history = state.engine.history(30);
+        let history = state.engine.history(60);
         refresh_tray_visuals(app, &items, &latest, &history);
     }
 }
@@ -331,7 +355,7 @@ fn toggle_extra_taskbar_trays<R: Runtime>(app: &AppHandle<R>) {
             if let Some(state) = app.try_state::<AppState>()
                 && let Some(latest) = state.engine.latest()
             {
-                let history = state.engine.history(30);
+                let history = state.engine.history(60);
                 refresh_tray_visuals(app, &items, &latest, &history);
             }
         } else {
@@ -539,7 +563,7 @@ impl<R: Runtime> TickSink for DesktopSink<R> {
                 if let Some(items) = app.try_state::<TrayItems<R>>() {
                     let history = app
                         .try_state::<AppState>()
-                        .map(|s| s.engine.history(30))
+                        .map(|s| s.engine.history(60))
                         .unwrap_or_default();
                     refresh_tray_visuals(&app, &items, &tick_clone, &history);
                 }

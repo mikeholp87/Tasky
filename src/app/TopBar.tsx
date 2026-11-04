@@ -1,4 +1,14 @@
-import { Pause, Play, RefreshCw } from "lucide-react";
+import {
+  Cpu,
+  Gpu,
+  HardDrive,
+  type LucideIcon,
+  MemoryStick,
+  Network,
+  Pause,
+  Play,
+  RefreshCw,
+} from "lucide-react";
 import { memo } from "react";
 import { cn } from "@/lib/cn";
 import { refreshNow, togglePaused } from "@/services/monitoring";
@@ -20,8 +30,11 @@ export const TopBar = memo(function TopBar() {
   const mem = useMetricsStore((s) => s.tick?.memory.usedPercent);
   const gpus = useMetricsStore((s) => s.tick?.gpus);
   const gpuUsagePoint = useMetricsStore((s) => s.tick?.point.gpuUsage);
+  const diskRead = useMetricsStore((s) => s.tick?.point.diskRead);
+  const diskWrite = useMetricsStore((s) => s.tick?.point.diskWrite);
   const rx = useMetricsStore((s) => s.tick?.point.netRx);
   const tx = useMetricsStore((s) => s.tick?.point.netTx);
+  const currentRoute = useUiStore((s) => s.route);
   const navigate = useUiStore((s) => s.navigate);
 
   const primaryGpu = gpus?.[0];
@@ -32,34 +45,83 @@ export const TopBar = memo(function TopBar() {
       : undefined;
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-4 border-b border-border bg-surface px-5">
-      <SummaryItem label="CPU" value={cpu} route="cpu" onNavigate={navigate} />
-      <SummaryItem label="Memory" value={mem} route="memory" onNavigate={navigate} />
+    <header className="flex h-12 shrink-0 items-center gap-2 overflow-x-auto border-b border-border bg-surface px-4">
+      <SummaryItem
+        icon={Cpu}
+        iconColor="text-[var(--chart-1)]"
+        label="CPU"
+        fullName="CPU"
+        value={cpu}
+        route="cpu"
+        active={currentRoute === "cpu"}
+        onNavigate={navigate}
+      />
+      <SummaryItem
+        icon={MemoryStick}
+        iconColor="text-[var(--chart-2)]"
+        label="MEM"
+        fullName="Memory"
+        value={mem}
+        route="memory"
+        active={currentRoute === "memory"}
+        onNavigate={navigate}
+      />
       {gpus && gpus.length > 0 && (
         <SummaryItem
+          icon={Gpu}
+          iconColor="text-[var(--chart-3)]"
           label="GPU"
+          fullName="GPU"
           value={gpuPct}
           badge={gpuTemp}
           route="gpu"
+          active={currentRoute === "gpu"}
           onNavigate={navigate}
         />
       )}
       <button
         type="button"
+        onClick={() => navigate("storage")}
+        aria-label="Open Disk details"
+        className={cn(
+          "flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1 text-left transition-colors",
+          currentRoute === "storage"
+            ? "border-accent bg-accent-soft/60"
+            : "border-border/70 bg-surface-2/40 hover:border-border-strong hover:bg-surface-2",
+        )}
+      >
+        <HardDrive size={13} className="shrink-0 text-[var(--chart-4)]" aria-hidden />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+          DISK
+        </span>
+        <span className="num text-[12px] font-semibold text-fg">
+          {diskRead == null || diskWrite == null
+            ? NOT_AVAILABLE
+            : `R ${formatBytesPerSecond(diskRead)} · W ${formatBytesPerSecond(diskWrite)}`}
+        </span>
+      </button>
+      <button
+        type="button"
         onClick={() => navigate("network")}
         aria-label="Open Network details"
-        className="flex items-baseline gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-surface-2"
+        className={cn(
+          "flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1 text-left transition-colors",
+          currentRoute === "network"
+            ? "border-accent bg-accent-soft/60"
+            : "border-border/70 bg-surface-2/40 hover:border-border-strong hover:bg-surface-2",
+        )}
       >
-        <span className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-          Network
+        <Network size={13} className="shrink-0 text-[var(--chart-1)]" aria-hidden />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+          NET
         </span>
-        <span className="num font-semibold">
+        <span className="num text-[12px] font-semibold text-fg">
           {rx == null || tx == null
             ? NOT_AVAILABLE
             : `↓ ${formatBytesPerSecond(rx)}  ↑ ${formatBytesPerSecond(tx)}`}
         </span>
       </button>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
         <MonitoringStatus />
       </div>
     </header>
@@ -67,16 +129,24 @@ export const TopBar = memo(function TopBar() {
 });
 
 function SummaryItem({
+  icon: Icon,
+  iconColor,
   label,
+  fullName,
   value,
   badge,
   route,
+  active,
   onNavigate,
 }: {
+  icon: LucideIcon;
+  iconColor: string;
   label: string;
+  fullName: string;
   value: number | undefined;
   badge?: string;
   route: RouteId;
+  active: boolean;
   onNavigate: (r: RouteId) => void;
 }) {
   const level = usageLevel(value);
@@ -85,15 +155,21 @@ function SummaryItem({
     <button
       type="button"
       onClick={() => onNavigate(route)}
-      aria-label={`Open ${label} details`}
-      className="flex items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-surface-2"
+      aria-label={`Open ${fullName} details`}
+      className={cn(
+        "flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1 text-left transition-colors",
+        active
+          ? "border-accent bg-accent-soft/60"
+          : "border-border/70 bg-surface-2/40 hover:border-border-strong hover:bg-surface-2",
+      )}
     >
-      <span className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+      <Icon size={13} className={cn("shrink-0", iconColor)} aria-hidden />
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
         {label}
       </span>
       <span
         aria-hidden
-        className="h-1.5 w-10 overflow-hidden rounded-full bg-surface-2"
+        className="h-2 w-12 overflow-hidden rounded-full bg-border/80"
       >
         <span
           className={cn("block h-full rounded-full transition-[width] duration-300", BAR_FILL[level])}
@@ -102,14 +178,18 @@ function SummaryItem({
       </span>
       <span
         className={cn(
-          "num w-12 font-semibold",
+          "num text-[12px] font-semibold text-fg",
           level === "critical" && "text-crit",
           level === "warning" && "text-warn",
         )}
       >
-        {formatPercent(value)}
+        {formatPercent(value, 0)}
       </span>
-      {badge && <span className="num text-[11px] text-fg-muted">{badge}</span>}
+      {badge && (
+        <span className="num rounded bg-surface-2 px-1 py-0.5 text-[11px] font-medium text-fg-muted">
+          {badge}
+        </span>
+      )}
     </button>
   );
 }
