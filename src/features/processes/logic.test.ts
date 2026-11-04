@@ -220,24 +220,23 @@ describe("restricted processes", () => {
 });
 
 describe("run state colouring", () => {
-  it("is green for running processes and for sleeping ones using CPU", () => {
+  it("is green only for processes whose status says Running", () => {
     expect(runState(row({ status: "running", cpuPercent: 0 }))).toBe("active");
-    expect(runState(row({ status: "sleeping", cpuPercent: 3 }))).toBe("active");
-    expect(runState(row({ status: "idle", cpuPercent: 0.5 }))).toBe("active");
+    // A sleeping process is never green, whatever its CPU value.
+    for (const status of ["sleeping", "idle"] as const) {
+      expect(runState(row({ status, cpuPercent: 40 }))).toBe("idle");
+    }
   });
 
-  it("is neutral for processes that are just waiting", () => {
-    expect(runState(row({ status: "sleeping", cpuPercent: 0.1 }))).toBe("idle");
-    expect(runState(row({ status: "tracing", cpuPercent: 0 }))).toBe("idle");
+  it("is neutral for waiting and traced processes", () => {
+    expect(runState(row({ status: "sleeping" }))).toBe("idle");
+    expect(runState(row({ status: "tracing" }))).toBe("idle");
+    expect(runState(row({ status: "unknown" }))).toBe("idle");
   });
 
   it("is red for suspended, zombie, dead and disk-blocked processes, whatever their CPU", () => {
     for (const status of ["stopped", "zombie", "dead", "diskSleep"] as const) {
       expect(runState(row({ status, cpuPercent: 40 }))).toBe("problem");
     }
-  });
-
-  it("ignores the CPU value of a restricted process, which is unknown rather than zero", () => {
-    expect(runState(row({ status: "sleeping", cpuPercent: 9, restricted: true }))).toBe("idle");
   });
 });

@@ -1338,6 +1338,8 @@ mod tests {
         }
     }
 
+    // Unix only: the disk engine does not exist on other platforms yet.
+    #[cfg(unix)]
     #[test]
     fn a_disk_run_is_saved_with_its_target_mode_and_wear() {
         let dir = tempfile::tempdir().unwrap();

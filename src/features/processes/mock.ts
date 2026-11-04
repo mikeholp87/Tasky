@@ -44,12 +44,15 @@ export function mockProcesses(count: number, nowSecs: number, seed = 42): Proces
   for (let i = 0; i < count; i++) {
     const pid = 100 + i * 3;
     const name = NAMES[i % NAMES.length] as string;
+    const stopped = rand() < 0.01;
+    // Like the backend: a process that used CPU shows as Running.
+    const cpuPercent = rand() < 0.5 ? 0 : rand() < 0.9 ? rand() * 3 : rand() * 90;
     rows.push({
       pid,
       parentPid: i === 0 ? null : 100 + Math.floor(rand() * i) * 3,
       name,
-      status: rand() < 0.01 ? "stopped" : rand() < 0.3 ? "running" : "sleeping",
-      cpuPercent: rand() < 0.9 ? rand() * 3 : rand() * 90,
+      status: stopped ? "stopped" : cpuPercent >= 0.1 ? "running" : "sleeping",
+      cpuPercent,
       memoryBytes: Math.floor(rand() ** 3 * 4 * 1024 ** 3),
       virtualMemoryBytes: Math.floor(rand() * 16 * 1024 ** 3),
       diskReadPerSec: rand() < 0.95 ? 0 : rand() * 50 * 1024 ** 2,

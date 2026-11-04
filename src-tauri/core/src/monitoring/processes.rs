@@ -56,6 +56,7 @@ impl ProcessTracker {
             .filter(|p| !is_gone(ProcessState::from(p.status())))
             .map(|p| {
                 let pid = p.pid().as_u32();
+                let cpu_percent = normalize_cpu(p.cpu_usage(), cores);
                 let extra = extras.get(&pid).copied().unwrap_or_default();
                 // Per-process reads fail for protected processes when unelevated
                 // and sysinfo reports zeros; a handle-free snapshot still has
@@ -66,8 +67,12 @@ impl ProcessTracker {
                     pid,
                     parent_pid: p.parent().map(|pp| pp.as_u32()),
                     name: p.name().to_string_lossy().into_owned(),
-                    status: ProcessState::from(p.status()),
-                    cpu_percent: normalize_cpu(p.cpu_usage(), cores),
+                    status: effective_state(
+                        ProcessState::from(p.status()),
+                        cpu_percent,
+                        restricted,
+                    ),
+                    cpu_percent,
                     memory_bytes: if restricted {
                         extra.memory_bytes.unwrap_or(0)
                     } else {
@@ -93,6 +98,30 @@ impl ProcessTracker {
                 }
             })
             .collect()
+    }
+}
+
+/// Machine-wide CPU share (percent) at or above which a process counts as
+/// having run during the last interval: about one percent of a single core on
+/// a 12-thread machine.
+pub const RAN_CPU_PERCENT: f32 = 0.1;
+
+/// The state shown to the user.
+///
+/// The kernel reports the state at one instant. A busy process that waits for
+/// a moment (a browser tab, a compiler, a game) is in the sleeping state at
+/// almost every sample, so the raw value would label nearly everything
+/// "Sleeping". A process that used CPU during the interval did run, so that is
+/// shown as Running. Suspended, blocked-on-disk and traced states are kept as
+/// reported, and when CPU is unknown (restricted processes) so is the raw state.
+pub fn effective_state(state: ProcessState, cpu_percent: f32, restricted: bool) -> ProcessState {
+    match state {
+        ProcessState::Sleeping | ProcessState::Idle
+            if !restricted && cpu_percent >= RAN_CPU_PERCENT =>
+        {
+            ProcessState::Running
+        }
+        other => other,
     }
 }
 
@@ -180,6 +209,48 @@ mod tests {
     }
 
     #[test]
+    fn a_process_that_used_cpu_is_shown_as_running_even_when_sampled_asleep() {
+        use ProcessState::*;
+        assert_eq!(effective_state(Sleeping, 3.0, false), Running);
+        assert_eq!(effective_state(Idle, 0.1, false), Running);
+        // Waiting, with no measurable CPU.
+        assert_eq!(effective_state(Sleeping, 0.0, false), Sleeping);
+        assert_eq!(effective_state(Sleeping, 0.09, false), Sleeping);
+        assert_eq!(effective_state(Idle, 0.0, false), Idle);
+        // States that mean something else are never overridden.
+        for s in [Stopped, DiskSleep, Tracing, Zombie, Dead, Unknown] {
+            assert_eq!(effective_state(s, 50.0, false), s);
+        }
+        // CPU is unknown, not zero or high, for a restricted process.
+        assert_eq!(effective_state(Sleeping, 9.0, true), Sleeping);
+        assert_eq!(effective_state(Running, 0.0, false), Running);
+    }
+
+    /// A waiting child is Sleeping, a spinning one is Running, in real rows.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn real_busy_and_waiting_processes_get_the_right_state() {
+        let mut waiting = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let mut busy = std::process::Command::new("sh")
+            .args(["-c", "while :; do :; done"])
+            .spawn()
+            .unwrap();
+        let mut sys = System::new().unwrap();
+        let mut tracker = ProcessTracker::new();
+        tracker.sample(&mut sys, Duration::from_secs(1));
+        std::thread::sleep(Duration::from_millis(1200));
+        let rows = tracker.sample(&mut sys, Duration::from_millis(1200));
+        let _ = (waiting.kill(), busy.kill());
+        let _ = (waiting.wait(), busy.wait());
+        let state = |pid: u32| rows.iter().find(|r| r.pid == pid).map(|r| r.status);
+        assert_eq!(state(waiting.id()), Some(ProcessState::Sleeping));
+        assert_eq!(state(busy.id()), Some(ProcessState::Running));
+    }
+
+    #[test]
     fn joins_command_line() {
         let parts = vec!["node".into(), "server.js".into(), "--port=3000".into()];
         assert_eq!(
@@ -222,6 +293,29 @@ mod tests {
             rows.iter().filter(|r| r.user.is_none()).count(),
             rows.iter().filter(|r| r.restricted).count(),
             rows.iter().filter(|r| r.memory_bytes == 0).count(),
+        );
+    }
+
+    /// Developer measurement of how the shown states are distributed:
+    /// `cargo test measure_status -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "measurement, not a correctness test"]
+    fn measure_status_distribution() {
+        let mut sys = System::new().unwrap();
+        let mut tracker = ProcessTracker::new();
+        tracker.sample(&mut sys, Duration::from_secs(1));
+        std::thread::sleep(Duration::from_secs(2));
+        let rows = tracker.sample(&mut sys, Duration::from_secs(2));
+        let mut counts = std::collections::BTreeMap::new();
+        let mut raw_running = 0;
+        for r in &rows {
+            *counts.entry(format!("{:?}", r.status)).or_insert(0) += 1;
+            raw_running +=
+                usize::from(r.status == ProcessState::Running && r.cpu_percent < RAN_CPU_PERCENT);
+        }
+        println!(
+            "{} processes: {counts:?}; running without CPU: {raw_running}",
+            rows.len()
         );
     }
 
