@@ -28,3 +28,6 @@ src-tauri/target
 coverage
 playwright-report
 test-results
+
+# BLA Hardened Outputs
+.bla-hardened

@@ -10,6 +10,7 @@ export type { DiskKind } from "./generated/DiskKind";
 export type { DiskSnapshot } from "./generated/DiskSnapshot";
 export type { EngineStats } from "./generated/EngineStats";
 export type { ErrorKind } from "./generated/ErrorKind";
+export type { GpuSnapshot } from "./generated/GpuSnapshot";
 export type { HistoryPoint } from "./generated/HistoryPoint";
 export type { LoadAverage } from "./generated/LoadAverage";
 export type { MemorySnapshot } from "./generated/MemorySnapshot";

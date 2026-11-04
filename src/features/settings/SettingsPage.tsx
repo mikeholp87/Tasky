@@ -1,6 +1,7 @@
-import { Download, Monitor, Moon, RotateCcw, Sun } from "lucide-react";
+import { Activity, Download, Monitor, Moon, RotateCcw, Sun } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
+import { KeyValueList } from "@/components/ui/KeyValueList";
 import { PageHeader } from "@/components/PageHeader";
 import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
@@ -10,6 +11,7 @@ import { useMetricsStore } from "@/stores/metricsStore";
 import { useSettingsStore, type ThemePreference } from "@/stores/settingsStore";
 import { toast } from "@/stores/toastStore";
 import { useUiStore } from "@/stores/uiStore";
+import { NOT_AVAILABLE, formatBytes, formatCount } from "@/utils/format";
 
 const THEMES: { id: ThemePreference; label: string; icon: typeof Sun }[] = [
   { id: "system", label: "System", icon: Monitor },
@@ -36,6 +38,7 @@ const selectCls =
 export function SettingsPage() {
   const s = useSettingsStore();
   const monitoring = useMetricsStore((m) => m.monitoring);
+  const engine = useMetricsStore((m) => m.tick?.engine);
   const setMonitoring = useMetricsStore((m) => m.setMonitoring);
   const navigate = useUiStore((u) => u.navigate);
   const backendReady = isBackendAvailable();
@@ -54,146 +57,186 @@ export function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" description="Changes are saved automatically." />
-      <div className="max-w-2xl space-y-4">
-        <Section title="General">
-          <Toggle
-            label="Start with the operating system"
-            checked={s.startWithOs}
-            onChange={(v) => s.update({ startWithOs: v })}
-          />
-          <Toggle
-            label="Minimize to tray"
-            description="Closing the window keeps Task Manager running in the system tray, so alerts still work."
-            checked={s.minimizeToTray}
-            onChange={(v) => s.update({ minimizeToTray: v })}
-          />
-          <Toggle
-            label="Launch minimized"
-            description="Start hidden (in the tray, or minimized if the tray is off)."
-            checked={s.launchMinimized}
-            onChange={(v) => s.update({ launchMinimized: v })}
-          />
-          <Toggle
-            label="Remember window position"
-            checked={s.rememberWindow}
-            onChange={(v) => s.update({ rememberWindow: v })}
-          />
-        </Section>
+      <div className="grid items-start gap-4 xl:grid-cols-2">
+        <div className="space-y-4">
+          <Section title="General">
+            <Toggle
+              label="Start with the operating system"
+              checked={s.startWithOs}
+              onChange={(v) => s.update({ startWithOs: v })}
+            />
+            <Toggle
+              label="Minimize to tray"
+              description="Closing the window keeps Task Manager running in the system tray, so alerts still work."
+              checked={s.minimizeToTray}
+              onChange={(v) => s.update({ minimizeToTray: v })}
+            />
+            <Toggle
+              label="Launch minimized"
+              description="Start hidden (in the tray, or minimized if the tray is off)."
+              checked={s.launchMinimized}
+              onChange={(v) => s.update({ launchMinimized: v })}
+            />
+            <Toggle
+              label="Remember window position"
+              checked={s.rememberWindow}
+              onChange={(v) => s.update({ rememberWindow: v })}
+            />
+          </Section>
 
-        <Section title="Monitoring">
-          <Field label="Refresh interval" htmlFor="interval">
-            <select
-              id="interval"
-              disabled={!backendReady}
-              value={monitoring.paused ? "paused" : String(s.refreshIntervalMs)}
-              onChange={(e) => onInterval(e.target.value)}
-              className={selectCls}
+          <Section title="Monitoring">
+            <Field label="Refresh interval" htmlFor="interval">
+              <select
+                id="interval"
+                disabled={!backendReady}
+                value={monitoring.paused ? "paused" : String(s.refreshIntervalMs)}
+                onChange={(e) => onInterval(e.target.value)}
+                className={selectCls}
+              >
+                {INTERVALS.map((i) => (
+                  <option key={i.ms} value={i.ms}>
+                    {i.label}
+                  </option>
+                ))}
+                <option value="paused">Paused</option>
+              </select>
+            </Field>
+            <Field
+              label="History length"
+              htmlFor="history"
+              description="Kept in memory only; nothing is written to disk."
             >
-              {INTERVALS.map((i) => (
-                <option key={i.ms} value={i.ms}>
-                  {i.label}
-                </option>
-              ))}
-              <option value="paused">Paused</option>
-            </select>
-          </Field>
-          <Field
-            label="History length"
-            htmlFor="history"
-            description="Kept in memory only; nothing is written to disk."
-          >
-            <select
-              id="history"
-              value={s.historyMinutes}
-              onChange={(e) => s.update({ historyMinutes: Number(e.target.value) })}
-              className={selectCls}
-            >
-              {HISTORY.map((h) => (
-                <option key={h.minutes} value={h.minutes}>
-                  {h.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </Section>
+              <select
+                id="history"
+                value={s.historyMinutes}
+                onChange={(e) => s.update({ historyMinutes: Number(e.target.value) })}
+                className={selectCls}
+              >
+                {HISTORY.map((h) => (
+                  <option key={h.minutes} value={h.minutes}>
+                    {h.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </Section>
 
-        <Section title="Appearance">
-          <Field label="Theme" id="theme-label">
-            <div
-              role="radiogroup"
-              aria-labelledby="theme-label"
-              className="inline-flex gap-1 rounded-lg bg-surface-2 p-1"
-            >
-              {THEMES.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={s.theme === id}
-                  onClick={() => s.update({ theme: id })}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-fg-muted",
-                    s.theme === id && "bg-surface text-fg shadow-sm",
-                  )}
-                >
-                  <Icon size={14} aria-hidden />
-                  {label}
-                </button>
-              ))}
+          <Card>
+            <CardHeader
+              title="Monitoring Engine Status"
+              icon={<Activity size={14} aria-hidden />}
+            />
+            <div className="px-4 pb-4 pt-3">
+              <KeyValueList
+                items={[
+                  {
+                    label: "Sample interval",
+                    value: monitoring.paused
+                      ? "Paused"
+                      : `${engine?.intervalMs ?? s.refreshIntervalMs} ms`,
+                  },
+                  {
+                    label: "Backend poll duration",
+                    value:
+                      engine != null ? `${engine.pollDurationMs.toFixed(1)} ms` : NOT_AVAILABLE,
+                  },
+                  {
+                    label: "IPC payload size",
+                    value: engine != null ? formatBytes(engine.lastPayloadBytes) : NOT_AVAILABLE,
+                  },
+                  {
+                    label: "Tracked processes",
+                    value: engine != null ? formatCount(engine.processCount) : NOT_AVAILABLE,
+                  },
+                  {
+                    label: "History buffer duration",
+                    value: `${s.historyMinutes} minutes`,
+                  },
+                ]}
+              />
             </div>
-          </Field>
-          <Toggle
-            label="Compact table"
-            description="Denser rows in the process table."
-            checked={s.compactTable}
-            onChange={(v) => s.update({ compactTable: v })}
-          />
-          <Toggle
-            label="Process heat mapping"
-            description="Tint CPU and memory cells by usage."
-            checked={s.heatMapping}
-            onChange={(v) => s.update({ heatMapping: v })}
-          />
-        </Section>
+          </Card>
+        </div>
 
-        <Section title="Alerts">
-          <Toggle
-            label="Desktop notifications"
-            description="Show a system notification when an alert fires."
-            checked={s.notificationsEnabled}
-            onChange={(v) => s.update({ notificationsEnabled: v })}
-          />
-          <Field label={`${s.alertRules.length} alert rules`}>
-            <button
-              type="button"
-              onClick={() => navigate("alerts")}
-              className="h-8 rounded-md border border-border px-3 hover:bg-surface-2"
-            >
-              Configure alerts
-            </button>
-          </Field>
-        </Section>
+        <div className="space-y-4">
+          <Section title="Appearance">
+            <Field label="Theme" id="theme-label">
+              <div
+                role="radiogroup"
+                aria-labelledby="theme-label"
+                className="inline-flex gap-1 rounded-lg bg-surface-2 p-1"
+              >
+                {THEMES.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={s.theme === id}
+                    onClick={() => s.update({ theme: id })}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-fg-muted",
+                      s.theme === id && "bg-surface text-fg shadow-sm",
+                    )}
+                  >
+                    <Icon size={14} aria-hidden />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Toggle
+              label="Compact table"
+              description="Denser rows in the process table."
+              checked={s.compactTable}
+              onChange={(v) => s.update({ compactTable: v })}
+            />
+            <Toggle
+              label="Process heat mapping"
+              description="Tint CPU and memory cells by usage."
+              checked={s.heatMapping}
+              onChange={(v) => s.update({ heatMapping: v })}
+            />
+          </Section>
 
-        <Section title="Advanced">
-          <Toggle
-            label="Debug logging"
-            description="Write detailed logs. Leave off unless you are troubleshooting."
-            checked={s.debugLogging}
-            onChange={(v) => s.update({ debugLogging: v })}
-          />
-          <DiagnosticsExport disabled={!backendReady} />
-          <Field label="Reset all settings" description="Restores defaults, including alert rules.">
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm("Reset all settings to their defaults?")) void s.reset();
-              }}
-              className="flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-crit hover:bg-surface-2"
-            >
-              <RotateCcw size={14} aria-hidden /> Reset
-            </button>
-          </Field>
-        </Section>
+          <Section title="Alerts">
+            <Toggle
+              label="Desktop notifications"
+              description="Show a system notification when an alert fires."
+              checked={s.notificationsEnabled}
+              onChange={(v) => s.update({ notificationsEnabled: v })}
+            />
+            <Field label={`${s.alertRules.length} alert rules`}>
+              <button
+                type="button"
+                onClick={() => navigate("alerts")}
+                className="h-8 rounded-md border border-border px-3 hover:bg-surface-2"
+              >
+                Configure alerts
+              </button>
+            </Field>
+          </Section>
+
+          <Section title="Advanced">
+            <Toggle
+              label="Debug logging"
+              description="Write detailed logs. Leave off unless you are troubleshooting."
+              checked={s.debugLogging}
+              onChange={(v) => s.update({ debugLogging: v })}
+            />
+            <DiagnosticsExport disabled={!backendReady} />
+            <Field label="Reset all settings" description="Restores defaults, including alert rules.">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm("Reset all settings to their defaults?")) void s.reset();
+                }}
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-crit hover:bg-surface-2"
+              >
+                <RotateCcw size={14} aria-hidden /> Reset
+              </button>
+            </Field>
+          </Section>
+        </div>
       </div>
     </>
   );

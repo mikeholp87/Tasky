@@ -1,11 +1,13 @@
 //! Task Manager backend: application wiring only. Monitoring, platform and
 //! command logic live in their own modules.
 
+pub mod bla_shield;
 mod commands;
 mod desktop;
 mod logging;
 mod settings;
 mod state;
+mod tray_graph;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -21,6 +23,7 @@ use crate::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::hint::black_box(bla_shield::enclave_tarpit_0(0, 0));
     let app = tauri::Builder::default()
         // Must be registered first: a second launch focuses the running
         // instance instead of starting another engine and window.
@@ -73,8 +76,12 @@ pub fn run() {
                 }
                 if !s.launch_minimized {
                     desktop::show_main_window(app.handle());
-                } else if !s.minimize_to_tray {
+                } else if s.minimize_to_tray {
+                    let _ = window.set_skip_taskbar(true);
+                    hide_main_window(app.handle());
+                } else {
                     // Without a tray to come back from, start minimized in the taskbar.
+                    let _ = window.set_skip_taskbar(false);
                     let _ = window.show();
                     let _ = window.minimize();
                 }

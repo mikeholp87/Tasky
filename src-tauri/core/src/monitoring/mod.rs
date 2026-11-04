@@ -7,6 +7,7 @@ mod cpu;
 pub mod details;
 mod disks;
 pub mod engine;
+mod gpu;
 pub mod history;
 mod memory;
 mod network;

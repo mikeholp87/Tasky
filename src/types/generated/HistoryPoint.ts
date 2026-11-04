@@ -7,4 +7,16 @@ export type HistoryPoint = {
 /**
  * Unix milliseconds.
  */
-t: number, cpu: number, perCore: Array<number>, memPercent: number, memUsed: number, swapUsed: number, netRx: number, netTx: number, diskRead: number, diskWrite: number, };
+t: number, cpu: number, perCore: Array<number>, memPercent: number, memUsed: number, swapUsed: number, netRx: number, netTx: number, diskRead: number, diskWrite: number, 
+/**
+ * GPU usage percentage (0–100). `None` when no GPU is detected.
+ */
+gpuUsage: number | null, 
+/**
+ * GPU VRAM usage percentage (0–100). `None` when no GPU is detected.
+ */
+gpuVramPercent: number | null, 
+/**
+ * GPU temperature in degrees Celsius. `None` when unavailable.
+ */
+gpuTemp: number | null, };

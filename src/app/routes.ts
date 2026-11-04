@@ -4,6 +4,7 @@ import {
   Cpu,
   FileSearch,
   Gauge,
+  Gpu,
   HardDrive,
   Info,
   LayoutDashboard,
@@ -20,6 +21,7 @@ export type RouteId =
   | "performance"
   | "cpu"
   | "memory"
+  | "gpu"
   | "storage"
   | "network"
   | "process-details"
@@ -41,6 +43,7 @@ export const ROUTES: readonly RouteDef[] = [
   { id: "performance", label: "Performance", icon: Activity, group: "main" },
   { id: "cpu", label: "CPU", icon: Cpu, group: "resources" },
   { id: "memory", label: "Memory", icon: MemoryStick, group: "resources" },
+  { id: "gpu", label: "GPU", icon: Gpu, group: "resources" },
   { id: "storage", label: "Storage", icon: HardDrive, group: "resources" },
   { id: "network", label: "Network", icon: Network, group: "resources" },
   { id: "process-details", label: "Process Details", icon: FileSearch, group: "tools" },

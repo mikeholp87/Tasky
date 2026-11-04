@@ -13,6 +13,9 @@ const pt = (t: number, cpu = 0): HistoryPoint => ({
   netTx: 0,
   diskRead: 0,
   diskWrite: 0,
+  gpuUsage: null,
+  gpuVramPercent: null,
+  gpuTemp: null,
 });
 
 describe("HistoryBuffer", () => {

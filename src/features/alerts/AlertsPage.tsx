@@ -1,4 +1,4 @@
-import { BellRing, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bell, BellRing, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -24,7 +24,10 @@ export function AlertsPage() {
   const notifications = useSettingsStore((s) => s.notificationsEnabled);
   const update = useSettingsStore((s) => s.update);
   const events = useAlertStore((s) => s.events);
+  const replaceEvents = useAlertStore((s) => s.replace);
   const [editing, setEditing] = useState<AlertRule | null>(null);
+
+  const enabledCount = rules.filter((r) => r.enabled).length;
 
   const save = (rule: AlertRule) => {
     const exists = rules.some((r) => r.id === rule.id);
@@ -49,80 +52,158 @@ export function AlertsPage() {
           </button>
         }
       />
-      {!notifications && (
-        <p role="note" className="mb-4 rounded-md bg-surface-2 px-4 py-2 text-fg-muted">
-          Desktop notifications are off in Settings. Alerts still appear in the list below.
-        </p>
-      )}
-      <div className="grid max-w-5xl gap-4 xl:grid-cols-[1fr_380px]">
-        <Card>
-          <CardHeader title={`Rules (${rules.length})`} />
-          <ul className="divide-y divide-border px-4 pb-2">
-            {rules.length === 0 && <li className="py-6 text-fg-muted">No alert rules yet.</li>}
-            {rules.map((rule) =>
-              editing?.id === rule.id ? (
-                <li key={rule.id} className="py-3">
+
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Card>
+            <CardHeader title="Active Rules" icon={<ShieldCheck size={14} aria-hidden />} />
+            <div className="space-y-1.5 px-4 pb-4 pt-3">
+              <div className="num text-xl font-semibold">
+                {enabledCount} / {rules.length}
+              </div>
+              <div className="text-[12px] text-fg-muted">
+                {enabledCount === 0
+                  ? "No rules currently monitoring"
+                  : `${enabledCount} ${enabledCount === 1 ? "rule" : "rules"} actively evaluated`}
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Desktop Notifications"
+              icon={<Bell size={14} aria-hidden />}
+              action={
+                <Switch
+                  label="Desktop notifications"
+                  checked={notifications}
+                  onChange={(enabled) => update({ notificationsEnabled: enabled })}
+                />
+              }
+            />
+            <div className="space-y-1.5 px-4 pb-4 pt-3">
+              <div className="text-xl font-semibold">
+                {notifications ? "Enabled" : "Disabled"}
+              </div>
+              <div className="text-[12px] text-fg-muted">
+                {notifications
+                  ? "System banners shown when thresholds fire"
+                  : "Silent mode — events logged in list only"}
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Fired Alert Events"
+              icon={<BellRing size={14} aria-hidden />}
+              action={
+                events.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => replaceEvents([])}
+                    className="rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-fg-muted hover:bg-surface-2 hover:text-fg"
+                  >
+                    Clear history
+                  </button>
+                ) : null
+              }
+            />
+            <div className="space-y-1.5 px-4 pb-4 pt-3">
+              <div className="num text-xl font-semibold">{events.length}</div>
+              <div className="truncate text-[12px] text-fg-muted">
+                {events[0]
+                  ? `Last: ${events[0].ruleName} (${formatTimestamp(events[0].timestampMs)})`
+                  : "No alerts triggered in this session"}
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
+          <Card>
+            <CardHeader title={`Rules (${rules.length})`} />
+            <ul className="divide-y divide-border px-4 pb-2">
+              {rules.length === 0 && <li className="py-6 text-fg-muted">No alert rules yet.</li>}
+              {rules.map((rule) =>
+                editing?.id === rule.id ? (
+                  <li key={rule.id} className="py-3">
+                    <RuleEditor rule={editing} onCancel={() => setEditing(null)} onSave={save} />
+                  </li>
+                ) : (
+                  <li key={rule.id} className="flex items-center gap-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{rule.name}</div>
+                      <div className="truncate text-fg-muted">{describeRule(rule)}</div>
+                    </div>
+                    <div>
+                      <Switch
+                        label={`Enable ${rule.name}`}
+                        checked={rule.enabled}
+                        onChange={(enabled) =>
+                          update({
+                            alertRules: rules.map((r) => (r.id === rule.id ? { ...r, enabled } : r)),
+                          })
+                        }
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Edit ${rule.name}`}
+                      onClick={() => setEditing(rule)}
+                      className="grid size-8 place-items-center rounded text-fg-muted hover:bg-surface-2 hover:text-fg"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${rule.name}`}
+                      onClick={() => update({ alertRules: rules.filter((r) => r.id !== rule.id) })}
+                      className="grid size-8 place-items-center rounded text-fg-muted hover:bg-surface-2 hover:text-crit"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ),
+              )}
+              {editing && !rules.some((r) => r.id === editing.id) && (
+                <li className="py-3">
                   <RuleEditor rule={editing} onCancel={() => setEditing(null)} onSave={save} />
                 </li>
-              ) : (
-                <li key={rule.id} className="flex items-center gap-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{rule.name}</div>
-                    <div className="truncate text-fg-muted">{describeRule(rule)}</div>
-                  </div>
-                  <div>
-                    <Switch
-                      label={`Enable ${rule.name}`}
-                      checked={rule.enabled}
-                      onChange={(enabled) =>
-                        update({
-                          alertRules: rules.map((r) => (r.id === rule.id ? { ...r, enabled } : r)),
-                        })
-                      }
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    aria-label={`Edit ${rule.name}`}
-                    onClick={() => setEditing(rule)}
-                    className="grid size-8 place-items-center rounded text-fg-muted hover:bg-surface-2 hover:text-fg"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Delete ${rule.name}`}
-                    onClick={() => update({ alertRules: rules.filter((r) => r.id !== rule.id) })}
-                    className="grid size-8 place-items-center rounded text-fg-muted hover:bg-surface-2 hover:text-crit"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </li>
-              ),
-            )}
-            {editing && !rules.some((r) => r.id === editing.id) && (
-              <li className="py-3">
-                <RuleEditor rule={editing} onCancel={() => setEditing(null)} onSave={save} />
-              </li>
-            )}
-          </ul>
-        </Card>
+              )}
+            </ul>
+          </Card>
 
-        <Card>
-          <CardHeader title="Recent alerts" icon={<BellRing size={14} aria-hidden />} />
-          <ol className="max-h-[60vh] space-y-2 overflow-auto px-4 pb-4 pt-3">
-            {events.length === 0 && <li className="text-fg-muted">No alerts have fired.</li>}
-            {events.map((e, i) => (
-              <li key={`${e.timestampMs}-${e.ruleId}-${i}`} className="rounded-md bg-surface-2 p-2">
-                <div className="flex justify-between gap-2 text-[12px] text-fg-muted">
-                  <span className="truncate">{e.ruleName}</span>
-                  <time className="num shrink-0">{formatTimestamp(e.timestampMs)}</time>
-                </div>
-                <p>{e.message}</p>
-              </li>
-            ))}
-          </ol>
-        </Card>
+          <Card>
+            <CardHeader
+              title="Recent alerts"
+              icon={<BellRing size={14} aria-hidden />}
+              action={
+                events.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => replaceEvents([])}
+                    className="rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-fg-muted hover:bg-surface-2 hover:text-fg"
+                  >
+                    Clear history
+                  </button>
+                ) : null
+              }
+            />
+            <ol className="max-h-[60vh] space-y-2 overflow-auto px-4 pb-4 pt-3">
+              {events.length === 0 && <li className="text-fg-muted">No alerts have fired.</li>}
+              {events.map((e, i) => (
+                <li key={`${e.timestampMs}-${e.ruleId}-${i}`} className="rounded-md bg-surface-2 p-2">
+                  <div className="flex justify-between gap-2 text-[12px] text-fg-muted">
+                    <span className="truncate">{e.ruleName}</span>
+                    <time className="num shrink-0">{formatTimestamp(e.timestampMs)}</time>
+                  </div>
+                  <p>{e.message}</p>
+                </li>
+              ))}
+            </ol>
+          </Card>
+        </div>
       </div>
     </>
   );
