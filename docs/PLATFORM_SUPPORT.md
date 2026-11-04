@@ -58,7 +58,15 @@
   `/proc/diskstats`. Network file systems (NFS/CIFS) are excluded by default,
   because querying a hung mount can block.
 - **Linux tray.** Needs a desktop environment with StatusNotifier/AppIndicator
-  support (GNOME needs the AppIndicator extension).
+  support (GNOME needs the AppIndicator extension). Without one, closing the
+  window quits the app and a window that starts hidden is shown after 15 s.
+- **Window position on GNOME (Wayland).** Wayland apps cannot read or set
+  their own position and GNOME does not remember it, so only size is
+  restored natively. At 100% scaling on every monitor, Tasky runs through
+  XWayland on GNOME so position is remembered too; with fractional or HiDPI
+  scaling it stays on native Wayland to avoid a blurry or tiny window. It
+  also stays native if GNOME's display service cannot report every monitor's
+  scale. Set `GDK_BACKEND=wayland` (or `x11`) to choose yourself.
 
 - **Windows file lookup.** Restart Manager reports applications and services
   that hold a file, and cannot search folders; the UI says so. Listing every

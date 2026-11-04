@@ -23,6 +23,7 @@ use crate::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    desktop::prefer_x11_on_gnome_wayland();
     let app = tauri::Builder::default()
         // Must be registered first: a second launch focuses the running
         // instance instead of starting another engine and window.
