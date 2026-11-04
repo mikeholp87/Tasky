@@ -32,7 +32,15 @@ export function useProcessDetails(pid: number): ProcessDetailsState {
   const [livePoints, setLivePoints] = useState<ProcessPoint[]>([]);
   const requestKey = `${pid}:${nonce}`;
 
-  const live = useMetricsStore((s) => s.tick?.processes.find((p) => p.pid === pid) ?? null);
+  // Once details load they pin the process instance, so a reused PID is
+  // reported as an exit rather than shown as this process.
+  const startTime = result?.details?.row.startTime;
+  const live = useMetricsStore(
+    (s) =>
+      s.tick?.processes.find(
+        (p) => p.pid === pid && (startTime == null || p.startTime === startTime),
+      ) ?? null,
+  );
 
   useEffect(() => {
     if (!isBackendAvailable()) return;
@@ -58,12 +66,14 @@ export function useProcessDetails(pid: number): ProcessDetailsState {
       useMetricsStore.subscribe((state, prev) => {
         const tick = state.tick;
         if (!tick || tick === prev.tick) return;
-        const row = tick.processes.find((p) => p.pid === pid);
+        const row = tick.processes.find(
+          (p) => p.pid === pid && (startTime == null || p.startTime === startTime),
+        );
         if (row) {
           setLivePoints((points) => appendPoint(points, toPoint(row, tick.timestampMs)));
         }
       }),
-    [pid],
+    [pid, startTime],
   );
 
   const details = result?.details ?? null;

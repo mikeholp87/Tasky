@@ -61,6 +61,24 @@ describe("ProcessesPage", () => {
     expect(container.querySelector("img, script, iframe")).toBeNull();
   });
 
+  it("opens one shared context menu for the right-clicked row only", async () => {
+    render(<ProcessesPage />);
+    const target = dataRows()[2]!;
+    const name = within(target).getAllByRole("gridcell")[0]!.textContent;
+    await userEvent.pointer({ keys: "[MouseRight]", target });
+    expect(await screen.findByRole("menu", { name: `Actions for ${name}` })).toBeInTheDocument();
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+  });
+
+  it("does not open the process menu on the column header", async () => {
+    render(<ProcessesPage />);
+    await userEvent.pointer({
+      keys: "[MouseRight]",
+      target: screen.getByRole("columnheader", { name: /^Name/ }),
+    });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
   it("filters instantly as the user types", async () => {
     render(<ProcessesPage />);
     await userEvent.type(screen.getByRole("searchbox", { name: "Search processes" }), "python");

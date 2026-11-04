@@ -41,14 +41,20 @@ pub async fn perform_process_action(
     };
     let engine = Arc::clone(&state.engine);
     blocking(move || {
+        // Name the process in the prompt, and refuse before asking if the PID
+        // now belongs to a different process than the one the user saw.
+        let row = engine
+            .process(req.pid)
+            .filter(|r| r.start_time == req.start_time)
+            .ok_or(AppError::ProcessNotFound(req.pid))?;
         let assessment = process_control::assess(&engine, req.pid, req.action)?;
         if assessment.level == tm_core::models::ProtectionLevel::Blocked {
             return Err(AppError::ProcessProtected(assessment.reasons.join(" ")));
         }
         if req.action.is_disruptive() || assessment.level == tm_core::models::ProtectionLevel::Warning {
             super::confirm::confirm(&app, &format!(
-                "Apply {:?} to process PID {}?\nThis may stop work, lose unsaved data, or make dependent programs unresponsive.\n{}",
-                req.action, req.pid, assessment.reasons.join(" ")
+                "Apply {:?} to {} (PID {})?\nThis may stop work, lose unsaved data, or make dependent programs unresponsive.\n{}",
+                req.action, row.name, req.pid, assessment.reasons.join(" ")
             ))?;
         }
         process_control::perform(&engine, req)

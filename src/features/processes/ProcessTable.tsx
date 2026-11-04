@@ -53,8 +53,14 @@ interface ProcessTableProps {
   selfPid: number | undefined;
   /** Renders tree affordances (indentation, expand/collapse). */
   tree?: boolean;
-  /** Wraps each row, e.g. to attach a context menu. */
-  renderRow?: (row: ProcessRow, element: React.ReactElement) => React.ReactElement;
+  /**
+   * Wraps the whole table once, e.g. to attach a single context menu.
+   * `find` resolves the process shown in a row, by PID.
+   */
+  wrapTable?: (
+    table: React.ReactElement,
+    find: (pid: number) => ProcessRow | undefined,
+  ) => React.ReactElement;
   /** Delete key on the selected row; must ask for confirmation. */
   onRequestTerminate?: (row: ProcessRow) => void;
 }
@@ -68,7 +74,7 @@ export function ProcessTable({
   ctx,
   selfPid,
   tree = false,
-  renderRow,
+  wrapTable,
   onRequestTerminate,
 }: ProcessTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -184,7 +190,12 @@ export function ProcessTable({
     ],
   );
 
-  return (
+  const find = useCallback(
+    (pid: number) => items.find((i) => !i.group && i.row.pid === pid)?.row,
+    [items],
+  );
+
+  const table = (
     <div
       ref={scrollRef}
       role={tree ? "treegrid" : "grid"}
@@ -201,7 +212,7 @@ export function ProcessTable({
           {virtualizer.getVirtualItems().map((v) => {
             const item = items[v.index];
             if (!item) return null;
-            const element = (
+            return (
               <Row
                 key={item.row.pid}
                 item={item}
@@ -221,12 +232,6 @@ export function ProcessTable({
                 onToggle={toggleCollapsed}
               />
             );
-            // A summary row is not a process: no process actions on it.
-            return renderRow && !item.group ? (
-              <RowSlot key={item.row.pid}>{renderRow(item.row, element)}</RowSlot>
-            ) : (
-              element
-            );
           })}
         </div>
         {items.length === 0 && (
@@ -237,11 +242,7 @@ export function ProcessTable({
       </div>
     </div>
   );
-}
-
-/** Keyed wrapper so wrapped rows keep stable identity. */
-function RowSlot({ children }: { children: React.ReactElement }) {
-  return children;
+  return wrapTable ? wrapTable(table, find) : table;
 }
 
 const HeaderRow = memo(function HeaderRow({
@@ -309,12 +310,14 @@ function ResizeHandle({ column }: { column: ColumnId }) {
     const move = (ev: globalThis.PointerEvent) =>
       // Stored widths are in 16px-root units; the pointer moves in screen px.
       setWidth(column, startWidth + ((ev.clientX - startX) * 16) / rootPx);
-    const up = () => {
+    // Fires after pointerup, pointercancel (touch interrupt, alt-tab) and any
+    // other way the capture ends, so the drag can never get stuck on.
+    const end = () => {
       el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
+      el.removeEventListener("lostpointercapture", end);
     };
     el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
+    el.addEventListener("lostpointercapture", end);
   };
   return (
     <div
@@ -342,8 +345,6 @@ interface RowProps {
   onSelect: (pid: number) => void;
   onOpen: (pid: number) => void;
   onToggle: (pid: number) => void;
-  /** Injected by a wrapping context-menu trigger; composed with selection. */
-  onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
 }
 
 const Row = memo(function Row({
@@ -362,8 +363,6 @@ const Row = memo(function Row({
   onSelect,
   onOpen,
   onToggle,
-  onContextMenu,
-  ...rest
 }: RowProps) {
   const { row } = item;
   const memPct = ctx.totalMemoryBytes > 0 ? (memoryOf(row) / ctx.totalMemoryBytes) * 100 : 0;
@@ -371,21 +370,17 @@ const Row = memo(function Row({
   const run = RUN_COLOR[runState(row)];
   return (
     <div
-      // Context-menu triggers inject handlers via props when wrapping.
-      {...rest}
       role="row"
       aria-rowindex={index + 2}
       aria-selected={selected}
       aria-level={tree ? (item.depth ?? 0) + 1 : undefined}
       aria-expanded={tree && item.hasChildren ? item.expanded : undefined}
       data-pid={row.pid}
+      data-group={item.group ? "" : undefined}
       data-run={heat ? runState(row) : undefined}
       onClick={() => onSelect(row.pid)}
       onDoubleClick={() => (item.group ? onToggle(row.pid) : onOpen(row.pid))}
-      onContextMenu={(e) => {
-        onSelect(row.pid);
-        onContextMenu?.(e);
-      }}
+      onContextMenu={() => onSelect(row.pid)}
       className={cn(
         "absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[0.875rem]",
         selected ? "bg-accent-soft" : isNew ? "bg-accent-soft/40" : "hover:bg-surface-2",

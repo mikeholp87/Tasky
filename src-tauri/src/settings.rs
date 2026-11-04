@@ -51,7 +51,10 @@ fn read_or_default(path: &Path) -> Settings {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Settings::default(),
         Err(e) => {
-            tracing::warn!("could not read settings: {e}");
+            // Unreadable (permissions, too large, not a regular file). Move it
+            // aside like a corrupt file so the next save cannot destroy it.
+            tracing::warn!("could not read settings: {e}; using defaults");
+            keep_aside(path);
             return Settings::default();
         }
     };
@@ -59,10 +62,14 @@ fn read_or_default(path: &Path) -> Settings {
         Ok(settings) => settings.sanitized(),
         Err(e) => {
             tracing::warn!("settings file is invalid ({e}); using defaults");
-            let _ = std::fs::rename(path, path.with_extension("json.invalid"));
+            keep_aside(path);
             Settings::default()
         }
     }
+}
+
+fn keep_aside(path: &Path) {
+    let _ = std::fs::rename(path, path.with_extension("json.invalid"));
 }
 
 fn write_atomic(path: &Path, settings: &Settings) -> AppResult<()> {
@@ -107,6 +114,18 @@ mod tests {
         };
         assert!(store.save(bad).is_err());
         assert_eq!(store.get(), Settings::default());
+    }
+
+    #[test]
+    fn unreadable_file_is_preserved_not_overwritten() {
+        let dir = temp_dir("oversized");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(FILE_NAME), vec![b' '; 300 * 1024]).unwrap();
+        let store = SettingsStore::load(Some(&dir));
+        assert_eq!(store.get(), Settings::default());
+        store.save(Settings::default()).unwrap();
+        assert!(dir.join("settings.json.invalid").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

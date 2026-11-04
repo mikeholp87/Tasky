@@ -88,4 +88,34 @@ describe("groupByApplication", () => {
     );
     expect(g?.name).toBe("chrome.exe");
   });
+
+  it("flags programs and processes that just started", () => {
+    const rows: ProcessRow[] = [
+      makeRow({ pid: 1, name: "brave", exe: "/b/brave", memoryBytes: 500 * MB, startTime: 100 }),
+      makeRow({ pid: 2, name: "brave", exe: "/b/brave", memoryBytes: 5 * MB, startTime: 995 }),
+      makeRow({ pid: 3, name: "tiny", exe: "/t/tiny", memoryBytes: 2 * MB, startTime: 998 }),
+    ];
+    const groups = groupByApplication(rows, 16 * 1024 * MB, { nowSecs: 1000, newSecs: 10 });
+    const brave = groups.find((g) => g.name === "brave")!;
+    expect(brave.hasNew).toBe(true);
+    expect(brave.processes.map((p) => [p.pid, p.isNew])).toEqual([
+      [1, false],
+      [2, true],
+    ]);
+    expect(groups.find((g) => g.name === "tiny")!.hasNew).toBe(true);
+    // Switched off (0 seconds) or no clock: nothing is flagged.
+    expect(groupByApplication(rows, 1, { nowSecs: 1000, newSecs: 0 }).some((g) => g.hasNew)).toBe(
+      false,
+    );
+    expect(groupByApplication(rows, 1).some((g) => g.hasNew)).toBe(false);
+  });
+
+  it("drops a program the moment its last process is gone", () => {
+    const rows: ProcessRow[] = [
+      makeRow({ pid: 1, name: "a", exe: "/a", memoryBytes: 10 * MB }),
+      makeRow({ pid: 2, name: "b", exe: "/b", memoryBytes: 20 * MB }),
+    ];
+    expect(groupByApplication(rows, 1024 * MB).map((g) => g.name)).toEqual(["b", "a"]);
+    expect(groupByApplication(rows.slice(1), 1024 * MB).map((g) => g.name)).toEqual(["b"]);
+  });
 });

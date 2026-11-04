@@ -39,6 +39,9 @@ export function SettingsPage() {
   const setMonitoring = useMetricsStore((m) => m.setMonitoring);
   const navigate = useUiStore((u) => u.navigate);
   const platform = useMetricsStore((m) => m.staticInfo?.platform);
+  const desktop = useMetricsStore((m) => m.staticInfo?.desktopEnvironment);
+  // Stock GNOME has no tray: a hidden window would have no icon to come back from.
+  const noTrayHost = platform === "linux" && /gnome/i.test(desktop ?? "");
   const backendReady = isBackendAvailable();
 
   const onInterval = (value: string) => {
@@ -64,7 +67,12 @@ export function SettingsPage() {
           />
           <Toggle
             label="Minimize to tray"
-            description="Closing the window keeps Task Manager running in the system tray, so alerts still work."
+            description={
+              "Closing the window keeps Task Manager running in the system tray, so alerts still work." +
+              (noTrayHost
+                ? " GNOME shows no tray by default; without the AppIndicator extension the window cannot be reopened except by launching Task Manager again."
+                : "")
+            }
             checked={s.minimizeToTray}
             onChange={(v) => s.update({ minimizeToTray: v })}
           />

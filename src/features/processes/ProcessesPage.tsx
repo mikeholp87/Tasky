@@ -8,9 +8,10 @@ import { ProcessContextMenu } from "./ProcessContextMenu";
 import { ProcessTable } from "./ProcessTable";
 import type { ProcessRow } from "@/types";
 
-const withContextMenu = (row: ProcessRow, element: React.ReactElement) => (
-  <ProcessContextMenu row={row}>{element}</ProcessContextMenu>
-);
+const withContextMenu = (
+  table: React.ReactElement,
+  find: (pid: number) => ProcessRow | undefined,
+) => <ProcessContextMenu find={find}>{table}</ProcessContextMenu>;
 const requestTerminate = (row: ProcessRow) => void requestAction(row, { type: "terminate" });
 import { ProcessToolbar } from "./ProcessToolbar";
 import { useProcessView } from "./useProcessView";
@@ -36,7 +37,7 @@ export function ProcessesPage() {
             ctx={ctx}
             selfPid={selfPid}
             tree={mode !== "list"}
-            renderRow={withContextMenu}
+            wrapTable={withContextMenu}
             onRequestTerminate={requestTerminate}
           />
         </>

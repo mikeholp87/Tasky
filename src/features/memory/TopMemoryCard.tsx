@@ -4,6 +4,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Meter } from "@/components/ui/Meter";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useProcessStore } from "@/stores/processStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import { formatBytes, formatPercent } from "@/utils/format";
 import { groupByApplication, type MemoryGroup } from "./groups";
@@ -26,18 +27,28 @@ export function TopMemoryCard() {
   useMemoryDetail();
   const processes = useMetricsStore((s) => s.tick?.processes);
   const totalBytes = useMetricsStore((s) => s.tick?.memory.totalBytes ?? 0);
+  const timestampMs = useMetricsStore((s) => s.tick?.timestampMs ?? 0);
+  const newSecs = useSettingsStore((s) => s.newProcessSeconds);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
 
+  // Every tick rebuilds this from the live process list, so a program that
+  // starts appears at once and one that exits is gone at once.
   const groups = useMemo(
-    () => groupByApplication(processes ?? [], totalBytes),
-    [processes, totalBytes],
+    () =>
+      groupByApplication(processes ?? [], totalBytes, {
+        nowSecs: Math.floor(timestampMs / 1000),
+        newSecs,
+      }),
+    [processes, totalBytes, timestampMs, newSecs],
   );
   const measured = useMemo(() => (processes ?? []).some((p) => p.pssBytes != null), [processes]);
   const estimated = useMemo(() => groups.reduce((n, g) => n + g.estimated, 0), [groups]);
 
   const top = groups[0];
-  const shown = showAll ? groups : groups.slice(0, TOP_GROUPS);
+  // A program that just started is always listed, even when it is small
+  // enough to be outside the top ten.
+  const shown = showAll ? groups : groups.filter((g, i) => i < TOP_GROUPS || g.hasNew);
   const toggle = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -102,6 +113,14 @@ export function TopMemoryCard() {
   );
 }
 
+function NewBadge() {
+  return (
+    <span className="ml-2 shrink-0 rounded bg-accent-soft px-1 text-[10px] font-normal text-accent">
+      New
+    </span>
+  );
+}
+
 function GroupRow({
   group: g,
   open,
@@ -114,6 +133,8 @@ function GroupRow({
   const openProcess = useUiStore((s) => s.openProcess);
   const Chevron = open ? ChevronDown : ChevronRight;
   const approx = g.estimated > 0 ? "~" : "";
+  // The largest processes, plus any that just started.
+  const listed = g.processes.filter((p, i) => i < TOP_PROCESSES || p.isNew);
   return (
     <li className="py-1.5">
       <button
@@ -128,6 +149,7 @@ function GroupRow({
           {g.processes.length > 1 && (
             <span className="ml-2 text-fg-muted">{g.processes.length} processes</span>
           )}
+          {g.hasNew && <NewBadge />}
         </span>
         <span className="num font-medium">
           {approx}
@@ -146,10 +168,11 @@ function GroupRow({
       </button>
       {open && (
         <ul className="ml-6 mt-1 space-y-0.5 border-l border-border pl-3">
-          {g.processes.slice(0, TOP_PROCESSES).map((p) => (
+          {listed.map((p) => (
             <li key={p.pid} className="flex items-center gap-3 py-0.5">
               <span className="min-w-0 flex-1 truncate text-fg-muted">
                 {p.name} <span className="num text-fg-subtle">PID {p.pid}</span>
+                {p.isNew && <NewBadge />}
               </span>
               <span className="num">
                 {p.exact ? "" : "~"}
@@ -165,9 +188,9 @@ function GroupRow({
               </button>
             </li>
           ))}
-          {g.processes.length > TOP_PROCESSES && (
+          {g.processes.length > listed.length && (
             <li className="py-0.5 text-[0.8125rem] text-fg-subtle">
-              and {g.processes.length - TOP_PROCESSES} smaller processes
+              and {g.processes.length - listed.length} smaller processes
             </li>
           )}
         </ul>

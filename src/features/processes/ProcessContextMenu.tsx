@@ -10,7 +10,7 @@ import {
   Square,
 } from "lucide-react";
 import { ContextMenu } from "radix-ui";
-import type { ReactElement, ReactNode } from "react";
+import { type ReactElement, type ReactNode, useState } from "react";
 import { cn } from "@/lib/cn";
 import { useUiStore } from "@/stores/uiStore";
 import type { PriorityLevel, ProcessRow } from "@/types";
@@ -52,106 +52,134 @@ function Item({
 
 const Separator = () => <ContextMenu.Separator className="my-1 h-px bg-border" />;
 
-/** Wraps a table row with the process context menu. */
-export function ProcessContextMenu({ row, children }: { row: ProcessRow; children: ReactElement }) {
+/**
+ * One context menu for the whole table. Creating a menu per row made every
+ * tick re-render dozens of Radix menus; this resolves the right-clicked row
+ * (by its `data-pid`) when the menu opens instead.
+ */
+export function ProcessContextMenu({
+  find,
+  children,
+}: {
+  find: (pid: number) => ProcessRow | undefined;
+  children: ReactElement;
+}) {
   const openProcess = useUiStore((s) => s.openProcess);
-  const suspended = row.status === "stopped";
+  const [pid, setPid] = useState<number | null>(null);
+  const row = pid == null ? undefined : find(pid);
+  const suspended = row?.status === "stopped";
   return (
     <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content className={contentCls} aria-label={`Actions for ${row.name}`}>
-          <ContextMenu.Label className="truncate px-2 py-1 text-[0.8125rem] text-fg-subtle">
-            {row.name} · PID {row.pid}
-          </ContextMenu.Label>
-          <Item icon={<FileSearch size="0.875rem" />} onSelect={() => openProcess(row.pid)}>
-            Open details
-          </Item>
-          <Item
-            icon={<FolderOpen size="0.875rem" />}
-            onSelect={() => void revealExecutable(row)}
-            disabled={!row.exe}
-          >
-            Open file location
-          </Item>
-          <Separator />
-          <Item
-            icon={<Copy size="0.875rem" />}
-            onSelect={() => void copyText("PID", String(row.pid))}
-          >
-            Copy PID
-          </Item>
-          <Item icon={<span />} onSelect={() => void copyText("Name", row.name)}>
-            Copy name
-          </Item>
-          <Item
-            icon={<span />}
-            onSelect={() => void copyText("Executable path", row.exe)}
-            disabled={!row.exe}
-          >
-            Copy executable path
-          </Item>
-          <Item
-            icon={<span />}
-            onSelect={() => void copyText("Command line", row.cmd)}
-            disabled={!row.cmd}
-          >
-            Copy command line
-          </Item>
-          <Separator />
-          {suspended ? (
-            <Item
-              icon={<Play size="0.875rem" />}
-              onSelect={() => void requestAction(row, { type: "resume" })}
-            >
-              Resume
+      <ContextMenu.Trigger
+        asChild
+        onContextMenu={(e) => {
+          const cell = (e.target as HTMLElement).closest<HTMLElement>("[data-pid]");
+          // Not on a process row (header, summary row): no menu.
+          if (!cell || cell.dataset.group !== undefined) {
+            setPid(null);
+            e.preventDefault();
+            return;
+          }
+          setPid(Number(cell.dataset.pid));
+        }}
+      >
+        {children}
+      </ContextMenu.Trigger>
+      {row && (
+        <ContextMenu.Portal>
+          <ContextMenu.Content className={contentCls} aria-label={`Actions for ${row.name}`}>
+            <ContextMenu.Label className="truncate px-2 py-1 text-[0.8125rem] text-fg-subtle">
+              {row.name} · PID {row.pid}
+            </ContextMenu.Label>
+            <Item icon={<FileSearch size="0.875rem" />} onSelect={() => openProcess(row.pid)}>
+              Open details
             </Item>
-          ) : (
             <Item
-              icon={<Pause size="0.875rem" />}
-              onSelect={() => void requestAction(row, { type: "suspend" })}
+              icon={<FolderOpen size="0.875rem" />}
+              onSelect={() => void revealExecutable(row)}
+              disabled={!row.exe}
             >
-              Suspend
+              Open file location
             </Item>
-          )}
-          <ContextMenu.Sub>
-            <ContextMenu.SubTrigger className={itemCls}>
-              <span className="grid w-4 place-items-center" aria-hidden>
-                <Gauge size="0.875rem" />
-              </span>
-              Set priority
-              <ChevronRight size="0.875rem" className="ml-auto" aria-hidden />
-            </ContextMenu.SubTrigger>
-            <ContextMenu.Portal>
-              <ContextMenu.SubContent className={contentCls} sideOffset={4}>
-                {PRIORITIES.map((p) => (
-                  <Item
-                    key={p}
-                    onSelect={() => void requestAction(row, { type: "setPriority", priority: p })}
-                  >
-                    {PRIORITY_LABELS[p]}
-                  </Item>
-                ))}
-              </ContextMenu.SubContent>
-            </ContextMenu.Portal>
-          </ContextMenu.Sub>
-          <Separator />
-          <Item
-            icon={<Square size="0.8125rem" />}
-            onSelect={() => void requestAction(row, { type: "terminate" })}
-            danger
-          >
-            End process…
-          </Item>
-          <Item
-            icon={<OctagonX size="0.875rem" />}
-            onSelect={() => void requestAction(row, { type: "forceKill" })}
-            danger
-          >
-            Force end…
-          </Item>
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
+            <Separator />
+            <Item
+              icon={<Copy size="0.875rem" />}
+              onSelect={() => void copyText("PID", String(row.pid))}
+            >
+              Copy PID
+            </Item>
+            <Item icon={<span />} onSelect={() => void copyText("Name", row.name)}>
+              Copy name
+            </Item>
+            <Item
+              icon={<span />}
+              onSelect={() => void copyText("Executable path", row.exe)}
+              disabled={!row.exe}
+            >
+              Copy executable path
+            </Item>
+            <Item
+              icon={<span />}
+              onSelect={() => void copyText("Command line", row.cmd)}
+              disabled={!row.cmd}
+            >
+              Copy command line
+            </Item>
+            <Separator />
+            {suspended ? (
+              <Item
+                icon={<Play size="0.875rem" />}
+                onSelect={() => void requestAction(row, { type: "resume" })}
+              >
+                Resume
+              </Item>
+            ) : (
+              <Item
+                icon={<Pause size="0.875rem" />}
+                onSelect={() => void requestAction(row, { type: "suspend" })}
+              >
+                Suspend
+              </Item>
+            )}
+            <ContextMenu.Sub>
+              <ContextMenu.SubTrigger className={itemCls}>
+                <span className="grid w-4 place-items-center" aria-hidden>
+                  <Gauge size="0.875rem" />
+                </span>
+                Set priority
+                <ChevronRight size="0.875rem" className="ml-auto" aria-hidden />
+              </ContextMenu.SubTrigger>
+              <ContextMenu.Portal>
+                <ContextMenu.SubContent className={contentCls} sideOffset={4}>
+                  {PRIORITIES.map((p) => (
+                    <Item
+                      key={p}
+                      onSelect={() => void requestAction(row, { type: "setPriority", priority: p })}
+                    >
+                      {PRIORITY_LABELS[p]}
+                    </Item>
+                  ))}
+                </ContextMenu.SubContent>
+              </ContextMenu.Portal>
+            </ContextMenu.Sub>
+            <Separator />
+            <Item
+              icon={<Square size="0.8125rem" />}
+              onSelect={() => void requestAction(row, { type: "terminate" })}
+              danger
+            >
+              End process…
+            </Item>
+            <Item
+              icon={<OctagonX size="0.875rem" />}
+              onSelect={() => void requestAction(row, { type: "forceKill" })}
+              danger
+            >
+              Force end…
+            </Item>
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
+      )}
     </ContextMenu.Root>
   );
 }

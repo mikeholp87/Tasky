@@ -220,9 +220,18 @@ impl ActivityDetector {
         let announce = self.primed;
         self.primed = true;
         let mut out: Vec<Pending> = Vec::new();
+        // Starts and exits over the cap are counted, not lost: a summary line
+        // follows so the timeline shows that something happened.
+        let (mut more_started, mut more_exited) = (0usize, 0usize);
         let mut push = |p: Pending| {
             if out.len() < MAX_EVENTS_PER_TICK {
                 out.push(p);
+            } else {
+                match p.kind {
+                    ActivityKind::ProcessStarted => more_started += 1,
+                    ActivityKind::ProcessExited => more_exited += 1,
+                    _ => {}
+                }
             }
         };
 
@@ -317,6 +326,16 @@ impl ActivityDetector {
                     key.0,
                     &t.name,
                 ));
+            }
+        }
+        for (kind, n) in [
+            (ActivityKind::ProcessStarted, more_started),
+            (ActivityKind::ProcessExited, more_exited),
+        ] {
+            if n > 0 {
+                let mut e = Pending::new(kind);
+                e.name = Some(format!("{n} more processes"));
+                out.push(e);
             }
         }
         out
@@ -553,7 +572,24 @@ mod tests {
         assert!(d.observe(10_000, &[r], &CFG).is_empty());
 
         let many: Vec<ProcessRow> = (100..400).map(|p| row(p, 1, 0.0, 1)).collect();
-        assert_eq!(d.observe(20_000, &many, &CFG).len(), MAX_EVENTS_PER_TICK);
+        // 300 starts and 1 exit: 50 are listed, the rest are summarised.
+        let out = d.observe(20_000, &many, &CFG);
+        assert_eq!(out.len(), MAX_EVENTS_PER_TICK + 2);
+        let summary = |k| out.iter().find(|e| e.pid.is_none() && e.kind == k);
+        assert_eq!(
+            summary(ActivityKind::ProcessStarted)
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("250 more processes")
+        );
+        assert_eq!(
+            summary(ActivityKind::ProcessExited)
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("1 more processes")
+        );
     }
 
     #[test]
