@@ -47,6 +47,58 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// How long a window that starts hidden waits for a tray to appear. Right
+/// after login the shell may not have started its tray yet.
+const TRAY_WAIT_SECS: u64 = 15;
+
+/// Whether something on this desktop shows tray icons: an owner of the
+/// StatusNotifier watcher name, which KDE, Xfce and GNOME's AppIndicator
+/// extension all provide. Stock GNOME does not, so a window hidden "to the
+/// tray" there could never be brought back. If the bus cannot be asked, the
+/// answer is no: the safe failure is a window that stays visible.
+#[cfg(target_os = "linux")]
+pub fn tray_host_available() -> bool {
+    use gio::glib::{ToVariant, VariantTy};
+
+    let ask = || -> Result<bool, gio::glib::Error> {
+        let bus = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)?;
+        let reply = bus.call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameHasOwner",
+            Some(&("org.kde.StatusNotifierWatcher",).to_variant()),
+            Some(VariantTy::new("(b)").expect("valid type")),
+            gio::DBusCallFlags::NONE,
+            500,
+            gio::Cancellable::NONE,
+        )?;
+        Ok(reply.get::<(bool,)>().is_some_and(|(owned,)| owned))
+    };
+    ask().unwrap_or(false)
+}
+
+/// Other platforms always have a tray or taskbar to come back from.
+#[cfg(not(target_os = "linux"))]
+pub fn tray_host_available() -> bool {
+    true
+}
+
+/// For a window that starts hidden in the tray: if no tray ever appears,
+/// show the window rather than leave the app running with no way to reach it.
+pub fn show_window_if_no_tray<R: Runtime>(app: AppHandle<R>) {
+    std::thread::spawn(move || {
+        for _ in 0..TRAY_WAIT_SECS {
+            if tray_host_available() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+        tracing::warn!("no system tray is available; showing the window instead of hiding it");
+        show_main_window(&app);
+    });
+}
+
 pub fn hide_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.hide();

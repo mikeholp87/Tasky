@@ -22,8 +22,30 @@ struct Entry {
     name: Option<String>,
     comment: Option<String>,
     exec: Option<String>,
-    only_in: Option<String>,
+    only_in: Vec<String>,
+    not_show_in: Vec<String>,
     disabled: bool,
+}
+
+/// `A;B;` as a list.
+fn split_list(value: &str) -> Vec<String> {
+    value
+        .split(';')
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether a desktop named in `current` (e.g. `XDG_CURRENT_DESKTOP=ubuntu:GNOME`)
+/// would start an entry with these `OnlyShowIn` / `NotShowIn` lists. An unknown
+/// desktop (`current` empty) is assumed to run everything.
+fn runs_on(only_in: &[String], not_show_in: &[String], current: &[String]) -> bool {
+    let named = |list: &[String]| {
+        list.iter()
+            .any(|d| current.iter().any(|c| c.eq_ignore_ascii_case(d)))
+    };
+    current.is_empty() || ((only_in.is_empty() || named(only_in)) && !named(not_show_in))
 }
 
 /// Reads the `[Desktop Entry]` group; everything else is ignored.
@@ -43,10 +65,8 @@ fn parse(text: &str) -> Entry {
             "Name" => e.name = Some(value.to_owned()),
             "Comment" => e.comment = Some(value.to_owned()).filter(|v| !v.is_empty()),
             "Exec" => e.exec = Some(strip_field_codes(value)),
-            "OnlyShowIn" => {
-                e.only_in =
-                    Some(value.trim_end_matches(';').replace(';', ", ")).filter(|v| !v.is_empty())
-            }
+            "OnlyShowIn" => e.only_in = split_list(value),
+            "NotShowIn" => e.not_show_in = split_list(value),
             "Hidden" if value == "true" => e.disabled = true,
             GNOME_KEY if value == "false" => e.disabled = true,
             _ => {}
@@ -99,6 +119,8 @@ fn with_disabled(text: &str, disabled: bool) -> String {
 pub struct Dirs {
     user: PathBuf,
     system: Vec<PathBuf>,
+    /// The running desktop(s), from `XDG_CURRENT_DESKTOP`; empty when unknown.
+    desktops: Vec<String>,
 }
 
 impl Dirs {
@@ -114,6 +136,9 @@ impl Dirs {
         Self {
             user: config.join("autostart"),
             system: system.into_iter().map(|d| d.join("autostart")).collect(),
+            desktops: var("XDG_CURRENT_DESKTOP")
+                .map(|v| v.to_string_lossy().split(':').map(str::to_owned).collect())
+                .unwrap_or_default(),
         }
     }
 }
@@ -155,6 +180,7 @@ pub fn list(dirs: &Dirs) -> Vec<StartupItem> {
                     mine.comment = entry.comment;
                     mine.exec = entry.exec;
                     mine.only_in = entry.only_in;
+                    mine.not_show_in = entry.not_show_in;
                     *filled = true;
                 }
                 Some(_) => {}
@@ -176,7 +202,8 @@ pub fn list(dirs: &Dirs) -> Vec<StartupItem> {
                 command,
                 scope,
                 enabled: !e.disabled,
-                only_in: e.only_in,
+                runs_here: runs_on(&e.only_in, &e.not_show_in, &dirs.desktops),
+                only_in: Some(e.only_in.join(", ")).filter(|v| !v.is_empty()),
             })
         })
         .collect();
@@ -250,9 +277,26 @@ mod tests {
             "{APP}OnlyShowIn=GNOME;KDE;\n[Other]\nHidden=true\n"
         ));
         assert_eq!(e.exec.as_deref(), Some("dropbox start"));
-        assert_eq!(e.only_in.as_deref(), Some("GNOME, KDE"));
+        assert_eq!(e.only_in, ["GNOME", "KDE"]);
         assert!(!e.disabled, "keys of other groups are ignored");
         assert!(parse(&format!("{APP}{GNOME_KEY}=false\n")).disabled);
+    }
+
+    #[test]
+    fn decides_whether_this_desktop_runs_an_entry() {
+        let l = |s: &str| split_list(s);
+        let gnome = vec!["ubuntu".to_owned(), "GNOME".to_owned()];
+        assert!(runs_on(&l("GNOME;MATE;"), &[], &gnome), "listed desktop");
+        assert!(!runs_on(&l("KDE;"), &[], &gnome), "KDE-only entry on GNOME");
+        assert!(
+            !runs_on(&[], &l("GNOME;"), &gnome),
+            "NotShowIn names this desktop"
+        );
+        assert!(runs_on(&l("gnome;"), &[], &gnome), "case does not matter");
+        assert!(
+            runs_on(&[], &[], &gnome) && runs_on(&l("KDE;"), &[], &[]),
+            "no limit / unknown desktop"
+        );
     }
 
     #[test]
@@ -278,6 +322,7 @@ mod tests {
         let dirs = Dirs {
             user: root.path().join("user"),
             system: Vec::new(),
+            desktops: vec![],
         };
         fs::create_dir(&dirs.user).unwrap();
         fs::write(dirs.user.join("app.desktop"), APP).unwrap();
@@ -300,6 +345,7 @@ mod tests {
         let dirs = Dirs {
             user: root.join("user"),
             system: vec![root.join("sys")],
+            desktops: vec![],
         };
         fs::create_dir_all(&dirs.system[0]).unwrap();
         fs::write(dirs.system[0].join("dropbox.desktop"), APP).unwrap();

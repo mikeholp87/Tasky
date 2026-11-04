@@ -22,7 +22,7 @@ export function StartupPage() {
     "startup",
   );
   const shown = useMemo(() => (data ? filterItems(data, query) : []), [data, query]);
-  const enabledCount = data?.filter((i) => i.enabled).length ?? 0;
+  const willStart = data?.filter((i) => i.enabled && i.runsHere).length ?? 0;
 
   async function toggle(id: string, name: string, enabled: boolean) {
     setPending((p) => new Set(p).add(id));
@@ -61,7 +61,7 @@ export function StartupPage() {
         />
         {data && (
           <span className="text-fg-muted">
-            {enabledCount} of {data.length} enabled
+            {willStart} of {data.length} start at login
           </span>
         )}
       </div>
@@ -92,7 +92,7 @@ export function StartupPage() {
             <tbody>
               {shown.map((i) => (
                 <tr key={i.id} className="border-t border-border/60">
-                  <td className={cn("px-3 py-1.5", !i.enabled && "text-fg-subtle")}>
+                  <td className={cn("px-3 py-1.5", !(i.enabled && i.runsHere) && "text-fg-subtle")}>
                     <div className="font-medium">{i.name}</div>
                     {i.comment && <div className="text-fg-muted">{i.comment}</div>}
                     {i.onlyIn && <div className="text-fg-muted">Only in {i.onlyIn}</div>}
@@ -112,7 +112,16 @@ export function StartupPage() {
                           if (!pending.has(i.id)) void toggle(i.id, i.name, v);
                         }}
                       />
-                      <span className="text-fg-muted">{i.enabled ? "Enabled" : "Disabled"}</span>
+                      <span
+                        className="text-fg-muted"
+                        title={
+                          i.enabled && !i.runsHere
+                            ? `This desktop does not start it${i.onlyIn ? ` (only in ${i.onlyIn})` : ""}.`
+                            : undefined
+                        }
+                      >
+                        {!i.enabled ? "Disabled" : i.runsHere ? "Enabled" : "Not used here"}
+                      </span>
                     </div>
                   </td>
                 </tr>

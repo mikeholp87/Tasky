@@ -210,6 +210,7 @@ const startup = (
   enabled: boolean,
   comment: string | null = null,
   onlyIn: string | null = null,
+  runsHere = true,
 ): StartupItem => ({
   id: `${name.toLowerCase().replace(/\W+/g, "-")}.desktop`,
   name,
@@ -218,6 +219,7 @@ const startup = (
   scope,
   enabled,
   onlyIn,
+  runsHere,
 });
 
 /** Mutable so the Startup page's switches work in the preview. */
@@ -229,8 +231,19 @@ const STARTUP_ITEMS: StartupItem[] = [
     "/usr/lib/x86_64-linux-gnu/libexec/org_kde_powerdevil",
     "system",
     true,
+    null,
+    "KDE",
+    false,
   ),
-  startup("Desktop Shell", "plasmashell --no-respawn", "system", true, "Plasma desktop"),
+  startup(
+    "Desktop Shell",
+    "plasmashell --no-respawn",
+    "system",
+    true,
+    "Plasma desktop",
+    "KDE",
+    false,
+  ),
   startup(
     "Secret Storage Service",
     "/usr/bin/gnome-keyring-daemon --start",

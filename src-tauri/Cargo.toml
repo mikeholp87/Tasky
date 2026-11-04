@@ -33,6 +33,11 @@ tauri-plugin-dialog = "2"
 tracing-appender = "0.2"
 tauri-plugin-single-instance = "2"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Already part of Tauri's GTK stack; used to ask the session bus whether a
+# system tray exists (stock GNOME has none).
+gio = "0.18"
+
 # https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1

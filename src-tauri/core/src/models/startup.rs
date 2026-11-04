@@ -24,4 +24,7 @@ pub struct StartupItem {
     pub enabled: bool,
     /// Only runs in certain desktops (`OnlyShowIn`), e.g. "GNOME".
     pub only_in: Option<String>,
+    /// Whether this desktop would start it at all (`OnlyShowIn` / `NotShowIn`
+    /// against the current desktop). `true` when the desktop is unknown.
+    pub runs_here: bool,
 }

@@ -12,4 +12,9 @@ id: string, name: string, comment: string | null, command: string, scope: Startu
 /**
  * Only runs in certain desktops (`OnlyShowIn`), e.g. "GNOME".
  */
-onlyIn: string | null, };
+onlyIn: string | null, 
+/**
+ * Whether this desktop would start it at all (`OnlyShowIn` / `NotShowIn`
+ * against the current desktop). `true` when the desktop is unknown.
+ */
+runsHere: boolean, };

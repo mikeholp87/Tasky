@@ -90,6 +90,10 @@ pub fn run() {
                     // Without a tray to come back from, start minimized in the taskbar.
                     let _ = window.show();
                     let _ = window.minimize();
+                } else {
+                    // Starts hidden in the tray; if the desktop has none (stock
+                    // GNOME), show the window instead of stranding it.
+                    desktop::show_window_if_no_tray(app.handle().clone());
                 }
             }
             Ok(())
@@ -103,8 +107,10 @@ pub fn run() {
                 return;
             };
             match event {
+                // Close hides to the tray only when there is a tray to restore
+                // it from; otherwise closing quits, as it would without the setting.
                 WindowEvent::CloseRequested { api, .. }
-                    if state.settings.get().minimize_to_tray =>
+                    if state.settings.get().minimize_to_tray && desktop::tray_host_available() =>
                 {
                     api.prevent_close();
                     hide_main_window(app);

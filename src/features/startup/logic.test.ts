@@ -10,6 +10,7 @@ const item = (name: string, enabled: boolean, command = name): StartupItem => ({
   scope: "user",
   enabled,
   onlyIn: null,
+  runsHere: true,
 });
 
 describe("startup filter", () => {

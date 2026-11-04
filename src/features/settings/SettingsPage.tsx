@@ -70,7 +70,7 @@ export function SettingsPage() {
             description={
               "Closing the window keeps Task Manager running in the system tray, so alerts still work." +
               (noTrayHost
-                ? " GNOME shows no tray by default; without the AppIndicator extension the window cannot be reopened except by launching Task Manager again."
+                ? " GNOME shows no tray by default; without the AppIndicator extension, closing the window quits Task Manager."
                 : "")
             }
             checked={s.minimizeToTray}
