@@ -1,9 +1,20 @@
-import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick, Network, Server } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Cpu,
+  Gpu,
+  HardDrive,
+  ListTree,
+  MemoryStick,
+  Network,
+  Server,
+} from "lucide-react";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
 import {
   CPU_SERIES,
+  GPU_SERIES,
   MEMORY_SERIES,
   NETWORK_SERIES,
   percentAxis,
@@ -13,11 +24,13 @@ import {
 import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList } from "@/components/ui/KeyValueList";
 import { Meter } from "@/components/ui/Meter";
+import { cn } from "@/lib/cn";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useUiStore } from "@/stores/uiStore";
 import {
   formatBytes,
   formatBytesPerSecond,
+  formatCount,
   formatDuration,
   formatFrequency,
   formatPercent,
@@ -38,8 +51,10 @@ export function OverviewPage() {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <CpuCard />
           <MemoryCard />
+          <GpuCard />
           <StorageCard />
           <NetworkCard />
+          <TopProcessesCard />
           <SystemCard />
         </div>
       ) : (
@@ -154,6 +169,89 @@ function MemoryCard() {
   );
 }
 
+function GpuCard() {
+  const gpu = useMetricsStore((s) => s.tick?.gpus[0]);
+  const gpuUsagePoint = useMetricsStore((s) => s.tick?.point.gpuUsage);
+  const navigate = useUiStore((s) => s.navigate);
+
+  if (!gpu) {
+    return (
+      <Card>
+        <CardHeader
+          title="GPU"
+          icon={<Gpu size={14} aria-hidden />}
+          action={<DetailsLink onClick={() => navigate("gpu")} label="GPU details" />}
+        />
+        <div className="flex h-[212px] flex-col justify-between px-4 pb-4 pt-2">
+          <div>
+            <BigValue value="—" sub="No dedicated GPU telemetry" />
+            <p className="mt-2 text-fg-muted">
+              No supported discrete or integrated GPU telemetry provider was detected on this
+              system.
+            </p>
+          </div>
+          <div className="flex items-center justify-between border-t border-border pt-2.5 text-[12px] text-fg-subtle">
+            <span>Dedicated VRAM</span>
+            <span className="num">Not available</span>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  const usage = gpu.usagePercent ?? gpuUsagePoint ?? 0;
+  const vramPct = gpu.totalVramBytes > 0 ? (gpu.usedVramBytes / gpu.totalVramBytes) * 100 : 0;
+  const subParts = [
+    gpu.totalVramBytes > 0
+      ? `${formatBytes(gpu.usedVramBytes)} / ${formatBytes(gpu.totalVramBytes)}`
+      : null,
+    gpu.temperatureCelsius != null ? `${Math.round(gpu.temperatureCelsius)} °C` : null,
+    gpu.powerWatts != null ? `${gpu.powerWatts.toFixed(1)} W` : null,
+  ].filter(Boolean);
+  const tempPowerParts = [
+    gpu.temperatureCelsius != null ? `${Math.round(gpu.temperatureCelsius)} °C` : null,
+    gpu.powerWatts != null ? `${gpu.powerWatts.toFixed(1)} W` : null,
+  ].filter(Boolean);
+
+  return (
+    <Card>
+      <CardHeader
+        title={`GPU · ${gpu.name}`}
+        icon={<Gpu size={14} aria-hidden />}
+        action={<DetailsLink onClick={() => navigate("gpu")} label="GPU details" />}
+      />
+      <div className="space-y-3 px-4 pb-4 pt-2">
+        <BigValue
+          value={formatPercent(usage)}
+          sub={subParts.join(" · ")}
+          warning={levelLabel(usageLevel(usage), "GPU")}
+        />
+        <Meter percent={usage} label="GPU usage" />
+        <TimeSeriesChart
+          series={GPU_SERIES}
+          seconds={CHART_SECONDS}
+          height={CHART_HEIGHT}
+          yMax={100}
+          formatValue={percentAxis}
+          sparkline
+          ariaLabel={`GPU usage over the last minute, currently ${formatPercent(usage)}`}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-4 text-fg-muted">
+          <span>
+            Dedicated VRAM{" "}
+            <span className="num text-fg">
+              {gpu.totalVramBytes > 0
+                ? `${formatBytes(gpu.usedVramBytes)} / ${formatBytes(gpu.totalVramBytes)} (${formatPercent(vramPct, 0)})`
+                : "—"}
+            </span>
+          </span>
+          {tempPowerParts.length > 0 && <span className="num">{tempPowerParts.join(" · ")}</span>}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function StorageCard() {
   const disks = useMetricsStore((s) => s.tick?.disks);
   const navigate = useUiStore((s) => s.navigate);
@@ -245,13 +343,97 @@ function NetworkCard() {
   );
 }
 
+function TopProcessesCard() {
+  const processes = useMetricsStore((s) => s.tick?.processes);
+  const navigate = useUiStore((s) => s.navigate);
+  if (!processes) return null;
+
+  const top = [...processes]
+    .sort((a, b) => b.cpuPercent - a.cpuPercent || b.memoryBytes - a.memoryBytes)
+    .slice(0, 5);
+  const runningCount = processes.filter((p) => p.status === "running").length;
+
+  return (
+    <Card className="flex flex-col justify-between">
+      <div>
+        <CardHeader
+          title="Top Processes"
+          icon={<ListTree size={14} aria-hidden />}
+          action={<DetailsLink onClick={() => navigate("processes")} label="All processes" />}
+        />
+        <div className="px-4 pb-2 pt-2">
+          {top.length === 0 ? (
+            <p className="py-4 text-fg-muted">No active processes reported.</p>
+          ) : (
+            <table className="w-full text-left text-[12px]">
+              <thead>
+                <tr className="border-b border-border text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+                  <th className="pb-1.5 font-medium">Process</th>
+                  <th className="pb-1.5 text-right font-medium">PID</th>
+                  <th className="pb-1.5 text-right font-medium">CPU</th>
+                  <th className="pb-1.5 text-right font-medium">Memory</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {top.map((p) => {
+                  const level = usageLevel(p.cpuPercent);
+                  return (
+                    <tr
+                      key={p.pid}
+                      onClick={() => useUiStore.getState().openProcess(p.pid)}
+                      className="cursor-pointer transition-colors hover:bg-surface-2"
+                      title={`Inspect ${p.name} (PID ${p.pid})`}
+                    >
+                      <td className="max-w-[160px] truncate py-1.5 pr-2 font-medium text-fg">
+                        {p.name}
+                      </td>
+                      <td className="num py-1.5 px-2 text-right text-fg-subtle">{p.pid}</td>
+                      <td
+                        className={cn(
+                          "num py-1.5 px-2 text-right font-semibold",
+                          level === "critical" && "text-crit",
+                          level === "warning" && "text-warn",
+                        )}
+                      >
+                        {formatPercent(p.cpuPercent)}
+                      </td>
+                      <td className="num py-1.5 pl-2 text-right text-fg-muted">
+                        {formatBytes(p.memoryBytes)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+      <div className="mx-4 mb-3 flex items-center justify-between border-t border-border pt-2 text-[12px] text-fg-muted">
+        <span>
+          Total processes: <span className="num font-medium text-fg">{formatCount(processes.length)}</span>
+        </span>
+        <span>
+          Running: <span className="num font-medium text-fg">{formatCount(runningCount)}</span>
+        </span>
+      </div>
+    </Card>
+  );
+}
+
 function SystemCard() {
   const info = useMetricsStore((s) => s.staticInfo);
   const tickTime = useMetricsStore((s) => s.tick?.timestampMs);
+  const engine = useMetricsStore((s) => s.tick?.engine);
+  const gpu = useMetricsStore((s) => s.tick?.gpus[0]);
   const navigate = useUiStore((s) => s.navigate);
   if (!info || tickTime == null) return null;
   const now = tickTime;
   const bootMs = info.bootTimeSecs != null ? info.bootTimeSecs * 1000 : null;
+  const gpuSpec = gpu
+    ? `${gpu.name}${gpu.totalVramBytes > 0 ? ` (${formatBytes(gpu.totalVramBytes)})` : ""}`
+    : "—";
+  const coreSpec = `${info.physicalCoreCount ?? "?"} physical · ${info.logicalCoreCount} logical`;
+
   return (
     <Card className="xl:col-span-2">
       <CardHeader
@@ -259,7 +441,7 @@ function SystemCard() {
         icon={<Server size={14} aria-hidden />}
         action={<DetailsLink onClick={() => navigate("system")} label="System information" />}
       />
-      <div className="grid gap-x-10 gap-y-1.5 px-4 pb-4 pt-3 md:grid-cols-2">
+      <div className="grid gap-x-10 gap-y-4 px-4 pb-4 pt-3 md:grid-cols-2 xl:grid-cols-3">
         <KeyValueList
           items={[
             { label: "Operating system", value: info.longOsVersion ?? info.osName ?? "—" },
@@ -270,10 +452,25 @@ function SystemCard() {
         />
         <KeyValueList
           items={[
+            { label: "Processor", value: info.cpuBrand || "—" },
+            { label: "Cores / Threads", value: coreSpec },
+            { label: "Installed RAM", value: formatBytes(info.totalMemoryBytes) },
+            { label: "Graphics (GPU)", value: gpuSpec },
+          ]}
+        />
+        <KeyValueList
+          items={[
             { label: "Uptime", value: formatDuration(uptimeSeconds(info.bootTimeSecs, now)) },
             { label: "Boot time", value: formatTimestamp(bootMs) },
-            { label: "Processor", value: info.cpuBrand || "—" },
-            { label: "Installed RAM", value: formatBytes(info.totalMemoryBytes) },
+            { label: "GPU driver", value: gpu?.driverVersion ?? "—" },
+            {
+              label: "Active processes",
+              value: engine ? formatCount(engine.processCount) : "—",
+            },
+            {
+              label: "Telemetry poll",
+              value: engine ? `${engine.intervalMs} ms (${engine.pollDurationMs} ms)` : "—",
+            },
           ]}
         />
       </div>

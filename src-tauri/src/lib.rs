@@ -6,6 +6,7 @@ mod desktop;
 mod logging;
 mod settings;
 mod state;
+mod tray_graph;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;

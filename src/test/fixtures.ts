@@ -27,6 +27,7 @@ export function makeTick(
     networks: [],
     processes,
     alerts: [],
+    gpus: [],
     point: {
       t: NOW_MS,
       cpu: 12,
@@ -38,6 +39,9 @@ export function makeTick(
       netTx: 0,
       diskRead: 0,
       diskWrite: 0,
+      gpuUsage: null,
+      gpuVramPercent: null,
+      gpuTemp: null,
     },
     engine: {
       pollDurationMs: 5,

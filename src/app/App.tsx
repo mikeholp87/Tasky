@@ -7,6 +7,7 @@ import { CommandPalette } from "./CommandPalette";
 import { useUiStore } from "@/stores/uiStore";
 import { AlertsPage } from "@/features/alerts/AlertsPage";
 import { CpuPage } from "@/features/cpu/CpuPage";
+import { GpuPage } from "@/features/gpu/GpuPage";
 import { MemoryPage } from "@/features/memory/MemoryPage";
 import { NetworkPage } from "@/features/network/NetworkPage";
 import { OverviewPage } from "@/features/overview/OverviewPage";
@@ -27,6 +28,7 @@ const PAGES: Record<RouteId, ComponentType> = {
   performance: PerformancePage,
   cpu: CpuPage,
   memory: MemoryPage,
+  gpu: GpuPage,
   storage: StoragePage,
   network: NetworkPage,
   "process-details": ProcessDetailsPage,

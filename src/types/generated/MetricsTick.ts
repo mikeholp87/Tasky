@@ -3,6 +3,7 @@ import type { AlertEvent } from "./AlertEvent";
 import type { CpuSnapshot } from "./CpuSnapshot";
 import type { DiskSnapshot } from "./DiskSnapshot";
 import type { EngineStats } from "./EngineStats";
+import type { GpuSnapshot } from "./GpuSnapshot";
 import type { HistoryPoint } from "./HistoryPoint";
 import type { MemorySnapshot } from "./MemorySnapshot";
 import type { NetworkInterfaceSnapshot } from "./NetworkInterfaceSnapshot";
@@ -34,4 +35,8 @@ alerts: Array<AlertEvent>,
 /**
  * Compact summary of this tick, appended to history buffers.
  */
-point: HistoryPoint, engine: EngineStats, };
+point: HistoryPoint, 
+/**
+ * Per-GPU snapshots (empty when no GPU detected).
+ */
+gpus: Array<GpuSnapshot>, engine: EngineStats, };

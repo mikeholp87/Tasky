@@ -182,6 +182,7 @@ mod tests {
             networks: vec![],
             processes: procs,
             alerts: vec![],
+            gpus: vec![],
             point: HistoryPoint {
                 t: 0,
                 cpu,
@@ -193,6 +194,9 @@ mod tests {
                 net_tx: 0.0,
                 disk_read: 0.0,
                 disk_write: 0.0,
+                gpu_usage: None,
+                gpu_vram_percent: None,
+                gpu_temp: None,
             },
             engine: EngineStats {
                 poll_duration_ms: 0.0,

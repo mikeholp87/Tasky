@@ -21,8 +21,21 @@ export const DISK_SERIES: readonly ChartSeries[] = [
   { label: "Write", colorVar: "--chart-2", value: (p) => p.diskWrite, fill: false },
 ];
 
+export const GPU_SERIES: readonly ChartSeries[] = [
+  { label: "GPU", colorVar: "--chart-3", value: (p) => p.gpuUsage ?? 0 },
+];
+
+export const GPU_VRAM_SERIES: readonly ChartSeries[] = [
+  { label: "VRAM %", colorVar: "--chart-2", value: (p) => p.gpuVramPercent ?? 0 },
+];
+
+export const GPU_TEMP_SERIES: readonly ChartSeries[] = [
+  { label: "Temp", colorVar: "--chart-4", value: (p) => p.gpuTemp ?? 0 },
+];
+
 export const percentAxis = (v: number) => formatPercent(v, 0);
 export const rateAxis = (v: number) => formatBytesPerSecond(v);
+export const tempAxis = (v: number) => `${Math.round(v)} °C`;
 
 /** Cache of single-core series so each core's config object is stable. */
 const coreSeriesCache = new Map<number, readonly ChartSeries[]>();

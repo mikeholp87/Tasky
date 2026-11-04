@@ -8,7 +8,7 @@ use sysinfo::{CpuRefreshKind, System};
 use crate::errors::{AppError, AppResult};
 use crate::models::{EngineStats, HistoryPoint, MetricsTick, Platform, StaticSystemInfo};
 use crate::monitoring::{
-    cpu, disks::DiskTracker, memory, network::NetworkTracker, processes::ProcessTracker,
+    cpu, disks::DiskTracker, gpu, memory, network::NetworkTracker, processes::ProcessTracker,
 };
 use crate::platform;
 
@@ -79,7 +79,17 @@ impl Collector {
         let disks = self.disks.sample(started, elapsed);
         let networks = self.networks.sample(elapsed);
         let processes = self.processes.sample(&mut self.sys, elapsed);
+        let gpus = gpu::collect();
         let process_count = u32::try_from(processes.len()).unwrap_or(u32::MAX);
+
+        let first_gpu = gpus.first();
+        let gpu_vram_percent = first_gpu.and_then(|g| {
+            if g.total_vram_bytes > 0 {
+                Some(((g.used_vram_bytes as f64 / g.total_vram_bytes as f64) * 100.0) as f32)
+            } else {
+                None
+            }
+        });
 
         let point = HistoryPoint {
             t: unix_millis(),
@@ -92,6 +102,9 @@ impl Collector {
             net_tx: networks.iter().map(|n| n.tx_bytes_per_sec).sum(),
             disk_read: disks.iter().filter_map(|d| d.read_bytes_per_sec).sum(),
             disk_write: disks.iter().filter_map(|d| d.write_bytes_per_sec).sum(),
+            gpu_usage: first_gpu.and_then(|g| g.usage_percent),
+            gpu_vram_percent,
+            gpu_temp: first_gpu.and_then(|g| g.temperature_celsius),
         };
 
         MetricsTick {
@@ -104,6 +117,7 @@ impl Collector {
             networks,
             processes,
             alerts: Vec::new(),
+            gpus,
             point,
             engine: EngineStats {
                 poll_duration_ms: duration_ms(started.elapsed()),

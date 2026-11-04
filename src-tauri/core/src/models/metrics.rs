@@ -25,6 +25,8 @@ pub struct MetricsTick {
     pub alerts: Vec<AlertEvent>,
     /// Compact summary of this tick, appended to history buffers.
     pub point: HistoryPoint,
+    /// Per-GPU snapshots (empty when no GPU detected).
+    pub gpus: Vec<GpuSnapshot>,
     pub engine: EngineStats,
 }
 
@@ -131,6 +133,51 @@ pub struct HistoryPoint {
     pub net_tx: f64,
     pub disk_read: f64,
     pub disk_write: f64,
+    /// GPU usage percentage (0–100). `None` when no GPU is detected.
+    pub gpu_usage: Option<f32>,
+    /// GPU VRAM usage percentage (0–100). `None` when no GPU is detected.
+    pub gpu_vram_percent: Option<f32>,
+    /// GPU temperature in degrees Celsius. `None` when unavailable.
+    pub gpu_temp: Option<f32>,
+}
+
+/// Snapshot of a single GPU device collected on each tick.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GpuSnapshot {
+    /// Human-readable name (e.g. "NVIDIA GeForce RTX 4090").
+    pub name: String,
+    /// GPU core usage percentage (0–100). `None` when unavailable.
+    pub usage_percent: Option<f32>,
+    /// Total VRAM in bytes.
+    pub total_vram_bytes: u64,
+    /// Used VRAM in bytes.
+    pub used_vram_bytes: u64,
+    /// GPU core temperature in degrees Celsius.
+    pub temperature_celsius: Option<f32>,
+    /// Current power draw in Watts.
+    pub power_watts: Option<f32>,
+    /// Configured power limit / cap in Watts.
+    pub power_limit_watts: Option<f32>,
+    /// Current graphics clock frequency in MHz.
+    pub clock_mhz: Option<u64>,
+    /// Current memory clock frequency in MHz.
+    pub memory_clock_mhz: Option<u64>,
+    /// Current fan speed percentage (0–100).
+    pub fan_speed_percent: Option<f32>,
+    /// Performance state (e.g. "P0", "P5", "P8").
+    pub pstate: Option<String>,
+    /// Current PCIe link generation (e.g. 4 for PCIe Gen 4).
+    pub pcie_gen: Option<u32>,
+    /// Current PCIe link width in lanes (e.g. 8 or 16).
+    pub pcie_width: Option<u32>,
+    /// Video encoder utilization percentage (0–100).
+    pub encoder_usage_percent: Option<f32>,
+    /// Video decoder utilization percentage (0–100).
+    pub decoder_usage_percent: Option<f32>,
+    /// Driver version string.
+    pub driver_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

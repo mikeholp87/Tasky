@@ -1,4 +1,4 @@
-import { Download } from "lucide-react";
+import { Activity, Download } from "lucide-react";
 import { DiagnosticsCard } from "./DiagnosticsCard";
 import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
 import { toast } from "@/stores/toastStore";
@@ -7,12 +7,31 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList, Unavailable } from "@/components/ui/KeyValueList";
 import { useMetricsStore } from "@/stores/metricsStore";
-import { formatBytes, formatDuration, formatTimestamp } from "@/utils/format";
+import {
+  formatBytes,
+  formatBytesPerSecond,
+  formatCount,
+  formatDuration,
+  formatFrequency,
+  formatPercent,
+  formatTimestamp,
+} from "@/utils/format";
 import { uptimeSeconds } from "@/utils/system";
 
 export function SystemInfoPage() {
   const info = useMetricsStore((s) => s.staticInfo);
-  const now = useMetricsStore((s) => s.tick?.timestampMs);
+  const tick = useMetricsStore((s) => s.tick);
+  const now = tick?.timestampMs;
+  const gpu = tick?.gpus[0];
+
+  const diskRead =
+    tick?.disks.reduce((acc, d) => acc + (d.readBytesPerSec ?? 0), 0) ?? 0;
+  const diskWrite =
+    tick?.disks.reduce((acc, d) => acc + (d.writeBytesPerSec ?? 0), 0) ?? 0;
+  const netRx =
+    tick?.networks.reduce((acc, n) => acc + n.rxBytesPerSec, 0) ?? 0;
+  const netTx =
+    tick?.networks.reduce((acc, n) => acc + n.txBytesPerSec, 0) ?? 0;
 
   return (
     <>
@@ -30,10 +49,10 @@ export function SystemInfoPage() {
           </button>
         }
       />
-      {!info || now == null ? (
+      {!info || now == null || !tick ? (
         <ConnectionNotice />
       ) : (
-        <div className="grid max-w-5xl gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Card>
             <CardHeader title="Operating system" />
             <div className="px-4 pb-4 pt-3">
@@ -61,6 +80,64 @@ export function SystemInfoPage() {
                   { label: "Physical cores", value: info.physicalCoreCount ?? <Unavailable /> },
                   { label: "Logical processors", value: info.logicalCoreCount },
                   { label: "Installed RAM", value: formatBytes(info.totalMemoryBytes) },
+                  {
+                    label: "Graphics (GPU)",
+                    value: gpu ? (
+                      `${gpu.name}${gpu.totalVramBytes > 0 ? ` (${formatBytes(gpu.totalVramBytes)})` : ""}`
+                    ) : (
+                      <Unavailable />
+                    ),
+                  },
+                  { label: "GPU driver", value: gpu?.driverVersion ?? <Unavailable /> },
+                ]}
+              />
+            </div>
+          </Card>
+          <Card>
+            <CardHeader
+              title="Live Resource Overview"
+              icon={<Activity size={14} aria-hidden />}
+            />
+            <div className="px-4 pb-4 pt-3">
+              <KeyValueList
+                items={[
+                  {
+                    label: "CPU Utilization",
+                    value: `${formatPercent(tick.cpu.usagePercent)}${
+                      tick.cpu.frequencyMhz != null
+                        ? ` · ${formatFrequency(tick.cpu.frequencyMhz)}`
+                        : ""
+                    }`,
+                  },
+                  {
+                    label: "Memory in Use",
+                    value: `${formatBytes(tick.memory.usedBytes)} / ${formatBytes(tick.memory.totalBytes)} (${formatPercent(tick.memory.usedPercent, 0)})`,
+                  },
+                  {
+                    label: "GPU Utilization",
+                    value:
+                      gpu?.usagePercent != null ? (
+                        `${formatPercent(gpu.usagePercent)}${
+                          gpu.temperatureCelsius != null
+                            ? ` · ${Math.round(gpu.temperatureCelsius)} °C`
+                            : ""
+                        }`
+                      ) : (
+                        <Unavailable />
+                      ),
+                  },
+                  {
+                    label: "Disk Throughput",
+                    value: `↓ ${formatBytesPerSecond(diskRead)} · ↑ ${formatBytesPerSecond(diskWrite)}`,
+                  },
+                  {
+                    label: "Network Throughput",
+                    value: `↓ ${formatBytesPerSecond(netRx)} · ↑ ${formatBytesPerSecond(netTx)}`,
+                  },
+                  {
+                    label: "Active Processes",
+                    value: formatCount(tick.processes.length),
+                  },
                 ]}
               />
             </div>
