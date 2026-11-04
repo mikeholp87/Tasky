@@ -1,26 +1,16 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Meter } from "@/components/ui/Meter";
-import { backend, isBackendAvailable } from "@/services/ipc";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useProcessStore } from "@/stores/processStore";
 import { useUiStore } from "@/stores/uiStore";
 import { formatBytes, formatPercent } from "@/utils/format";
 import { groupByApplication, type MemoryGroup } from "./groups";
+import { useMemoryDetail } from "./useMemoryDetail";
 
 const TOP_GROUPS = 10;
 const TOP_PROCESSES = 8;
-
-/** Asks the engine for per-process shared-memory figures while this card is on screen. */
-function useMemoryDetail(): void {
-  useEffect(() => {
-    if (!isBackendAvailable()) return;
-    const set = (enabled: boolean) => void backend.setMemoryDetail(enabled).catch(() => undefined);
-    set(true);
-    return () => set(false);
-  }, []);
-}
 
 function openProcessesBySize() {
   useProcessStore.setState({
@@ -64,7 +54,7 @@ export function TopMemoryCard() {
           <button
             type="button"
             onClick={openProcessesBySize}
-            className="rounded-md border border-border px-2.5 py-1 text-[12px] text-fg-muted hover:bg-surface-2 hover:text-fg"
+            className="rounded-md border border-border px-2.5 py-1 text-[0.8125rem] text-fg-muted hover:bg-surface-2 hover:text-fg"
           >
             Sort all processes by memory
           </button>
@@ -95,12 +85,12 @@ export function TopMemoryCard() {
           <button
             type="button"
             onClick={() => setShowAll((v) => !v)}
-            className="mt-2 rounded-md px-2 py-1 text-[12px] text-fg-muted hover:bg-surface-2 hover:text-fg"
+            className="mt-2 rounded-md px-2 py-1 text-[0.8125rem] text-fg-muted hover:bg-surface-2 hover:text-fg"
           >
             {showAll ? "Show fewer" : `Show all ${groups.length} applications`}
           </button>
         )}
-        <p className="mt-3 text-[12px] text-fg-subtle">
+        <p className="mt-3 text-[0.8125rem] text-fg-subtle">
           {measured
             ? "Figures split memory shared between processes (such as a browser's libraries) among the processes that share it, so an application's total is what it actually occupies. "
             : "Figures are resident memory, which counts memory shared between an application's processes more than once. "}
@@ -132,7 +122,7 @@ function GroupRow({
         aria-expanded={open}
         className="grid w-full grid-cols-[16px_1fr_auto_56px] items-center gap-x-2 rounded-md px-1 py-1 text-left hover:bg-surface-2"
       >
-        <Chevron size={14} aria-hidden className="text-fg-subtle" />
+        <Chevron size="0.875rem" aria-hidden className="text-fg-subtle" />
         <span className="min-w-0 truncate">
           <span className="font-medium">{g.name}</span>
           {g.processes.length > 1 && (
@@ -168,7 +158,7 @@ function GroupRow({
               <button
                 type="button"
                 onClick={() => openProcess(p.pid)}
-                className="rounded px-1.5 py-0.5 text-[12px] text-fg-muted hover:bg-surface-2 hover:text-fg"
+                className="rounded px-1.5 py-0.5 text-[0.8125rem] text-fg-muted hover:bg-surface-2 hover:text-fg"
                 aria-label={`Details for ${p.name} (PID ${p.pid})`}
               >
                 Details
@@ -176,7 +166,7 @@ function GroupRow({
             </li>
           ))}
           {g.processes.length > TOP_PROCESSES && (
-            <li className="py-0.5 text-[12px] text-fg-subtle">
+            <li className="py-0.5 text-[0.8125rem] text-fg-subtle">
               and {g.processes.length - TOP_PROCESSES} smaller processes
             </li>
           )}

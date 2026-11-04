@@ -65,10 +65,10 @@ export function FileFinderPage() {
           placeholder="Type or paste a path, or choose one"
           aria-label="Path to search for"
           spellCheck={false}
-          className="h-8 min-w-72 flex-1 rounded-md border border-border bg-surface px-2.5 font-mono text-[12px] outline-none placeholder:font-sans placeholder:text-fg-subtle focus:border-accent"
+          className="h-8 min-w-72 flex-1 rounded-md border border-border bg-surface px-2.5 font-mono text-[0.8125rem] outline-none placeholder:font-sans placeholder:text-fg-subtle focus:border-accent"
         />
         <button type="submit" className={btn} disabled={!available || busy || !path.trim()}>
-          <Search size={14} aria-hidden /> Find
+          <Search size="0.875rem" aria-hidden /> Find
         </button>
         <button
           type="button"
@@ -76,7 +76,7 @@ export function FileFinderPage() {
           disabled={!available || busy}
           onClick={() => void choose(false)}
         >
-          <File size={14} aria-hidden /> Choose file…
+          <File size="0.875rem" aria-hidden /> Choose file…
         </button>
         <button
           type="button"
@@ -84,7 +84,7 @@ export function FileFinderPage() {
           disabled={!available || busy}
           onClick={() => void choose(true)}
         >
-          <Folder size={14} aria-hidden /> Choose folder…
+          <Folder size="0.875rem" aria-hidden /> Choose folder…
         </button>
       </form>
 
@@ -108,7 +108,9 @@ export function FileFinderPage() {
           <p role="status" className="font-medium">
             {summarize(groups.length, result.isDirectory)}
           </p>
-          <p className="break-all font-mono text-[12px] text-fg-muted">{result.resolvedPath}</p>
+          <p className="break-all font-mono text-[0.8125rem] text-fg-muted">
+            {result.resolvedPath}
+          </p>
           {result.note && (
             <p role="note" className="text-fg-muted">
               {result.note}
@@ -145,7 +147,9 @@ export function FileFinderPage() {
                 {g.uses.map((u) => (
                   <li key={`${u.usage}:${u.path}`} className="grid grid-cols-[150px_1fr] gap-3">
                     <span className="text-fg-muted">{USAGE_LABEL[u.usage]}</span>
-                    <code className="selectable break-all font-mono text-[12px]">{u.path}</code>
+                    <code className="selectable break-all font-mono text-[0.8125rem]">
+                      {u.path}
+                    </code>
                   </li>
                 ))}
               </ul>

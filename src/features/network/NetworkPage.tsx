@@ -37,7 +37,7 @@ export function NetworkPage() {
         </div>
       )}
       {hidden > 0 && (
-        <p className="mt-4 text-[12px] text-fg-muted">
+        <p className="mt-4 text-[0.8125rem] text-fg-muted">
           {hidden} virtual {hidden === 1 ? "adapter" : "adapters"} (bridges, container networks)
           hidden. Show them in Settings → Monitoring.
         </p>
@@ -54,28 +54,28 @@ function InterfaceCard({ iface: n }: { iface: NetworkInterfaceSnapshot }) {
           <span className="normal-case tracking-normal text-fg">
             {n.name}
             {INTERFACE_KIND_LABEL[n.kind] && (
-              <span className="ml-2 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-fg-muted">
+              <span className="ml-2 rounded bg-surface-2 px-1.5 py-0.5 text-[0.75rem] font-medium text-fg-muted">
                 {INTERFACE_KIND_LABEL[n.kind]}
               </span>
             )}
             {n.isPrimary && (
-              <span className="ml-2 rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-fg">
+              <span className="ml-2 rounded bg-accent-soft px-1.5 py-0.5 text-[0.75rem] font-medium text-fg">
                 Primary
               </span>
             )}
           </span>
         }
-        icon={<Wifi size={14} aria-hidden />}
+        icon={<Wifi size="0.875rem" aria-hidden />}
       />
       <div className="grid gap-6 px-4 pb-4 pt-3 lg:grid-cols-[320px_1fr]">
         <div className="space-y-3">
           <div className="flex gap-6">
             <span className="num flex items-center gap-1 text-xl font-semibold">
-              <ArrowDown size={16} className="text-[var(--res-net)]" aria-label="Download" />
+              <ArrowDown size="1rem" className="text-[var(--res-net)]" aria-label="Download" />
               {formatBytesPerSecond(n.rxBytesPerSec)}
             </span>
             <span className="num flex items-center gap-1 text-xl font-semibold">
-              <ArrowUp size={16} className="text-[var(--res-net-2)]" aria-label="Upload" />
+              <ArrowUp size="1rem" className="text-[var(--res-net-2)]" aria-label="Upload" />
               {formatBytesPerSecond(n.txBytesPerSec)}
             </span>
           </div>

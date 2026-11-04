@@ -174,7 +174,7 @@ function InternetResultPanel({
           <li key={n}>{n}</li>
         ))}
       </ul>
-      <p className="text-[12px] text-fg-subtle">
+      <p className="text-[0.8125rem] text-fg-subtle">
         {net.provider} · {net.host}
         {net.serverLocation ? ` · server ${net.serverLocation}` : ""}
         {net.path.interface

@@ -2,10 +2,10 @@ import { memo } from "react";
 import { cn } from "@/lib/cn";
 import { usageLevel, type UsageLevel } from "@/utils/levels";
 
-const FILL: Record<UsageLevel, string> = {
-  normal: "",
-  warning: "bg-warn-bar",
-  critical: "bg-crit",
+const LEVEL_VAR: Record<UsageLevel, string | null> = {
+  normal: null,
+  warning: "--warn-bar",
+  critical: "--crit",
 };
 
 interface MeterProps {
@@ -41,15 +41,11 @@ export const Meter = memo(function Meter({
       )}
     >
       <div
-        className={cn(
-          "h-full rounded-full transition-[width] duration-300",
-          FILL[usageLevel(clamped)],
-        )}
+        className="h-full rounded-full transition-[width] duration-300"
         style={{
           width: `${clamped}%`,
-          ...(usageLevel(clamped) === "normal"
-            ? { background: `var(${color ?? "--accent"})` }
-            : {}),
+          // Fades in from the left so the bright end marks where the value stops.
+          background: `linear-gradient(90deg, color-mix(in srgb, var(${LEVEL_VAR[usageLevel(clamped)] ?? color ?? "--accent"}) 45%, transparent), var(${LEVEL_VAR[usageLevel(clamped)] ?? color ?? "--accent"}))`,
         }}
       />
     </div>

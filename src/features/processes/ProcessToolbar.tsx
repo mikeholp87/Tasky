@@ -63,7 +63,7 @@ function SearchBox() {
   return (
     <div className="relative w-72">
       <Search
-        size={14}
+        size="0.875rem"
         aria-hidden
         className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle"
       />
@@ -89,7 +89,7 @@ function SearchBox() {
           onClick={() => setSearch("")}
           className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-fg-subtle hover:text-fg"
         >
-          <X size={13} />
+          <X size="0.8125rem" />
         </button>
       )}
     </div>
@@ -133,7 +133,7 @@ function ModeToggle() {
         mode === id && "bg-surface text-fg shadow-sm",
       )}
     >
-      <Icon size={15} />
+      <Icon size="0.9375rem" />
     </button>
   );
   return (
@@ -156,7 +156,7 @@ function ColumnMenu() {
           type="button"
           className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg"
         >
-          <Columns3 size={14} aria-hidden />
+          <Columns3 size="0.875rem" aria-hidden />
           Columns
         </button>
       </DropdownMenu.Trigger>
@@ -164,7 +164,7 @@ function ColumnMenu() {
         <DropdownMenu.Content
           align="end"
           sideOffset={4}
-          className="z-50 max-h-[70vh] min-w-48 overflow-y-auto rounded-lg border border-border bg-surface p-1 text-[13px] shadow-lg"
+          className="z-50 max-h-[70vh] min-w-48 overflow-y-auto rounded-lg border border-border bg-surface p-1 text-[0.875rem] shadow-lg"
         >
           {COLUMNS.map((c) => (
             <DropdownMenu.CheckboxItem
@@ -207,11 +207,11 @@ function TreeButtons({ rows, apps }: { rows: readonly ProcessRow[]; apps: boolea
   return (
     <>
       <button type="button" className={cls} onClick={expandAll}>
-        <ChevronsUpDown size={14} aria-hidden />
+        <ChevronsUpDown size="0.875rem" aria-hidden />
         Expand all
       </button>
       <button type="button" className={cls} onClick={() => collapseAll(parentPids(rows))}>
-        <ChevronsDownUp size={14} aria-hidden />
+        <ChevronsDownUp size="0.875rem" aria-hidden />
         Collapse all
       </button>
     </>

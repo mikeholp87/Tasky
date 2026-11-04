@@ -207,7 +207,7 @@ export function SettingsPage() {
                     s.theme === id && "bg-surface text-fg shadow-sm",
                   )}
                 >
-                  <Icon size={14} aria-hidden />
+                  <Icon size="0.875rem" aria-hidden />
                   {label}
                 </button>
               ))}
@@ -261,7 +261,7 @@ export function SettingsPage() {
               }}
               className="flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-crit hover:bg-surface-2"
             >
-              <RotateCcw size={14} aria-hidden /> Reset
+              <RotateCcw size="0.875rem" aria-hidden /> Reset
             </button>
           </Field>
         </Section>
@@ -296,7 +296,7 @@ function DiagnosticsExport({ disabled }: { disabled: boolean }) {
           onClick={() => void run()}
           className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 hover:bg-surface-2 disabled:opacity-50"
         >
-          <Download size={14} aria-hidden /> Export…
+          <Download size="0.875rem" aria-hidden /> Export…
         </button>
       </div>
       <label className="flex items-center gap-2 text-fg-muted">

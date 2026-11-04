@@ -402,7 +402,7 @@ function GpuResultPanel({
                     className="inline-flex items-center gap-1 text-ok"
                     title="The output matched a CPU reference calculation."
                   >
-                    <Check size={14} aria-hidden /> Verified
+                    <Check size="0.875rem" aria-hidden /> Verified
                   </span>
                 ) : (
                   <span className="text-fg-subtle">Not checked</span>
@@ -429,7 +429,7 @@ function GpuResultPanel({
           ))}
         </ul>
       )}
-      <p className="text-[12px] text-fg-subtle">
+      <p className="text-[0.8125rem] text-fg-subtle">
         {a.name} · {DEVICE_TYPE[a.deviceType]} · {a.backend} · {a.driver} {a.driverInfo}
         <br />
         Method {result.method.methodId}, scoring {result.method.scoreVersion}. Timed with{" "}
@@ -504,13 +504,15 @@ function HistoryCard({
                   aria-label={`Delete the result from ${formatTimestamp(r.startedAtMs)}`}
                   className="rounded-md p-1.5 text-fg-muted hover:bg-surface-2 hover:text-crit"
                 >
-                  <Trash2 size={14} aria-hidden />
+                  <Trash2 size="0.875rem" aria-hidden />
                 </button>
               </li>
             ))}
           </ul>
         )}
-        <p className="pt-2 text-[12px] text-fg-subtle">CPU scores are single-core / multi-core.</p>
+        <p className="pt-2 text-[0.8125rem] text-fg-subtle">
+          CPU scores are single-core / multi-core.
+        </p>
       </div>
     </Card>
   );

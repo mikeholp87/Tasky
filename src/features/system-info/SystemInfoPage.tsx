@@ -96,7 +96,7 @@ export function SystemInfoPage() {
           onClick={() => void exportSummary()}
           className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50"
         >
-          <Download size={14} aria-hidden /> Export summary…
+          <Download size="0.875rem" aria-hidden /> Export summary…
         </button>
       }
     />
@@ -237,7 +237,7 @@ export function SystemInfoPage() {
         >
           {GROUPS.map((group) => (
             <div key={group} className="flex gap-1 lg:mb-3 lg:flex-col">
-              <div className="hidden px-2.5 pb-1 text-[12px] font-medium text-fg-subtle lg:block">
+              <div className="hidden px-2.5 pb-1 text-[0.8125rem] font-medium text-fg-subtle lg:block">
                 {group}
               </div>
               {sections
@@ -267,7 +267,7 @@ export function SystemInfoPage() {
                       <span className={cn("block whitespace-nowrap", active && "font-medium")}>
                         {s.label}
                       </span>
-                      <span className="hidden truncate text-[12px] font-normal text-fg-subtle lg:block">
+                      <span className="hidden truncate text-[0.8125rem] font-normal text-fg-subtle lg:block">
                         {s.summary}
                       </span>
                     </button>

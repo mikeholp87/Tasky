@@ -10,6 +10,7 @@ import {
   useRef,
 } from "react";
 import { cn } from "@/lib/cn";
+import { scaled, useRootPx } from "@/hooks/useRootPx";
 import { columnWidth, useProcessStore } from "@/stores/processStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -23,6 +24,7 @@ import {
   type ProcessContext,
   type SortState,
   isNewProcess,
+  memoryOf,
   runState,
   type RunState,
 } from "./logic";
@@ -81,15 +83,16 @@ export function ProcessTable({
   const compact = useSettingsStore((s) => s.compactTable);
   const heat = useSettingsStore((s) => s.heatMapping);
   const highlightSecs = useSettingsStore((s) => s.newProcessSeconds);
-  const rowHeight = compact ? 26 : 32;
+  const rootPx = useRootPx();
+  const rowHeight = scaled(compact ? 26 : 32, rootPx);
 
   const template = useMemo(
-    () => visibleColumns.map((c) => `${columnWidth(widths, c)}px`).join(" "),
-    [visibleColumns, widths],
+    () => visibleColumns.map((c) => `${scaled(columnWidth(widths, c), rootPx)}px`).join(" "),
+    [visibleColumns, widths, rootPx],
   );
   const totalWidth = useMemo(
-    () => visibleColumns.reduce((sum, c) => sum + columnWidth(widths, c), 0),
-    [visibleColumns, widths],
+    () => visibleColumns.reduce((sum, c) => sum + scaled(columnWidth(widths, c), rootPx), 0),
+    [visibleColumns, widths, rootPx],
   );
 
   const virtualizer = useVirtualizer({
@@ -255,7 +258,7 @@ const HeaderRow = memo(function HeaderRow({
     <div
       role="row"
       aria-rowindex={1}
-      className="sticky top-0 z-10 grid border-b border-border bg-surface-2 text-[12px] font-medium text-fg-muted"
+      className="sticky top-0 z-10 grid border-b border-border bg-surface-2 text-[0.8125rem] font-medium text-fg-muted"
       style={{ gridTemplateColumns: template }}
     >
       {columns.map((id) => {
@@ -280,9 +283,9 @@ const HeaderRow = memo(function HeaderRow({
               <span className="truncate">{col.label}</span>
               {active &&
                 (sort.direction === "asc" ? (
-                  <ArrowUp size={12} aria-hidden />
+                  <ArrowUp size="0.75rem" aria-hidden />
                 ) : (
-                  <ArrowDown size={12} aria-hidden />
+                  <ArrowDown size="0.75rem" aria-hidden />
                 ))}
             </button>
             <ResizeHandle column={id} />
@@ -295,6 +298,7 @@ const HeaderRow = memo(function HeaderRow({
 
 function ResizeHandle({ column }: { column: ColumnId }) {
   const setWidth = useProcessStore((s) => s.setColumnWidth);
+  const rootPx = useRootPx();
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -303,7 +307,8 @@ function ResizeHandle({ column }: { column: ColumnId }) {
     const startX = e.clientX;
     const startWidth = columnWidth(useProcessStore.getState().columnWidths, column);
     const move = (ev: globalThis.PointerEvent) =>
-      setWidth(column, startWidth + ev.clientX - startX);
+      // Stored widths are in 16px-root units; the pointer moves in screen px.
+      setWidth(column, startWidth + ((ev.clientX - startX) * 16) / rootPx);
     const up = () => {
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
@@ -361,7 +366,7 @@ const Row = memo(function Row({
   ...rest
 }: RowProps) {
   const { row } = item;
-  const memPct = ctx.totalMemoryBytes > 0 ? (row.memoryBytes / ctx.totalMemoryBytes) * 100 : 0;
+  const memPct = ctx.totalMemoryBytes > 0 ? (memoryOf(row) / ctx.totalMemoryBytes) * 100 : 0;
   const isNew = isNewProcess(row.startTime, ctx.nowSecs, highlightSecs);
   const run = RUN_COLOR[runState(row)];
   return (
@@ -382,7 +387,7 @@ const Row = memo(function Row({
         onContextMenu?.(e);
       }}
       className={cn(
-        "absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[13px]",
+        "absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[0.875rem]",
         selected ? "bg-accent-soft" : isNew ? "bg-accent-soft/40" : "hover:bg-surface-2",
         item.group && "font-medium",
       )}
@@ -411,7 +416,8 @@ const Row = memo(function Row({
               "flex h-full min-w-0 items-center px-2",
               col.align === "right" && "num justify-end",
               id === "name" && "font-medium",
-              (id === "exe" || id === "cmd") && "selectable font-mono text-[12px] text-fg-muted",
+              (id === "exe" || id === "cmd") &&
+                "selectable font-mono text-[0.8125rem] text-fg-muted",
             )}
             style={{
               background: statusTint ? (run.bg ?? HEAT_BG[level]) : HEAT_BG[level],
@@ -437,7 +443,11 @@ const Row = memo(function Row({
                     }}
                     className="grid size-4 place-items-center rounded text-fg-muted hover:bg-border"
                   >
-                    {item.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    {item.expanded ? (
+                      <ChevronDown size="0.8125rem" />
+                    ) : (
+                      <ChevronRight size="0.8125rem" />
+                    )}
                   </button>
                 )}
               </span>
@@ -446,12 +456,12 @@ const Row = memo(function Row({
               {item.group && id === "pid" ? "—" : cellContent(id, row, ctx)}
             </span>
             {id === "name" && isNew && (
-              <span className="ml-2 shrink-0 rounded bg-accent-soft px-1 text-[10px] font-normal text-accent">
+              <span className="ml-2 shrink-0 rounded bg-accent-soft px-1 text-[0.6875rem] font-normal text-accent">
                 New
               </span>
             )}
             {id === "name" && isSelf && (
-              <span className="ml-2 shrink-0 rounded bg-surface-2 px-1 text-[10px] font-normal text-fg-muted">
+              <span className="ml-2 shrink-0 rounded bg-surface-2 px-1 text-[0.6875rem] font-normal text-fg-muted">
                 this app
               </span>
             )}

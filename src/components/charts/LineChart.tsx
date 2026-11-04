@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+import { scaled, useRootPx } from "@/hooks/useRootPx";
 import { useUiStore } from "@/stores/uiStore";
 
 export interface LineSeries {
@@ -63,6 +64,8 @@ export const LineChart = memo(function LineChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<uPlot | null>(null);
   const theme = useUiStore((s) => s.resolvedTheme);
+  const rootPx = useRootPx();
+  const h = scaled(height, rootPx);
 
   const seriesKey = useMemo(
     () => series.map((s) => `${s.label}:${s.colorVar}:${s.fill !== false}`).join("|"),
@@ -80,13 +83,14 @@ export const LineChart = memo(function LineChart({
     if (!el) return;
     const grid = cssVar("--chart-grid");
     const axisColor = cssVar("--fg-subtle");
-    const font = `11px ${getComputedStyle(document.body).fontFamily}`;
+    const font = `${Math.round(rootPx * 0.75)}px ${getComputedStyle(document.body).fontFamily}`;
+    const topAlpha = theme === "dark" ? 0.5 : 0.36;
     const current = seriesRef.current;
 
     const opts: uPlot.Options = {
       width: Math.max(el.clientWidth, 50),
-      height,
-      padding: sparkline ? [2, 0, 0, 0] : [8, 8, 0, 0],
+      height: h,
+      padding: sparkline ? [2, 0, 0, 0] : [scaled(10, rootPx), scaled(8, rootPx), 0, 0],
       legend: { show: false },
       cursor: sparkline ? { show: false } : { points: { size: 6 }, drag: { x: false, y: false } },
       scales: {
@@ -102,18 +106,20 @@ export const LineChart = memo(function LineChart({
             {
               stroke: axisColor,
               font,
-              grid: { stroke: grid, width: 1 },
+              grid: { show: false },
               ticks: { show: false },
-              size: 28,
+              size: scaled(30, rootPx),
+              // "14:05:09" at this font size needs about this much room per label.
+              space: scaled(96, rootPx),
               // Single-line clock labels; uPlot's default date+time wraps and clips.
               values: (_u, ticks) => ticks.map(clockLabel),
             },
             {
               stroke: axisColor,
               font,
-              grid: { stroke: grid, width: 1 },
+              grid: { stroke: grid, width: 1, dash: [3, 5] },
               ticks: { show: false },
-              size: 64,
+              size: scaled(68, rootPx),
               values: (_u, ticks) => ticks.map((v) => formatRef.current(v)),
             },
           ],
@@ -124,8 +130,19 @@ export const LineChart = memo(function LineChart({
           return {
             label: s.label,
             stroke: color,
-            width: 1.5,
-            fill: s.fill === false ? undefined : withAlpha(color, 0.12),
+            width: 2,
+            // The area glows from the line's own hue down to nothing at the baseline.
+            fill:
+              s.fill === false
+                ? undefined
+                : (u: uPlot) => {
+                    const { top, height: plotH } = u.bbox;
+                    const g = u.ctx.createLinearGradient(0, top, 0, top + plotH);
+                    g.addColorStop(0, withAlpha(color, topAlpha));
+                    g.addColorStop(0.65, withAlpha(color, topAlpha * 0.25));
+                    g.addColorStop(1, withAlpha(color, 0));
+                    return g;
+                  },
             points: { show: false },
           };
         }),
@@ -135,7 +152,7 @@ export const LineChart = memo(function LineChart({
     const plot = new uPlot(opts, [[], ...current.map(() => [])], el);
     plotRef.current = plot;
     const resize = new ResizeObserver(() => {
-      plot.setSize({ width: Math.max(el.clientWidth, 50), height });
+      plot.setSize({ width: Math.max(el.clientWidth, 50), height: h });
     });
     resize.observe(el);
     return () => {
@@ -143,7 +160,7 @@ export const LineChart = memo(function LineChart({
       plot.destroy();
       plotRef.current = null;
     };
-  }, [seriesKey, height, yMax, minYMax, sparkline, theme]);
+  }, [seriesKey, h, rootPx, yMax, minYMax, sparkline, theme]);
 
   const [xMin, xMax] = xRange;
   useEffect(() => {
@@ -155,7 +172,7 @@ export const LineChart = memo(function LineChart({
       plot.setData(data);
       plot.setScale("x", { min: xMin, max: xMax });
     });
-  }, [data, xMin, xMax, seriesKey, height, yMax, sparkline, theme]);
+  }, [data, xMin, xMax, seriesKey, h, yMax, sparkline, theme]);
 
   return (
     <div
@@ -163,7 +180,7 @@ export const LineChart = memo(function LineChart({
       role="img"
       aria-label={ariaLabel}
       className="w-full"
-      style={{ height }}
+      style={{ height: h }}
     />
   );
 });

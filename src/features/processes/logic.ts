@@ -95,7 +95,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     minWidth: 70,
     defaultVisible: true,
     descendingFirst: true,
-    sortValue: (r) => r.memoryBytes,
+    sortValue: (r) => memoryOf(r),
   },
   {
     id: "memoryPercent",
@@ -105,7 +105,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     minWidth: 60,
     defaultVisible: false,
     descendingFirst: true,
-    sortValue: (r) => r.memoryBytes,
+    sortValue: (r) => memoryOf(r),
   },
   {
     id: "diskRead",
@@ -264,7 +264,7 @@ export const FILTER_PRESETS: readonly {
     id: "highMemory",
     label: "High memory",
     description: "Memory above 1 GB",
-    test: (r) => r.memoryBytes > GIB,
+    test: (r) => memoryOf(r) > GIB,
   },
   {
     id: "user",
@@ -413,6 +413,16 @@ export function isNewProcess(startTime: number, nowSecs: number, windowSecs: num
 }
 
 /** Execution state of a process, for red/green colouring. */
+/**
+ * The memory figure shown for a process in every view: proportional memory
+ * (PSS, shared pages split between the processes using them) when the system
+ * has measured it, else resident memory. Using one figure everywhere makes an
+ * application's total equal the sum of its processes and match the Memory page.
+ */
+export function memoryOf(row: Pick<ProcessRow, "pssBytes" | "memoryBytes">): number {
+  return row.pssBytes ?? row.memoryBytes;
+}
+
 export type RunState = "active" | "idle" | "problem";
 
 /**

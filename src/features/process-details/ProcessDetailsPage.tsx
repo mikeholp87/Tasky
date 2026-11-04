@@ -28,6 +28,8 @@ import { MemoryMapTab } from "./inspect/MemoryMapTab";
 import { ModulesTab } from "./inspect/ModulesTab";
 import { OpenFilesTab } from "./inspect/OpenFilesTab";
 import { ThreadsTab } from "./inspect/ThreadsTab";
+import { memoryOf } from "@/features/processes/logic";
+import { useMemoryDetail } from "@/features/memory/useMemoryDetail";
 import { useProcessDetails } from "./useProcessDetails";
 
 type Tab = "overview" | "network" | "files" | "modules" | "maps" | "threads" | "diagnose";
@@ -81,6 +83,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
   const navigate = useUiStore((s) => s.navigate);
   const openProcess = useUiStore((s) => s.openProcess);
   const rows = useMetricsStore((s) => s.tick?.processes);
+  useMemoryDetail();
   const totalMemory = useMetricsStore((s) => s.tick?.memory.totalBytes ?? 0);
   const nowMs = useMetricsStore((s) => s.tick?.timestampMs ?? 0);
   const platform = useMetricsStore((s) => s.staticInfo?.platform);
@@ -117,7 +120,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
     );
   }
 
-  const memPct = totalMemory > 0 ? (row.memoryBytes / totalMemory) * 100 : null;
+  const memPct = totalMemory > 0 ? (memoryOf(row) / totalMemory) * 100 : null;
   const runtime = row.startTime > 0 && nowMs > 0 ? nowMs / 1000 - row.startTime : null;
 
   return (
@@ -132,7 +135,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
               onClick={() => navigate("processes")}
               className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg"
             >
-              <ArrowLeft size={14} aria-hidden /> Processes
+              <ArrowLeft size="0.875rem" aria-hidden /> Processes
             </button>
             <button
               type="button"
@@ -140,7 +143,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
               disabled={loading}
               className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50"
             >
-              <RefreshCw size={14} aria-hidden /> Refresh details
+              <RefreshCw size="0.875rem" aria-hidden /> Refresh details
             </button>
             {live && <ActionButtons row={live} />}
           </>
@@ -305,7 +308,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
           />
           <MetricCard
             nowMs={nowMs}
-            title={`Memory · ${formatBytes(row.memoryBytes)}${memPct != null ? ` (${formatPercent(memPct)})` : ""}`}
+            title={`Memory · ${formatBytes(memoryOf(row))}${memPct != null ? ` (${formatPercent(memPct)})` : ""}`}
             series={MEM_SERIES}
             history={history}
             pick={(p) => [p.memory]}
@@ -362,7 +365,7 @@ function PathField({ label, value }: { label: string; value: string | null }) {
     <div className="grid grid-cols-[140px_1fr] gap-3">
       <span className="text-fg-muted">{label}</span>
       {value ? (
-        <code className="selectable break-all font-mono text-[12px]">{value}</code>
+        <code className="selectable break-all font-mono text-[0.8125rem]">{value}</code>
       ) : (
         <Unavailable />
       )}
@@ -461,7 +464,7 @@ function ConnectionsCard({
         ) : connections.length === 0 ? (
           <p className="text-fg-muted">No open TCP or UDP sockets.</p>
         ) : (
-          <table className="w-full text-left text-[12px]">
+          <table className="w-full text-left text-[0.8125rem]">
             <thead className="text-fg-muted">
               <tr>
                 <th className="py-1 pr-3 font-medium">Protocol</th>
@@ -507,14 +510,14 @@ function ActionButtons({ row }: { row: ProcessRow }) {
         disabled={!row.exe}
         onClick={() => void revealExecutable(row)}
       >
-        <FolderOpen size={14} aria-hidden /> Open location
+        <FolderOpen size="0.875rem" aria-hidden /> Open location
       </button>
       <button
         type="button"
         className={actionBtn}
         onClick={() => void requestAction(row, { type: suspended ? "resume" : "suspend" })}
       >
-        {suspended ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />}
+        {suspended ? <Play size="0.875rem" aria-hidden /> : <Pause size="0.875rem" aria-hidden />}
         {suspended ? "Resume" : "Suspend"}
       </button>
       <button
@@ -522,14 +525,14 @@ function ActionButtons({ row }: { row: ProcessRow }) {
         className={actionBtn}
         onClick={() => void requestAction(row, { type: "terminate" })}
       >
-        <Square size={13} aria-hidden /> End process
+        <Square size="0.8125rem" aria-hidden /> End process
       </button>
       <button
         type="button"
         className={`${actionBtn} text-crit hover:text-crit`}
         onClick={() => void requestAction(row, { type: "forceKill" })}
       >
-        <OctagonX size={14} aria-hidden /> Force end
+        <OctagonX size="0.875rem" aria-hidden /> Force end
       </button>
     </>
   );

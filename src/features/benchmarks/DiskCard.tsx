@@ -236,7 +236,7 @@ function DiskResultPanel({
           ))}
         </ul>
       )}
-      <p className="text-[12px] text-fg-subtle">
+      <p className="text-[0.8125rem] text-fg-subtle">
         {disk.target.label} · {disk.target.fileSystem}
         {d
           ? ` · ${[d.model ?? d.name, d.transport, d.rotational ? "hard disk" : "solid state"].filter(Boolean).join(" · ")}`
@@ -279,7 +279,7 @@ function PhaseRow({ phase: p }: { phase: DiskPhaseResult }) {
             className="inline-flex items-center gap-1 text-ok"
             title="The data read back matched what was written."
           >
-            <Check size={14} aria-hidden /> Verified
+            <Check size="0.875rem" aria-hidden /> Verified
           </span>
         ) : (
           <span className="text-fg-subtle">Not checked</span>

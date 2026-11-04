@@ -48,7 +48,7 @@ export function StartupPage() {
         description="Programs that start when you log in. Turning one off hides it; nothing is deleted."
         actions={
           <button type="button" className={btn} onClick={refresh}>
-            <RefreshCw size={14} aria-hidden /> Refresh
+            <RefreshCw size="0.875rem" aria-hidden /> Refresh
           </button>
         }
       />
@@ -80,7 +80,7 @@ export function StartupPage() {
         </EmptyState>
       ) : (
         <Card className="overflow-auto">
-          <table className="w-full text-left text-[12px]">
+          <table className="w-full text-left text-[0.8125rem]">
             <thead className="sticky top-0 bg-surface-2 text-fg-muted">
               <tr>
                 <th className="px-3 py-2 font-medium">Name</th>

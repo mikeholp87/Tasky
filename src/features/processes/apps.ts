@@ -4,10 +4,11 @@
  * process is shown as that process. Pure functions, unit-tested.
  */
 import type { ProcessRow } from "@/types";
+import { memoryOf } from "./logic";
 import type { TableItem } from "./tree";
 
 export const GROUP_MEMORY_NOTE =
-  "Sum of the processes' resident memory. Pages shared between a program's processes are counted once per process, so this can exceed what the program really uses.";
+  "Sum of the processes' memory, with pages shared between them split fairly (as on the Memory page), so the total is what the program really occupies. A process the system could not measure counts its resident memory.";
 
 function baseName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
@@ -32,7 +33,7 @@ function summarize(members: readonly ProcessRow[], id: number, key: string): Pro
   const sum = (pick: (r: ProcessRow) => number) => members.reduce((a, r) => a + pick(r), 0);
   const started = members.map((r) => r.startTime).filter((t) => t > 0);
   const users = new Set(members.map((r) => r.user));
-  const allPss = members.every((r) => r.pssBytes != null);
+  const anyPss = members.some((r) => r.pssBytes != null);
   return {
     ...first,
     pid: id,
@@ -52,7 +53,8 @@ function summarize(members: readonly ProcessRow[], id: number, key: string): Pro
     cmd: null,
     sessionId: null,
     kernelThread: false,
-    pssBytes: allPss ? sum((r) => r.pssBytes ?? 0) : null,
+    // The same figure the member rows show, so the group equals their sum.
+    pssBytes: anyPss ? sum(memoryOf) : null,
     restricted: members.every((r) => r.restricted),
   };
 }

@@ -117,7 +117,9 @@ export function PerformancePage() {
               >
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-medium">{r.label}</span>
-                  <span className="num truncate text-[12px] text-fg-muted">{r.summary(tick)}</span>
+                  <span className="num truncate text-[0.8125rem] text-fg-muted">
+                    {r.summary(tick)}
+                  </span>
                 </div>
                 <div className="mt-2">
                   <TimeSeriesChart
@@ -188,7 +190,7 @@ function RangePicker({ value, onChange }: { value: number; onChange: (s: number)
 function Legend({ series }: { series: readonly ChartSeries[] }) {
   if (series.length < 2) return null;
   return (
-    <div className="flex gap-4 text-[12px] text-fg-muted">
+    <div className="flex gap-4 text-[0.8125rem] text-fg-muted">
       {series.map((s) => (
         <span key={s.label} className="flex items-center gap-1.5">
           <span

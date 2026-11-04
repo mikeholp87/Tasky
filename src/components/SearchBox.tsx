@@ -13,7 +13,7 @@ export function SearchBox({ value, onChange, placeholder, label, className }: Se
   return (
     <div className={`relative ${className ?? "w-72"}`}>
       <Search
-        size={14}
+        size="0.875rem"
         aria-hidden
         className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle"
       />
@@ -38,7 +38,7 @@ export function SearchBox({ value, onChange, placeholder, label, className }: Se
           onClick={() => onChange("")}
           className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-fg-subtle hover:text-fg"
         >
-          <X size={13} />
+          <X size="0.8125rem" />
         </button>
       )}
     </div>

@@ -44,7 +44,7 @@ export function OpenFilesTab({ pid }: { pid: number }) {
         <p className="text-fg-muted">{data?.files.length ? "No matches." : "No open files."}</p>
       ) : (
         <div className="max-h-[28rem] overflow-auto">
-          <table className="w-full text-left text-[12px]">
+          <table className="w-full text-left text-[0.8125rem]">
             <thead className="sticky top-0 bg-surface text-fg-muted">
               <tr>
                 <th className="py-1 pr-3 font-medium">FD</th>

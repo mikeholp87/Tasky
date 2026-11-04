@@ -72,7 +72,7 @@ export function RunRow({
           onClick={() => void cancelBenchmark()}
           className="flex h-9 items-center gap-2 rounded-lg border border-border px-4 font-medium hover:bg-surface-2"
         >
-          <Square size={14} aria-hidden /> Cancel
+          <Square size="0.875rem" aria-hidden /> Cancel
         </button>
       ) : (
         <button
@@ -82,7 +82,7 @@ export function RunRow({
           title={active ? "Another benchmark is running." : undefined}
           className="flex h-9 items-center gap-2 rounded-lg bg-accent px-4 font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
         >
-          <Play size={14} aria-hidden /> {label}
+          <Play size="0.875rem" aria-hidden /> {label}
         </button>
       )}
       <span className="text-fg-muted">{detail}</span>
@@ -255,7 +255,7 @@ export function Sustained({
 export function EnvironmentFooter({ result }: { result: BenchmarkResult }) {
   const env = result.environment;
   return (
-    <p className="text-[12px] text-fg-subtle">
+    <p className="text-[0.8125rem] text-fg-subtle">
       {[
         env.distribution ?? env.platform,
         env.cpuModel,

@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { SearchBox } from "@/components/SearchBox";
 import { useRemoteData } from "@/hooks/useRemoteData";
+import { scaled, useRootPx } from "@/hooks/useRootPx";
 import { backend } from "@/services/ipc";
 import type { MemoryMap, MemoryRegionKind } from "@/types";
 import { formatBytes } from "@/utils/format";
@@ -9,7 +10,7 @@ import { InspectBody } from "./InspectBody";
 import { REGION_COLOR, REGION_LABEL, filterRegions, segments } from "./logic";
 
 const ROW_HEIGHT = 24;
-const COLUMNS = "grid-cols-[150px_150px_70px_80px_140px_1fr]";
+const COLUMNS = "grid-cols-[9.375rem_9.375rem_4.375rem_5rem_8.75rem_1fr]";
 
 export function MemoryMapTab({ pid }: { pid: number }) {
   const [query, setQuery] = useState("");
@@ -103,17 +104,18 @@ function Summary({ map }: { map: MemoryMap }) {
 /** Virtualized: a browser can map tens of thousands of regions. */
 function RegionTable({ regions }: { regions: ReturnType<typeof filterRegions> }) {
   const scroller = useRef<HTMLDivElement>(null);
+  const rowHeight = scaled(ROW_HEIGHT, useRootPx());
   const virtualizer = useVirtualizer({
     count: regions.length,
     getScrollElement: () => scroller.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 12,
   });
   if (regions.length === 0) return <p className="text-fg-muted">No regions match.</p>;
   return (
     <div>
       <div
-        className={`grid ${COLUMNS} gap-3 border-b border-border py-1 text-[12px] font-medium text-fg-muted`}
+        className={`grid ${COLUMNS} gap-3 border-b border-border py-1 text-[0.8125rem] font-medium text-fg-muted`}
       >
         <span>Start</span>
         <span>End</span>
@@ -130,8 +132,8 @@ function RegionTable({ regions }: { regions: ReturnType<typeof filterRegions> })
             return (
               <div
                 key={v.key}
-                className={`num selectable absolute left-0 grid w-full ${COLUMNS} items-center gap-3 border-b border-border/40 font-mono text-[12px]`}
-                style={{ top: v.start, height: ROW_HEIGHT }}
+                className={`num selectable absolute left-0 grid w-full ${COLUMNS} items-center gap-3 border-b border-border/40 font-mono text-[0.8125rem]`}
+                style={{ top: v.start, height: rowHeight }}
               >
                 <span>{r.start}</span>
                 <span>{r.end}</span>

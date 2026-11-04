@@ -21,7 +21,7 @@ const PRIORITIES: PriorityLevel[] = ["idle", "belowNormal", "normal", "aboveNorm
 const itemCls =
   "flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-surface-2";
 const contentCls =
-  "z-50 min-w-56 rounded-lg border border-border bg-surface p-1 text-[13px] shadow-lg";
+  "z-50 min-w-56 rounded-lg border border-border bg-surface p-1 text-[0.875rem] shadow-lg";
 
 function Item({
   icon,
@@ -61,21 +61,24 @@ export function ProcessContextMenu({ row, children }: { row: ProcessRow; childre
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className={contentCls} aria-label={`Actions for ${row.name}`}>
-          <ContextMenu.Label className="truncate px-2 py-1 text-[12px] text-fg-subtle">
+          <ContextMenu.Label className="truncate px-2 py-1 text-[0.8125rem] text-fg-subtle">
             {row.name} · PID {row.pid}
           </ContextMenu.Label>
-          <Item icon={<FileSearch size={14} />} onSelect={() => openProcess(row.pid)}>
+          <Item icon={<FileSearch size="0.875rem" />} onSelect={() => openProcess(row.pid)}>
             Open details
           </Item>
           <Item
-            icon={<FolderOpen size={14} />}
+            icon={<FolderOpen size="0.875rem" />}
             onSelect={() => void revealExecutable(row)}
             disabled={!row.exe}
           >
             Open file location
           </Item>
           <Separator />
-          <Item icon={<Copy size={14} />} onSelect={() => void copyText("PID", String(row.pid))}>
+          <Item
+            icon={<Copy size="0.875rem" />}
+            onSelect={() => void copyText("PID", String(row.pid))}
+          >
             Copy PID
           </Item>
           <Item icon={<span />} onSelect={() => void copyText("Name", row.name)}>
@@ -98,14 +101,14 @@ export function ProcessContextMenu({ row, children }: { row: ProcessRow; childre
           <Separator />
           {suspended ? (
             <Item
-              icon={<Play size={14} />}
+              icon={<Play size="0.875rem" />}
               onSelect={() => void requestAction(row, { type: "resume" })}
             >
               Resume
             </Item>
           ) : (
             <Item
-              icon={<Pause size={14} />}
+              icon={<Pause size="0.875rem" />}
               onSelect={() => void requestAction(row, { type: "suspend" })}
             >
               Suspend
@@ -114,10 +117,10 @@ export function ProcessContextMenu({ row, children }: { row: ProcessRow; childre
           <ContextMenu.Sub>
             <ContextMenu.SubTrigger className={itemCls}>
               <span className="grid w-4 place-items-center" aria-hidden>
-                <Gauge size={14} />
+                <Gauge size="0.875rem" />
               </span>
               Set priority
-              <ChevronRight size={14} className="ml-auto" aria-hidden />
+              <ChevronRight size="0.875rem" className="ml-auto" aria-hidden />
             </ContextMenu.SubTrigger>
             <ContextMenu.Portal>
               <ContextMenu.SubContent className={contentCls} sideOffset={4}>
@@ -134,14 +137,14 @@ export function ProcessContextMenu({ row, children }: { row: ProcessRow; childre
           </ContextMenu.Sub>
           <Separator />
           <Item
-            icon={<Square size={13} />}
+            icon={<Square size="0.8125rem" />}
             onSelect={() => void requestAction(row, { type: "terminate" })}
             danger
           >
             End process…
           </Item>
           <Item
-            icon={<OctagonX size={14} />}
+            icon={<OctagonX size="0.875rem" />}
             onSelect={() => void requestAction(row, { type: "forceKill" })}
             danger
           >

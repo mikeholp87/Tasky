@@ -36,7 +36,7 @@ export function DetailRows({ items }: { items: readonly DetailItem[] }) {
 export function DetailGroup({ title, children }: { title?: ReactNode; children: ReactNode }) {
   return (
     <section className="mt-6 first:mt-0">
-      {title && <h3 className="mb-1 truncate text-[13px] font-semibold">{title}</h3>}
+      {title && <h3 className="mb-1 truncate text-[0.875rem] font-semibold">{title}</h3>}
       {children}
     </section>
   );

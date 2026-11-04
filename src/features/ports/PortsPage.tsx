@@ -48,7 +48,7 @@ export function PortsPage() {
         description="Which program is listening on, or connected through, each port"
         actions={
           <button type="button" className={btn} onClick={refresh}>
-            <RefreshCw size={14} aria-hidden /> Refresh
+            <RefreshCw size="0.875rem" aria-hidden /> Refresh
           </button>
         }
       />
@@ -111,7 +111,7 @@ export function PortsPage() {
         </EmptyState>
       ) : (
         <Card className="overflow-auto">
-          <table className="w-full text-left text-[12px]">
+          <table className="w-full text-left text-[0.8125rem]">
             <thead className="sticky top-0 bg-surface-2 text-fg-muted">
               <tr>
                 <th className="px-3 py-2 font-medium">Port</th>
@@ -175,7 +175,7 @@ function PortRowView({ row }: { row: PortRow }) {
             className="rounded p-1 text-fg-subtle hover:text-fg"
             onClick={() => void copyText("PID", String(row.pid))}
           >
-            <Copy size={13} aria-hidden />
+            <Copy size="0.8125rem" aria-hidden />
           </button>
         )}
       </td>
@@ -221,7 +221,9 @@ function ConflictBanner({
               {o.pid != null && <span className="num text-fg-muted"> · PID {o.pid}</span>}
               <span className="text-fg-muted"> · {o.listeners.join(", ")}</span>
             </p>
-            {row?.exe && <p className="break-all font-mono text-[12px] text-fg-muted">{row.exe}</p>}
+            {row?.exe && (
+              <p className="break-all font-mono text-[0.8125rem] text-fg-muted">{row.exe}</p>
+            )}
             {o.pid == null && (
               <p className="text-fg-muted">
                 The owner is hidden from this account. Run as administrator/root to identify it.
@@ -230,14 +232,14 @@ function ConflictBanner({
             {o.pid != null && (
               <div className="flex flex-wrap gap-2">
                 <button type="button" className={btn} onClick={() => openProcess(o.pid as number)}>
-                  <FileSearch size={14} aria-hidden /> Open process details
+                  <FileSearch size="0.875rem" aria-hidden /> Open process details
                 </button>
                 <button
                   type="button"
                   className={btn}
                   onClick={() => void copyText("PID", String(o.pid))}
                 >
-                  <Copy size={14} aria-hidden /> Copy PID
+                  <Copy size="0.875rem" aria-hidden /> Copy PID
                 </button>
                 <button
                   type="button"
@@ -246,7 +248,7 @@ function ConflictBanner({
                   title={row ? undefined : "This process is no longer listed"}
                   onClick={() => row && void requestAction(row, { type: "terminate" })}
                 >
-                  <Square size={13} aria-hidden /> Terminate…
+                  <Square size="0.8125rem" aria-hidden /> Terminate…
                 </button>
               </div>
             )}

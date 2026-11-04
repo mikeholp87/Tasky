@@ -50,7 +50,7 @@ export function InspectBody({
           onClick={onRefresh}
           className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg"
         >
-          <RefreshCw size={14} aria-hidden /> Refresh
+          <RefreshCw size="0.875rem" aria-hidden /> Refresh
         </button>
       </div>
       {note && <p className="text-fg-muted">{note}</p>}

@@ -93,10 +93,10 @@ function MonitoringStatus() {
         disabled={!live}
         onClick={() => void togglePaused()}
       >
-        {paused ? <Play size={15} /> : <Pause size={15} />}
+        {paused ? <Play size="0.9375rem" /> : <Pause size="0.9375rem" />}
       </IconButton>
       <IconButton label="Refresh now" disabled={!live} onClick={() => void refreshNow()}>
-        <RefreshCw size={15} />
+        <RefreshCw size="0.9375rem" />
       </IconButton>
     </>
   );

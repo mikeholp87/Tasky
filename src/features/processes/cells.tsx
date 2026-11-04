@@ -8,7 +8,7 @@ import {
   formatPercent,
   formatTimestamp,
 } from "@/utils/format";
-import { type ColumnId, type ProcessContext, runtimeSecs } from "./logic";
+import { type ColumnId, type ProcessContext, memoryOf, runtimeSecs } from "./logic";
 
 export const STATUS_LABEL: Record<ProcessState, string> = {
   running: "Running",
@@ -44,10 +44,10 @@ export function cellContent(column: ColumnId, row: ProcessRow, ctx: ProcessConte
     case "cpu":
       return formatPercent(row.cpuPercent);
     case "memory":
-      return formatBytes(row.memoryBytes);
+      return formatBytes(memoryOf(row));
     case "memoryPercent":
       return ctx.totalMemoryBytes > 0
-        ? formatPercent((row.memoryBytes / ctx.totalMemoryBytes) * 100)
+        ? formatPercent((memoryOf(row) / ctx.totalMemoryBytes) * 100)
         : NOT_AVAILABLE;
     case "diskRead":
       return rate(row.diskReadPerSec);

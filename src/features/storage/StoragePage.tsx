@@ -60,14 +60,14 @@ function DiskCard({ disk: d }: { disk: DiskSnapshot }) {
             </span>
           </span>
         }
-        icon={<Icon size={14} aria-hidden />}
+        icon={<Icon size="0.875rem" aria-hidden />}
       />
       <div className="grid gap-6 px-4 pb-4 pt-3 lg:grid-cols-[320px_1fr]">
         <div className="space-y-3">
           <div className="flex items-baseline justify-between">
             <span className="num text-xl font-semibold">{formatPercent(d.usedPercent)} used</span>
             {warning && (
-              <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[11px] font-medium text-warn">
+              <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[0.75rem] font-medium text-warn">
                 {d.usedPercent >= 95 ? "Almost full" : "Low space"}
               </span>
             )}
@@ -116,7 +116,7 @@ function DiskCard({ disk: d }: { disk: DiskSnapshot }) {
         </div>
         <div className="grid min-w-0 gap-4 md:grid-cols-2">
           <div>
-            <div className="mb-1 text-[12px] font-medium text-fg-muted">Throughput</div>
+            <div className="mb-1 text-[0.8125rem] font-medium text-fg-muted">Throughput</div>
             <DeviceChart
               source={diskHistory}
               device={d.mountPoint}
@@ -128,7 +128,7 @@ function DiskCard({ disk: d }: { disk: DiskSnapshot }) {
             />
           </div>
           <div>
-            <div className="mb-1 text-[12px] font-medium text-fg-muted">Active time</div>
+            <div className="mb-1 text-[0.8125rem] font-medium text-fg-muted">Active time</div>
             <DeviceChart
               source={diskHistory}
               device={d.mountPoint}

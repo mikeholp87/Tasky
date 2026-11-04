@@ -2,6 +2,7 @@ import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useProcessStore } from "@/stores/processStore";
+import { useMemoryDetail } from "@/features/memory/useMemoryDetail";
 import { requestAction } from "./actions";
 import { ProcessContextMenu } from "./ProcessContextMenu";
 import { ProcessTable } from "./ProcessTable";
@@ -15,6 +16,8 @@ import { ProcessToolbar } from "./ProcessToolbar";
 import { useProcessView } from "./useProcessView";
 
 export function ProcessesPage() {
+  // Proportional memory, so every view shows the figure the Memory page does.
+  useMemoryDetail();
   const hasTick = useMetricsStore((s) => s.tick !== null);
   const selfPid = useMetricsStore((s) => s.staticInfo?.selfPid);
   const mode = useProcessStore((s) => s.mode);

@@ -73,7 +73,7 @@ function BigValue({
       <span className="num text-4xl font-medium leading-none tracking-tight">{value}</span>
       {sub && <span className="num text-fg-muted">{sub}</span>}
       {warning && (
-        <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[11px] font-medium text-warn">
+        <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[0.75rem] font-medium text-warn">
           {warning}
         </span>
       )}
@@ -93,7 +93,7 @@ function CpuCard() {
     <Card>
       <CardHeader
         title="CPU"
-        icon={<Cpu size={14} aria-hidden />}
+        icon={<Cpu size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("cpu")} label="CPU details" />}
       />
       <div className="space-y-3 px-4 pb-4 pt-2">
@@ -133,7 +133,7 @@ function MemoryCard() {
     <Card>
       <CardHeader
         title="Memory"
-        icon={<MemoryStick size={14} aria-hidden />}
+        icon={<MemoryStick size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("memory")} label="Memory details" />}
       />
       <div className="space-y-3 px-4 pb-4 pt-2">
@@ -173,7 +173,7 @@ function StorageCard() {
     <Card>
       <CardHeader
         title="Storage"
-        icon={<HardDrive size={14} aria-hidden />}
+        icon={<HardDrive size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("storage")} label="Storage details" />}
       />
       <ul className="space-y-3 px-4 pb-4 pt-3">
@@ -196,7 +196,7 @@ function StorageCard() {
               color="--res-disk"
             />
             {d.readBytesPerSec != null && (
-              <div className="num mt-1 text-[12px] text-fg-subtle">
+              <div className="num mt-1 text-[0.8125rem] text-fg-subtle">
                 Read {formatBytesPerSecond(d.readBytesPerSec)} · Write{" "}
                 {formatBytesPerSecond(d.writeBytesPerSec)}
               </div>
@@ -221,17 +221,17 @@ function NetworkCard() {
     <Card>
       <CardHeader
         title="Network"
-        icon={<Network size={14} aria-hidden />}
+        icon={<Network size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("network")} label="Network details" />}
       />
       <div className="space-y-3 px-4 pb-4 pt-2">
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
           <span className="num flex items-center gap-1 text-2xl font-semibold">
-            <ArrowDown size={18} className="text-[var(--res-net)]" aria-label="Download" />
+            <ArrowDown size="1.125rem" className="text-[var(--res-net)]" aria-label="Download" />
             {formatBytesPerSecond(rx)}
           </span>
           <span className="num flex items-center gap-1 text-2xl font-semibold">
-            <ArrowUp size={18} className="text-[var(--res-net-2)]" aria-label="Upload" />
+            <ArrowUp size="1.125rem" className="text-[var(--res-net-2)]" aria-label="Upload" />
             {formatBytesPerSecond(tx)}
           </span>
         </div>
@@ -274,7 +274,7 @@ function SystemCard() {
     <Card className="xl:col-span-2">
       <CardHeader
         title="System"
-        icon={<Server size={14} aria-hidden />}
+        icon={<Server size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("system")} label="System information" />}
       />
       <div className="grid gap-x-10 gap-y-1.5 px-4 pb-4 pt-3 md:grid-cols-2">
@@ -308,10 +308,10 @@ function DetailsLink({ onClick, label }: { onClick: () => void; label: string })
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="flex items-center gap-0.5 rounded-md py-0.5 pl-2 pr-1 text-[12px] text-fg-muted hover:bg-surface-2 hover:text-fg"
+      className="flex items-center gap-0.5 rounded-md py-0.5 pl-2 pr-1 text-[0.8125rem] text-fg-muted hover:bg-surface-2 hover:text-fg"
     >
       Details
-      <ChevronRight size={14} aria-hidden />
+      <ChevronRight size="0.875rem" aria-hidden />
     </button>
   );
 }

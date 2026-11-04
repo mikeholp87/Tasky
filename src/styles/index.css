@@ -120,6 +120,13 @@
 }
 
 @layer base {
+  /*
+   * Fluid type scale. Everything is in rem, so layout and text grow together:
+   * 16px up to ~1200px wide, rising to 20px by ~2000px (clamped at both ends).
+   */
+  html {
+    font-size: clamp(16px, 11.5px + 0.375vw, 20px);
+  }
   html,
   body,
   #root {
@@ -129,7 +136,7 @@
     background: var(--bg);
     color: var(--fg);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: 0.875rem;
     line-height: 1.45;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
@@ -153,7 +160,7 @@
   /* Paths, command lines and other code-like data. */
   .data {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 0.8125rem;
   }
   /* Motion is only used to show a value changing; honour the OS setting. */
   @media (prefers-reduced-motion: reduce) {
