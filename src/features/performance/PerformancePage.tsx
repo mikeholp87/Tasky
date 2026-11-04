@@ -1,5 +1,5 @@
+import { usePersistedState } from "@/hooks/usePersistedState";
 import type { ReactNode } from "react";
-import { useState } from "react";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { type ChartSeries, TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
@@ -86,8 +86,16 @@ const RESOURCES: readonly ResourceDef[] = [
 export function PerformancePage() {
   const tick = useMetricsStore((s) => s.tick);
   const info = useMetricsStore((s) => s.staticInfo);
-  const [selected, setSelected] = useState<Resource>("cpu");
-  const [seconds, setSeconds] = useState<number>(60);
+  const [selected, setSelected] = usePersistedState<Resource>(
+    "perf.resource",
+    "cpu",
+    RESOURCES.map((r) => r.id),
+  );
+  const [seconds, setSeconds] = usePersistedState<number>(
+    "perf.seconds",
+    60,
+    RANGES.map((r) => r.seconds),
+  );
   const def = RESOURCES.find((r) => r.id === selected) as ResourceDef;
 
   return (

@@ -1,3 +1,4 @@
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { useMemo, useState } from "react";
 import { Copy, FileSearch, RefreshCw, Square } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -30,7 +31,10 @@ const btn =
 
 export function PortsPage() {
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<PortView>("listening");
+  const [view, setView] = usePersistedState<PortView>("ports.view", "listening", [
+    "listening",
+    "all",
+  ]);
   const { data, error, loading, refresh } = useRemoteData(
     () => backend.listSockets(),
     "sockets",

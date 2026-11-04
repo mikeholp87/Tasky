@@ -1,8 +1,10 @@
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import {
   COLUMNS,
   COLUMN_BY_ID,
   DEFAULT_VISIBLE_COLUMNS,
+  FILTER_PRESETS,
   type ColumnId,
   type FilterPreset,
   type SortState,
@@ -49,62 +51,87 @@ function flipped(set: ReadonlySet<number>, id: number): Set<number> {
   return next;
 }
 
-export const useProcessStore = create<ProcessState>((set) => ({
-  search: "",
-  preset: "all",
-  sort: { column: "cpu", direction: "desc" },
-  mode: "list",
-  visibleColumns: [...DEFAULT_VISIBLE_COLUMNS],
-  columnWidths: {},
-  selectedPid: null,
-  focusSearchToken: 0,
-  collapsed: new Set(),
-  expandedApps: new Set(),
+export const useProcessStore = create<ProcessState>()(
+  persist(
+    (set) => ({
+      search: "",
+      preset: "all",
+      sort: { column: "cpu", direction: "desc" },
+      mode: "list",
+      visibleColumns: [...DEFAULT_VISIBLE_COLUMNS],
+      columnWidths: {},
+      selectedPid: null,
+      focusSearchToken: 0,
+      collapsed: new Set(),
+      expandedApps: new Set(),
 
-  setSearch: (search) => set({ search }),
-  setPreset: (preset) => set({ preset }),
-  sortBy: (column) => set((s) => ({ sort: nextSort(s.sort, column) })),
-  setMode: (mode) => set({ mode }),
-  toggleColumn: (column) =>
-    set((s) => {
-      // The name column anchors the table and cannot be hidden.
-      if (column === "name") return s;
-      const visible = new Set(s.visibleColumns);
-      if (visible.has(column)) visible.delete(column);
-      else visible.add(column);
-      return { visibleColumns: COLUMNS.map((c) => c.id).filter((id) => visible.has(id)) };
+      setSearch: (search) => set({ search }),
+      setPreset: (preset) => set({ preset }),
+      sortBy: (column) => set((s) => ({ sort: nextSort(s.sort, column) })),
+      setMode: (mode) => set({ mode }),
+      toggleColumn: (column) =>
+        set((s) => {
+          // The name column anchors the table and cannot be hidden.
+          if (column === "name") return s;
+          const visible = new Set(s.visibleColumns);
+          if (visible.has(column)) visible.delete(column);
+          else visible.add(column);
+          return { visibleColumns: COLUMNS.map((c) => c.id).filter((id) => visible.has(id)) };
+        }),
+      resetColumns: () => set({ visibleColumns: [...DEFAULT_VISIBLE_COLUMNS], columnWidths: {} }),
+      setColumnWidth: (column, width) =>
+        set((s) => ({
+          columnWidths: {
+            ...s.columnWidths,
+            [column]: Math.max(COLUMN_BY_ID[column].minWidth, Math.round(width)),
+          },
+        })),
+      select: (selectedPid) => set({ selectedPid }),
+      requestSearchFocus: () => set((s) => ({ focusSearchToken: s.focusSearchToken + 1 })),
+      // The tree starts expanded (`collapsed` lists exceptions); the applications
+      // view starts collapsed (`expandedApps` lists exceptions). Same row actions.
+      toggleCollapsed: (pid) =>
+        set((s) =>
+          s.mode === "apps"
+            ? { expandedApps: flipped(s.expandedApps, pid) }
+            : { collapsed: flipped(s.collapsed, pid) },
+        ),
+      setCollapsed: (pid, collapsed) =>
+        set((s) => {
+          if (s.mode === "apps") {
+            if (s.expandedApps.has(pid) === !collapsed) return s;
+            return { expandedApps: flipped(s.expandedApps, pid) };
+          }
+          if (s.collapsed.has(pid) === collapsed) return s;
+          return { collapsed: flipped(s.collapsed, pid) };
+        }),
+      collapseAll: (pids) => set({ collapsed: new Set(pids) }),
+      expandAll: () => set({ collapsed: new Set() }),
+      setExpandedApps: (ids) => set({ expandedApps: new Set(ids) }),
     }),
-  resetColumns: () => set({ visibleColumns: [...DEFAULT_VISIBLE_COLUMNS], columnWidths: {} }),
-  setColumnWidth: (column, width) =>
-    set((s) => ({
-      columnWidths: {
-        ...s.columnWidths,
-        [column]: Math.max(COLUMN_BY_ID[column].minWidth, Math.round(width)),
+    {
+      name: "tm:processes",
+      storage: createJSONStorage(() => localStorage),
+      // Search text, selection and expanded rows are about this moment (PIDs
+      // change between launches); sort, filter and view are preferences.
+      // Columns already persist through the settings file.
+      partialize: (s) => ({ preset: s.preset, sort: s.sort, mode: s.mode }),
+      merge: (saved, current) => {
+        const v = (saved ?? {}) as Partial<Pick<ProcessState, "preset" | "sort" | "mode">>;
+        const sortOk =
+          v.sort != null &&
+          Object.hasOwn(COLUMN_BY_ID, v.sort.column) &&
+          (v.sort.direction === "asc" || v.sort.direction === "desc");
+        return {
+          ...current,
+          ...(FILTER_PRESETS.some((p) => p.id === v.preset) ? { preset: v.preset } : {}),
+          ...(sortOk ? { sort: v.sort } : {}),
+          ...(v.mode === "list" || v.mode === "tree" || v.mode === "apps" ? { mode: v.mode } : {}),
+        };
       },
-    })),
-  select: (selectedPid) => set({ selectedPid }),
-  requestSearchFocus: () => set((s) => ({ focusSearchToken: s.focusSearchToken + 1 })),
-  // The tree starts expanded (`collapsed` lists exceptions); the applications
-  // view starts collapsed (`expandedApps` lists exceptions). Same row actions.
-  toggleCollapsed: (pid) =>
-    set((s) =>
-      s.mode === "apps"
-        ? { expandedApps: flipped(s.expandedApps, pid) }
-        : { collapsed: flipped(s.collapsed, pid) },
-    ),
-  setCollapsed: (pid, collapsed) =>
-    set((s) => {
-      if (s.mode === "apps") {
-        if (s.expandedApps.has(pid) === !collapsed) return s;
-        return { expandedApps: flipped(s.expandedApps, pid) };
-      }
-      if (s.collapsed.has(pid) === collapsed) return s;
-      return { collapsed: flipped(s.collapsed, pid) };
-    }),
-  collapseAll: (pids) => set({ collapsed: new Set(pids) }),
-  expandAll: () => set({ collapsed: new Set() }),
-  setExpandedApps: (ids) => set({ expandedApps: new Set(ids) }),
-}));
+    },
+  ),
+);
 
 export function columnWidth(widths: Partial<Record<ColumnId, number>>, column: ColumnId): number {
   return widths[column] ?? COLUMN_BY_ID[column].width;

@@ -1,3 +1,4 @@
+import { usePersistedState } from "@/hooks/usePersistedState";
 import { useMemo, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
@@ -17,7 +18,11 @@ export function ActivityPage() {
   const memoryJump = useSettingsStore((s) => s.memoryJumpMb);
   const openProcess = useUiStore((s) => s.openProcess);
   const navigate = useUiStore((s) => s.navigate);
-  const [filter, setFilter] = useState<ActivityFilter>("all");
+  const [filter, setFilter] = usePersistedState<ActivityFilter>(
+    "activity.filter",
+    "all",
+    Object.keys(FILTER_LABEL) as ActivityFilter[],
+  );
   const [query, setQuery] = useState("");
   const shown = useMemo(() => filterEvents(events, filter, query), [events, filter, query]);
 

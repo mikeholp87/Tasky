@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { RouteId } from "@/app/routes";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { ROUTES, type RouteId } from "@/app/routes";
 
 interface UiState {
   route: RouteId;
@@ -12,11 +13,29 @@ interface UiState {
   setResolvedTheme: (theme: "light" | "dark") => void;
 }
 
-export const useUiStore = create<UiState>((set) => ({
-  route: "overview",
-  selectedPid: null,
-  resolvedTheme: "light",
-  navigate: (route) => set({ route }),
-  openProcess: (pid) => set({ selectedPid: pid, route: "process-details" }),
-  setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
-}));
+/** Process Details needs a PID, which does not survive a restart, so it is not restored. */
+const restorable = (id: unknown): id is RouteId =>
+  ROUTES.some((r) => r.id === id) && id !== "process-details";
+
+export const useUiStore = create<UiState>()(
+  persist(
+    (set) => ({
+      route: "overview",
+      selectedPid: null,
+      resolvedTheme: "light",
+      navigate: (route) => set({ route }),
+      openProcess: (pid) => set({ selectedPid: pid, route: "process-details" }),
+      setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
+    }),
+    {
+      name: "tm:ui",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({ route: s.route }),
+      // Keep only a known page; anything else falls back to Overview.
+      merge: (saved, current) => {
+        const route = (saved as { route?: unknown } | undefined)?.route;
+        return { ...current, ...(restorable(route) ? { route } : {}) };
+      },
+    },
+  ),
+);
