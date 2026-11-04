@@ -63,7 +63,7 @@ export interface AppsOptions {
   /** Group ids whose processes are shown; groups start collapsed. */
   expanded: ReadonlySet<number>;
   compare: (a: ProcessRow, b: ProcessRow) => number;
-  /** When set, only matching processes are grouped, and every group is expanded. */
+  /** When set, only matching processes are grouped; expansion is unchanged. */
   matches?: (row: ProcessRow) => boolean;
 }
 
@@ -112,7 +112,7 @@ export function flattenApps(rows: readonly ProcessRow[], options: AppsOptions): 
       out.push({ row: top.row, depth: 0, hasChildren: false });
       continue;
     }
-    const open = matches !== undefined || expanded.has(top.row.pid);
+    const open = expanded.has(top.row.pid);
     out.push({ row: top.row, depth: 0, hasChildren: true, expanded: open, group: true });
     if (open) {
       for (const member of [...top.members].sort(compare)) {

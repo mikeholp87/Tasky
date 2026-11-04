@@ -69,15 +69,26 @@ describe("applications view", () => {
     expect(groupIds(rows)).toEqual(groupIds([...rows].reverse()));
   });
 
-  it("filters before grouping and expands what matches", () => {
+  it("filters before grouping and expands groups on request", () => {
     const items = flattenApps(rows, {
-      expanded: new Set(),
+      expanded: new Set(groupIds(rows)),
       compare: byCpu,
       matches: (r) => r.cpuPercent >= 10,
     });
     expect(items.map((i) => i.row.pid)).toEqual([expect.any(Number), 11, 10]);
     expect(items[0]?.row.name).toBe("brave (2)");
     expect(items[0]?.row.cpuPercent).toBe(22);
+  });
+
+  it("honors collapsed groups while filtering", () => {
+    const items = flattenApps(rows, {
+      expanded: new Set(),
+      compare: byCpu,
+      matches: (r) => r.cpuPercent >= 10,
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ group: true, expanded: false });
+    expect(items[0]?.row.name).toBe("brave (2)");
   });
 });
 

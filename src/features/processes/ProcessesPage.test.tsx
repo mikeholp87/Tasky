@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useProcessStore } from "@/stores/processStore";
 import { useUiStore } from "@/stores/uiStore";
-import { NOW_MS, STATIC_INFO, makeTick } from "@/test/fixtures";
+import { NOW_MS, STATIC_INFO, makeProcessRow, makeTick } from "@/test/fixtures";
 import { mockProcesses } from "./mock";
 import { ProcessesPage } from "./ProcessesPage";
 
@@ -31,22 +31,24 @@ function dataRows() {
   return screen.getAllByRole("row").filter((r) => r.hasAttribute("data-pid"));
 }
 
-describe("ProcessesPage", () => {
-  beforeEach(() => {
-    useProcessStore.setState({
-      search: "",
-      preset: "all",
-      sort: { column: "pid", direction: "asc" },
-      selectedPid: null,
-      mode: "list",
-    });
-    useMetricsStore.setState({
-      staticInfo: STATIC_INFO,
-      tick: makeTick(processes),
-      status: "live",
-    });
+beforeEach(() => {
+  useProcessStore.setState({
+    search: "",
+    preset: "all",
+    sort: { column: "pid", direction: "asc" },
+    selectedPid: null,
+    mode: "list",
+    collapsed: new Set(),
+    expandedApps: new Set(),
   });
+  useMetricsStore.setState({
+    staticInfo: STATIC_INFO,
+    tick: makeTick(processes),
+    status: "live",
+  });
+});
 
+describe("ProcessesPage", () => {
   it("renders processes from the latest tick", () => {
     render(<ProcessesPage />);
     expect(screen.getByText("40 processes")).toBeInTheDocument();
@@ -108,6 +110,94 @@ describe("ProcessesPage", () => {
     await userEvent.keyboard("{Enter}");
     expect(useUiStore.getState().route).toBe("process-details");
     expect(useUiStore.getState().selectedPid).toBe(processes[1]?.pid);
+  });
+
+  it("hides bulk expansion controls in list view", () => {
+    render(<ProcessesPage />);
+    expect(screen.queryByRole("button", { name: "Collapse all" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand all" })).toBeNull();
+  });
+
+  it.each([
+    ["tree", "none"],
+    ["tree", "search"],
+    ["tree", "preset"],
+    ["apps", "none"],
+    ["apps", "search"],
+    ["apps", "preset"],
+  ] as const)("collapses and expands all in %s view with %s filtering", async (mode, filter) => {
+    const rows = [
+      makeProcessRow({ pid: 10, name: "browser", cpuPercent: 50 }),
+      makeProcessRow({ pid: 11, parentPid: 10, name: "browser", cpuPercent: 50 }),
+      makeProcessRow({ pid: 12, parentPid: 11, name: "browser", cpuPercent: 50 }),
+      makeProcessRow({ pid: 20, name: "worker", cpuPercent: 50 }),
+      makeProcessRow({ pid: 21, parentPid: 20, name: "worker", cpuPercent: 50 }),
+      makeProcessRow({ pid: 30, name: "alone", cpuPercent: 50 }),
+    ];
+    useMetricsStore.setState({ tick: makeTick(rows) });
+    useProcessStore.setState({ mode });
+    render(<ProcessesPage />);
+    if (filter === "search") {
+      await userEvent.type(screen.getByRole("searchbox"), "browser");
+    } else if (filter === "preset") {
+      await userEvent.selectOptions(screen.getByRole("combobox", { name: "Filter" }), "highCpu");
+    }
+
+    const expandedCount =
+      (filter === "search" ? 3 : 6) + (mode === "apps" ? (filter === "search" ? 1 : 2) : 0);
+    const collapsedCount = filter === "search" ? 1 : 3;
+    const expand = () => userEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    const collapse = () => userEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    await expand();
+    expect(dataRows()).toHaveLength(expandedCount);
+    await collapse();
+    await collapse();
+    expect(dataRows()).toHaveLength(collapsedCount);
+    for (const row of dataRows().filter((r) => r.hasAttribute("aria-expanded"))) {
+      expect(row).toHaveAttribute("aria-expanded", "false");
+    }
+
+    // A metrics refresh must not reopen existing branches.
+    act(() => {
+      useMetricsStore.setState({ tick: makeTick(rows.map((row) => ({ ...row, cpuPercent: 60 }))) });
+    });
+    expect(dataRows()).toHaveLength(collapsedCount);
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: mode === "tree" ? "Expand browser" : "Expand browser (3)",
+      }),
+    );
+    expect(dataRows()).toHaveLength(collapsedCount + (mode === "tree" ? 1 : 3));
+    await collapse();
+    expect(dataRows()).toHaveLength(collapsedCount);
+    await expand();
+    await expand();
+    expect(dataRows()).toHaveLength(expandedCount);
+    for (const row of dataRows().filter((r) => r.hasAttribute("aria-expanded"))) {
+      expect(row).toHaveAttribute("aria-expanded", "true");
+    }
+  });
+
+  it("keeps tree and application expansion independent when switching views", async () => {
+    useMetricsStore.setState({
+      tick: makeTick([
+        makeProcessRow({ pid: 10, name: "browser" }),
+        makeProcessRow({ pid: 11, parentPid: 10, name: "browser" }),
+      ]),
+    });
+    render(<ProcessesPage />);
+    await userEvent.click(screen.getByRole("radio", { name: "Tree view" }));
+    await userEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    expect(dataRows()).toHaveLength(1);
+    await userEvent.click(screen.getByRole("radio", { name: /Applications view/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    expect(dataRows()).toHaveLength(3);
+    await userEvent.click(screen.getByRole("radio", { name: "Tree view" }));
+    expect(dataRows()).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    expect(dataRows()).toHaveLength(2);
+    await userEvent.click(screen.getByRole("radio", { name: /Applications view/ }));
+    expect(dataRows()).toHaveLength(3);
   });
 });
 
