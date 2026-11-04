@@ -2,8 +2,7 @@ name: Security
 
 on:
   pull_request:
-  push:
-    branches: [main]
+    types: [opened, reopened, ready_for_review]
   schedule:
     - cron: "21 4 * * 1"
   workflow_dispatch:
@@ -22,7 +21,9 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; version pinned below
+        with:
+          toolchain: 1.96.0
       - name: Audit npm lockfile without running package scripts
         run: npm audit --package-lock-only --audit-level=moderate
       - name: Install pinned local auditors

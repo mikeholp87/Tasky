@@ -1,9 +1,11 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # Not on every push: run when a PR is opened or marked ready, or by hand
+  # (Actions tab or `gh workflow run`).
   pull_request:
+    types: [opened, reopened, ready_for_review]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,9 +39,10 @@ jobs:
           node-version: 24
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; version pinned below
         with:
           components: clippy, rustfmt
+          toolchain: 1.96.0
 
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
         with:
@@ -68,6 +71,8 @@ jobs:
   bundle:
     name: Bundle (${{ matrix.os }})
     needs: check
+    # Slow release builds: manual runs only.
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -90,7 +95,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; version pinned below
+        with:
+          toolchain: 1.96.0
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
         with:
           workspaces: src-tauri

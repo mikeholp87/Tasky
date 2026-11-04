@@ -1,0 +1,7 @@
+# One Rust version for local builds and CI, so a new release (and its new lints)
+# cannot break CI on its own. Bump deliberately, then fix any new warnings.
+# Keep in sync with `toolchain:` in .github/workflows/*.yml.
+[toolchain]
+channel = "1.96.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
