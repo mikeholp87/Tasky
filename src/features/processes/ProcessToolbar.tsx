@@ -38,7 +38,7 @@ export function ProcessToolbar({
           : `${shown} of ${total} processes`}
       </span>
       <div className="ml-auto flex items-center gap-1">
-        {mode !== "list" && <TreeButtons rows={rows} apps={mode === "apps"} />}
+        <TreeButtons rows={rows} apps={mode === "apps"} />
         <ModeToggle />
         <ColumnMenu />
         <ExportMenu />

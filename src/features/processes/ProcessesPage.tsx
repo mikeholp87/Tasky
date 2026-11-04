@@ -1,7 +1,6 @@
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { useMetricsStore } from "@/stores/metricsStore";
-import { useProcessStore } from "@/stores/processStore";
 import { useMemoryDetail } from "@/features/memory/useMemoryDetail";
 import { requestAction } from "./actions";
 import { ProcessContextMenu } from "./ProcessContextMenu";
@@ -21,7 +20,6 @@ export function ProcessesPage() {
   useMemoryDetail();
   const hasTick = useMetricsStore((s) => s.tick !== null);
   const selfPid = useMetricsStore((s) => s.staticInfo?.selfPid);
-  const mode = useProcessStore((s) => s.mode);
   const { rows, items, ctx } = useProcessView();
 
   return (
@@ -36,7 +34,7 @@ export function ProcessesPage() {
             items={items}
             ctx={ctx}
             selfPid={selfPid}
-            tree={mode !== "list"}
+            tree
             wrapTable={withContextMenu}
             onRequestTerminate={requestTerminate}
           />

@@ -82,13 +82,17 @@ describe("ProcessesPage", () => {
   });
 
   it("filters instantly as the user types", async () => {
+    useMetricsStore.setState({
+      tick: makeTick([
+        makeProcessRow({ pid: 10, name: "parent" }),
+        makeProcessRow({ pid: 11, parentPid: 10, name: "python" }),
+        makeProcessRow({ pid: 12, parentPid: 10, name: "other" }),
+      ]),
+    });
     render(<ProcessesPage />);
     await userEvent.type(screen.getByRole("searchbox", { name: "Search processes" }), "python");
-    const shown = dataRows();
-    expect(shown.length).toBeGreaterThan(0);
-    for (const r of shown)
-      expect(within(r).getAllByRole("gridcell")[0]).toHaveTextContent("python");
-    expect(screen.getByText(/of 40 processes/)).toBeInTheDocument();
+    expect(dataRows().map((row) => row.getAttribute("data-pid"))).toEqual(["10", "11"]);
+    expect(screen.getByText("2 of 3 processes")).toBeInTheDocument();
   });
 
   it("sorts when a column header is clicked", async () => {
@@ -103,7 +107,7 @@ describe("ProcessesPage", () => {
 
   it("supports keyboard selection and opening details", async () => {
     render(<ProcessesPage />);
-    const grid = screen.getByRole("grid", { name: "Processes" });
+    const grid = screen.getByRole("treegrid", { name: "Processes" });
     grid.focus();
     await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     expect(useProcessStore.getState().selectedPid).toBe(processes[1]?.pid);
@@ -112,19 +116,34 @@ describe("ProcessesPage", () => {
     expect(useUiStore.getState().selectedPid).toBe(processes[1]?.pid);
   });
 
-  it("hides bulk expansion controls in list view", () => {
+  it("collapses and expands all in list view", async () => {
+    useMetricsStore.setState({
+      tick: makeTick([
+        makeProcessRow({ pid: 10, name: "parent" }),
+        makeProcessRow({ pid: 11, parentPid: 10, name: "child" }),
+      ]),
+    });
     render(<ProcessesPage />);
-    expect(screen.queryByRole("button", { name: "Collapse all" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Expand all" })).toBeNull();
+    expect(dataRows()).toHaveLength(2);
+    await userEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    expect(dataRows()).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    expect(dataRows()).toHaveLength(2);
   });
 
   it.each([
+    ["list", "none"],
+    ["list", "search"],
+    ["list", "preset"],
+    ["list", "user"],
     ["tree", "none"],
     ["tree", "search"],
     ["tree", "preset"],
+    ["tree", "user"],
     ["apps", "none"],
     ["apps", "search"],
     ["apps", "preset"],
+    ["apps", "user"],
   ] as const)("collapses and expands all in %s view with %s filtering", async (mode, filter) => {
     const rows = [
       makeProcessRow({ pid: 10, name: "browser", cpuPercent: 50 }),
@@ -134,13 +153,18 @@ describe("ProcessesPage", () => {
       makeProcessRow({ pid: 21, parentPid: 20, name: "worker", cpuPercent: 50 }),
       makeProcessRow({ pid: 30, name: "alone", cpuPercent: 50 }),
     ];
-    useMetricsStore.setState({ tick: makeTick(rows) });
+    useMetricsStore.setState({
+      staticInfo: { ...STATIC_INFO, selfPid: 10 },
+      tick: makeTick(rows.map((row) => ({ ...row, user: "alice" }))),
+    });
     useProcessStore.setState({ mode });
     render(<ProcessesPage />);
     if (filter === "search") {
       await userEvent.type(screen.getByRole("searchbox"), "browser");
     } else if (filter === "preset") {
       await userEvent.selectOptions(screen.getByRole("combobox", { name: "Filter" }), "highCpu");
+    } else if (filter === "user") {
+      await userEvent.selectOptions(screen.getByRole("combobox", { name: "Filter" }), "user");
     }
 
     const expandedCount =
@@ -159,15 +183,17 @@ describe("ProcessesPage", () => {
 
     // A metrics refresh must not reopen existing branches.
     act(() => {
-      useMetricsStore.setState({ tick: makeTick(rows.map((row) => ({ ...row, cpuPercent: 60 }))) });
+      useMetricsStore.setState({
+        tick: makeTick(rows.map((row) => ({ ...row, user: "alice", cpuPercent: 60 }))),
+      });
     });
     expect(dataRows()).toHaveLength(collapsedCount);
     await userEvent.click(
       screen.getByRole("button", {
-        name: mode === "tree" ? "Expand browser" : "Expand browser (3)",
+        name: mode === "apps" ? "Expand browser (3)" : "Expand browser",
       }),
     );
-    expect(dataRows()).toHaveLength(collapsedCount + (mode === "tree" ? 1 : 3));
+    expect(dataRows()).toHaveLength(collapsedCount + (mode === "apps" ? 3 : 1));
     await collapse();
     expect(dataRows()).toHaveLength(collapsedCount);
     await expand();
@@ -212,7 +238,7 @@ describe("Delete key", () => {
     });
     useProcessStore.setState({ selectedPid: processes[0]?.pid ?? null });
     render(<ProcessesPage />);
-    screen.getByRole("grid", { name: "Processes" }).focus();
+    screen.getByRole("treegrid", { name: "Processes" }).focus();
     await userEvent.keyboard("{Delete}");
     expect(spy).toHaveBeenCalledWith(processes[0], { type: "terminate" });
     spy.mockRestore();

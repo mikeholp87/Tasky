@@ -2,14 +2,7 @@ import { useMemo } from "react";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useProcessStore } from "@/stores/processStore";
 import type { ProcessRow } from "@/types";
-import {
-  type ProcessContext,
-  compareRows,
-  isUnfiltered,
-  makeMatcher,
-  processView,
-  userOf,
-} from "./logic";
+import { type ProcessContext, compareRows, isUnfiltered, makeMatcher, userOf } from "./logic";
 import { flattenApps } from "./apps";
 import { type TableItem, flattenTree } from "./tree";
 
@@ -33,8 +26,8 @@ export function useProcessContext(rows: readonly ProcessRow[]): ProcessContext {
 }
 
 /**
- * Items for the process table in the current mode. List mode filters and
- * sorts; tree mode keeps hierarchy, sorts siblings and shows matches with
+ * Items for the process table in the current mode. List and tree modes keep
+ * process hierarchy, sort siblings and show matches with
  * their ancestors; applications mode groups processes by program. Recomputed once per tick.
  */
 export function useProcessView() {
@@ -48,9 +41,6 @@ export function useProcessView() {
   const expandedApps = useProcessStore((s) => s.expandedApps);
 
   const items = useMemo((): TableItem[] => {
-    if (mode === "list") {
-      return processView(rows, { search, preset, sort }, ctx).map((row) => ({ row }));
-    }
     const options = { search, preset };
     if (mode === "apps") {
       return flattenApps(rows, {
