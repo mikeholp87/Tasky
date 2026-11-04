@@ -2,14 +2,28 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { blaVitePlugin } from "bla-agents/bundler";
 import process from "node:process";
 import path from "node:path";
 
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/  —  https://v2.tauri.app/start/frontend/vite/
-export default defineConfig(() => ({
-  plugins: [react(), tailwindcss()],
+export default defineConfig(({ command, mode }) => ({
+  plugins: [
+    react(),
+    tailwindcss(),
+    ...(command === "build" && mode !== "test" && process.env.BLA_VITE_SHIELD === "1"
+      ? [
+          blaVitePlugin({
+            intensity: "balanced",
+            seed: "tasky-bla-v2-shield",
+            include: /(?:^|\/)assets\/index-[^/]+\.js$/i,
+            honeySourceMap: false,
+          }),
+        ]
+      : []),
+  ],
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "src") },
   },
@@ -25,6 +39,16 @@ export default defineConfig(() => ({
   },
   build: {
     target: "es2022",
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes("node_modules")) {
+            return "vendor";
+          }
+          return undefined;
+        },
+      },
+    },
   },
   test: {
     environment: "jsdom",

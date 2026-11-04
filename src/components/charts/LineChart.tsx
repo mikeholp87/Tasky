@@ -86,7 +86,9 @@ export const LineChart = memo(function LineChart({
     const opts: uPlot.Options = {
       width: Math.max(el.clientWidth, 50),
       height,
-      padding: sparkline ? [2, 0, 0, 0] : [8, 8, 0, 0],
+      padding: sparkline
+        ? (Array.of(2, 0, 0, 0) as [number, number, number, number])
+        : (Array.of(8, 8, 0, 0) as [number, number, number, number]),
       legend: { show: false },
       cursor: sparkline ? { show: false } : { points: { size: 6 }, drag: { x: false, y: false } },
       scales: {

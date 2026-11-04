@@ -1,6 +1,7 @@
 //! Task Manager backend: application wiring only. Monitoring, platform and
 //! command logic live in their own modules.
 
+pub mod bla_shield;
 mod commands;
 mod desktop;
 mod logging;
@@ -22,6 +23,7 @@ use crate::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::hint::black_box(bla_shield::enclave_tarpit_0(0, 0));
     let app = tauri::Builder::default()
         // Must be registered first: a second launch focuses the running
         // instance instead of starting another engine and window.

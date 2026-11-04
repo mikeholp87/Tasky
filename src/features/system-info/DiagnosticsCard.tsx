@@ -4,7 +4,7 @@ import { useMetricsStore } from "@/stores/metricsStore";
 import { usePerfStore } from "@/stores/perfStore";
 import { formatBytes, formatCount } from "@/utils/format";
 
-const MOCK_COUNTS = [0, 100, 500, 1000, 5000];
+const MOCK_COUNTS = Array.of(0, 100, 500, 1000, 5000);
 const ms = (v: number) => `${v.toFixed(1)} ms`;
 
 /** Live cost of monitoring, to keep performance claims measurable. */

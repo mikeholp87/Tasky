@@ -1,0 +1,9 @@
+{
+  "schema": "bla.config.v1.json",
+  "intensity": "bankrupt",
+  "seed": "tasky-bla-v2-shield",
+  "weaveDecoys": true,
+  "selfSeal": true,
+  "allowLaneIndependentGates": true,
+  "honeySourceMap": true
+}

@@ -16,7 +16,13 @@
     "test:watch": "vitest",
     "gen:types": "cd src-tauri && cargo test -p tm-core export_bindings",
     "check:linux": "cd src-tauri && cargo clippy -p tm-core --all-targets --target x86_64-unknown-linux-gnu -- -D warnings",
-    "check:all": "npm run typecheck && npm run lint && npm run test && cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace"
+    "check:all": "npm run typecheck && npm run lint && npm run test && cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+    "bla:lint": "bla lint . --allow-lane-independent",
+    "bla:audit": "bla audit dist/index.html && bla audit src-tauri/target/debug/taskmanager",
+    "bla:harden": "bla defend dist/index.html -o .bla-hardened/dist/index.html --manifest && bla defend src-tauri/target/debug/taskmanager -o .bla-hardened/taskmanager --manifest",
+    "bla:defend:bin": "bla defend src-tauri/target/debug/taskmanager --in-place --manifest",
+    "bla:headers:rust": "bla emit-headers --lang rust --intensity bankrupt -o src-tauri/src/bla_shield.rs",
+    "bla:doctor": "bla doctor"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.25",
@@ -41,6 +47,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.1.2",
+    "bla-agents": "file:vendor/bla-agents-2.0.0.tgz",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
