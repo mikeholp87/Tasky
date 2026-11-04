@@ -12,6 +12,7 @@ import type {
   OpenFileList,
   SocketEntry,
   SocketList,
+  StartupItem,
   ThreadList,
 } from "@/types";
 
@@ -202,11 +203,59 @@ const HARDWARE: HardwareInfo = {
   powerSource: "battery",
 };
 
+const startup = (
+  name: string,
+  command: string,
+  scope: StartupItem["scope"],
+  enabled: boolean,
+  comment: string | null = null,
+  onlyIn: string | null = null,
+): StartupItem => ({
+  id: `${name.toLowerCase().replace(/\W+/g, "-")}.desktop`,
+  name,
+  comment,
+  command,
+  scope,
+  enabled,
+  onlyIn,
+});
+
+/** Mutable so the Startup page's switches work in the preview. */
+const STARTUP_ITEMS: StartupItem[] = [
+  startup("Dropbox", "dropbox start", "user", true, "Sync your files"),
+  startup("Syncthing", "syncthing serve --no-browser", "user", true),
+  startup(
+    "Power Management",
+    "/usr/lib/x86_64-linux-gnu/libexec/org_kde_powerdevil",
+    "system",
+    true,
+  ),
+  startup("Desktop Shell", "plasmashell --no-respawn", "system", true, "Plasma desktop"),
+  startup(
+    "Secret Storage Service",
+    "/usr/bin/gnome-keyring-daemon --start",
+    "system",
+    true,
+    null,
+    "GNOME, Unity, MATE",
+  ),
+  startup("File Indexer", "/usr/libexec/baloo_file", "system", false, "Indexes files for search"),
+  startup("Spice vdagent", "/usr/bin/spice-vdagent", "system", false, "Agent for Spice guests"),
+];
+
 const NOT_HANDLED = Symbol("not handled");
 
 /** Returns the stub reply for an inspection command, or `NOT_HANDLED`. */
 export function inspectPreview(cmd: string, args: unknown): unknown {
   switch (cmd) {
+    case "list_startup_items":
+      return STARTUP_ITEMS.map((i) => ({ ...i }));
+    case "set_startup_enabled": {
+      const { id, enabled } = args as { id: string; enabled: boolean };
+      const item = STARTUP_ITEMS.find((i) => i.id === id);
+      if (item) item.enabled = enabled;
+      return null;
+    }
     case "list_sockets":
       return SOCKETS;
     case "get_open_files":
