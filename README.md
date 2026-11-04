@@ -2,7 +2,7 @@
 
 ![Task Manager overview in the dark theme: CPU with a per-core load strip, memory, storage and network](docs/screenshots/overview-dark.png)
 
-<sub>Overview in the dark theme. Screenshots use synthetic sample data, not a real machine.</sub>
+<sub>Overview in the dark theme (synthetic sample data).</sub>
 
 A fast, private, cross-platform task manager and system monitor for Windows
 and Linux, with a native Linux port that works on both **KDE Plasma** and
@@ -16,16 +16,27 @@ benchmark, which runs only when you press its button and confirm the dialog.
 
 ## Screenshots
 
-Captured on Linux (Debian, ext4, `wlo1`).
+### Linux (GNOME)
+
+The native Linux port running on GNOME (Wayland), dark theme.
+
+![Overview on GNOME: CPU, memory, storage, network and system cards](docs/screenshots/gnome-overview.png)
+
+![Memory page on GNOME: usage history and what is using memory](docs/screenshots/gnome-memory.png)
+
+![Process tree on GNOME with status heat mapping](docs/screenshots/gnome-processes.png)
+
+### Themes
 
 ![Process table in the light theme with CPU and memory heat mapping](docs/screenshots/processes-light.png)
 
-<sub>Processes in the light theme.</sub>
+<sub>Processes in the light theme (synthetic sample data).</sub>
 
-The screenshots are generated from synthetic data so they never reveal a real
-process list, hostname or network address. To refresh them, run `npm run dev`
-and open `http://localhost:1420/?preview&theme=dark&route=overview` (dev
-builds only), then capture the page.
+The `overview-dark` and `processes-light` screenshots are generated from
+synthetic data; the three GNOME screenshots are from a real machine. To
+refresh the synthetic ones, run `npm run dev` and open
+`http://localhost:1420/?preview&theme=dark&route=overview` (dev builds only),
+then capture the page.
 
 ## Features
 
