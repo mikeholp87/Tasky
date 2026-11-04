@@ -15,8 +15,15 @@ const item = (name: string, enabled: boolean, command = name): StartupItem => ({
 describe("startup filter", () => {
   const items = [item("Zoom", true), item("Dropbox", false), item("Agent", true, "/usr/bin/sync")];
 
-  it("lists enabled items first, then by name", () => {
-    expect(filterItems(items, "").map((i) => i.name)).toEqual(["Agent", "Zoom", "Dropbox"]);
+  it("lists items by name, whether or not they are enabled", () => {
+    expect(filterItems(items, "").map((i) => i.name)).toEqual(["Agent", "Dropbox", "Zoom"]);
+  });
+
+  it("keeps a row in place when it is switched on or off", () => {
+    const flipped = items.map((i) => (i.name === "Dropbox" ? { ...i, enabled: true } : i));
+    expect(filterItems(flipped, "").map((i) => i.name)).toEqual(
+      filterItems(items, "").map((i) => i.name),
+    );
   });
 
   it("matches name or command, ignoring case", () => {
