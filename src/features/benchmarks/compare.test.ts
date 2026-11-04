@@ -55,7 +55,12 @@ describe("comparison rules", () => {
   it("computes score changes in percent", () => {
     const before = result({ id: "a", scores: { singleCore: 1000, multiCore: 4000 } });
     const after = result({ id: "b", scores: { singleCore: 1100, multiCore: 3800 } });
-    expect(compareScores(after, before)).toEqual({ singleCore: 10, multiCore: -5, gpu: null });
+    expect(compareScores(after, before)).toEqual({
+      singleCore: 10,
+      multiCore: -5,
+      gpu: null,
+      disk: null,
+    });
   });
 
   it("has nothing to compare without scores, e.g. a development build", () => {

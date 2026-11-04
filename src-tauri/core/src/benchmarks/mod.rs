@@ -10,6 +10,7 @@ pub mod disk;
 pub mod environment;
 pub mod gpu;
 pub mod history;
+pub mod internet;
 pub mod model;
 pub mod scoring;
 pub mod stats;

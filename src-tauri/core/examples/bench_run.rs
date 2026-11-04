@@ -63,7 +63,7 @@ fn main() {
     let sink = Arc::new(Print::default());
     let t0 = Instant::now();
     coord
-        .start(kind, profile, None, sink.clone())
+        .start(kind, profile, Default::default(), sink.clone())
         .expect("starts");
     println!("started {profile:?}");
     loop {

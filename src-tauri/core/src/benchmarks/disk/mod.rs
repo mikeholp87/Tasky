@@ -47,6 +47,40 @@ pub struct DiskRunOutput {
     pub bytes_read: u64,
 }
 
+/// Free bytes at `dir`, or `fallback` where this platform cannot say.
+pub fn free_space(dir: &std::path::Path, fallback: u64) -> u64 {
+    #[cfg(unix)]
+    return file::free_bytes(dir).unwrap_or(fallback);
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        fallback
+    }
+}
+
+/// Whether this user can create files in `dir`. Always `false` where the disk
+/// benchmark is not implemented, so no target is offered there.
+pub fn writable(dir: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    return file::is_writable(dir);
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        false
+    }
+}
+
+/// Removes benchmark files an earlier crash left in `parent` (only our exact
+/// names, only old ones).
+pub fn remove_stale(parent: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        file::cleanup_stale(parent, std::time::Duration::from_secs(3600));
+    }
+    #[cfg(not(unix))]
+    let _ = parent;
+}
+
 /// The disk benchmark needs file APIs that are not implemented here yet.
 #[cfg(not(unix))]
 pub mod engine {

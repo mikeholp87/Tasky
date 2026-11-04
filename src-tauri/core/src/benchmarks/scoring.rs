@@ -7,8 +7,8 @@
 //! combined CPU score: weighting single against multi would be arbitrary.
 
 use super::model::{
-    Comparability, CpuMode, CpuScores, GpuWorkloadId, GpuWorkloadResult, MethodInfo, Stability,
-    WorkloadId, WorkloadResult,
+    Comparability, CpuMode, CpuScores, DiskPhaseKind, DiskPhaseResult, GpuWorkloadId,
+    GpuWorkloadResult, IoMode, MethodInfo, Stability, WorkloadId, WorkloadResult,
 };
 use super::stats;
 
@@ -24,6 +24,93 @@ pub fn cpu_method() -> MethodInfo {
         // Same deterministic code and constants on every platform.
         comparability: Comparability::CrossPlatform,
     }
+}
+
+pub const DISK_SCORE_VERSION: &str = "disk-score-v1";
+pub const INTERNET_METHOD_ID: &str = "internet-cloudflare-v1";
+
+/// The I/O mode is part of the method: a buffered run measures the page cache
+/// as much as the drive, so it must never be compared with a direct one.
+pub fn disk_method(mode: IoMode) -> MethodInfo {
+    MethodInfo {
+        method_id: match mode {
+            IoMode::Direct => "disk-direct-v1",
+            IoMode::Buffered => "disk-buffered-v1",
+        }
+        .into(),
+        score_version: DISK_SCORE_VERSION.into(),
+        // File systems, I/O paths and caching differ between platforms.
+        comparability: Comparability::PlatformSpecific,
+    }
+}
+
+/// Comparable only for the same provider, which the id names. There is no
+/// score: the path to the server dominates the result.
+pub fn internet_method() -> MethodInfo {
+    MethodInfo {
+        method_id: INTERNET_METHOD_ID.into(),
+        score_version: "none".into(),
+        comparability: Comparability::CrossPlatform,
+    }
+}
+
+/// Disk reference values: medians of repeated direct-I/O release runs on the
+/// development machine's NVMe drive (2026-11-03). Sequential phases in MB/s,
+/// random phases in operations per second. Arbitrary like the CPU anchor: it
+/// compares runs of this application, not other benchmark products.
+fn disk_reference(kind: DiskPhaseKind, concurrency: u32) -> Option<f64> {
+    Some(match (kind, concurrency) {
+        (DiskPhaseKind::SequentialWrite, _) => 5400.0,
+        (DiskPhaseKind::SequentialRead, _) => 5100.0,
+        (DiskPhaseKind::RandomRead, 1) => 23_000.0,
+        (DiskPhaseKind::RandomRead, 8) => 142_000.0,
+        (DiskPhaseKind::RandomRead, 32) => 490_000.0,
+        (DiskPhaseKind::RandomWrite, 1) => 100_000.0,
+        (DiskPhaseKind::RandomWrite, 32) => 1_100_000.0,
+        _ => return None,
+    })
+}
+
+/// Geometric mean of the seven phases against their references, times 1000.
+/// Only direct-I/O runs are scored, and only when every phase is present: a
+/// partial score would not mean the same thing.
+pub fn disk_score(phases: &[DiskPhaseResult], mode: IoMode) -> Option<u32> {
+    if mode != IoMode::Direct {
+        return None;
+    }
+    let ratios: Vec<f64> = phases
+        .iter()
+        .filter_map(|p| {
+            let value = if p.kind == DiskPhaseKind::SequentialRead
+                || p.kind == DiskPhaseKind::SequentialWrite
+            {
+                p.median_mbps
+            } else {
+                p.median_iops
+            };
+            Some(value / disk_reference(p.kind, p.concurrency)?)
+        })
+        .collect();
+    if ratios.len() != 7 || ratios.iter().any(|r| !r.is_finite() || *r <= 0.0) {
+        return None;
+    }
+    Some((1000.0 * stats::geometric_mean(&ratios)?).round() as u32)
+}
+
+/// Throughput samples of both directions; networks are noisier than drives,
+/// but the same thresholds keep the rating comparable across benchmarks.
+pub fn internet_stability(download: &[f64], upload: &[f64], warnings: &[String]) -> Stability {
+    let cvs: Vec<f64> = [download, upload]
+        .iter()
+        .filter_map(|s| stats::cv_percent(s))
+        .collect();
+    rate(&cvs, 0, warnings)
+}
+
+pub fn disk_stability(phases: &[DiskPhaseResult], warnings: &[String]) -> Stability {
+    let cvs: Vec<f64> = phases.iter().filter_map(|p| p.cv_percent).collect();
+    let outliers = phases.iter().map(|p| p.outlier_indices.len()).sum();
+    rate(&cvs, outliers, warnings)
 }
 
 pub fn gpu_method() -> MethodInfo {
@@ -167,6 +254,75 @@ fn rate(cvs: &[f64], outliers: usize, warnings: &[String]) -> Stability {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn phase(kind: DiskPhaseKind, qd: u32, mbps: f64, iops: f64) -> DiskPhaseResult {
+        DiskPhaseResult {
+            kind,
+            label: String::new(),
+            block_bytes: 4096,
+            concurrency: qd,
+            queue_depth_exact: true,
+            operations: 1,
+            bytes: 1,
+            seconds: 1.0,
+            samples: vec![mbps],
+            median_mbps: mbps,
+            mean_mbps: mbps,
+            min_mbps: mbps,
+            max_mbps: mbps,
+            cv_percent: Some(1.0),
+            outlier_indices: vec![],
+            median_iops: iops,
+            latency: None,
+            validated: true,
+            note: None,
+        }
+    }
+
+    fn reference_phases(scale: f64) -> Vec<DiskPhaseResult> {
+        use DiskPhaseKind::*;
+        vec![
+            phase(SequentialWrite, 1, 5400.0 * scale, 0.0),
+            phase(SequentialRead, 1, 5100.0 * scale, 0.0),
+            phase(RandomRead, 1, 0.0, 23_000.0 * scale),
+            phase(RandomRead, 8, 0.0, 142_000.0 * scale),
+            phase(RandomRead, 32, 0.0, 490_000.0 * scale),
+            phase(RandomWrite, 1, 0.0, 100_000.0 * scale),
+            phase(RandomWrite, 32, 0.0, 1_100_000.0 * scale),
+        ]
+    }
+
+    #[test]
+    fn disk_score_is_1000_at_the_reference_and_scales_linearly() {
+        assert_eq!(
+            disk_score(&reference_phases(1.0), IoMode::Direct),
+            Some(1000)
+        );
+        assert_eq!(
+            disk_score(&reference_phases(0.1), IoMode::Direct),
+            Some(100)
+        );
+    }
+
+    #[test]
+    fn buffered_or_incomplete_runs_get_no_disk_score() {
+        assert_eq!(disk_score(&reference_phases(1.0), IoMode::Buffered), None);
+        let mut p = reference_phases(1.0);
+        p.pop();
+        assert_eq!(disk_score(&p, IoMode::Direct), None);
+        let mut p = reference_phases(1.0);
+        p[0].median_mbps = 0.0;
+        assert_eq!(disk_score(&p, IoMode::Direct), None);
+    }
+
+    #[test]
+    fn io_mode_changes_the_method_id() {
+        assert_ne!(
+            disk_method(IoMode::Direct).method_id,
+            disk_method(IoMode::Buffered).method_id
+        );
+        assert_eq!(internet_method().score_version, "none");
+    }
 
     fn result(id: WorkloadId, mode: CpuMode, median: f64, cv: f64) -> WorkloadResult {
         WorkloadResult {

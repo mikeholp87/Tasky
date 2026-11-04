@@ -1,15 +1,17 @@
 //! Benchmark commands. The frontend can only pick a kind, a profile (both
-//! enums) and a graphics adapter id; nothing else about a run is controlled
-//! from the UI.
+//! enums) and ids from lists the backend produced (a graphics adapter, a disk
+//! location); no path or address ever comes from the UI. Internet consent is
+//! given in an operating-system dialog owned by the backend.
 
 use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, State};
 
 use crate::state::AppState;
-use tm_core::benchmarks::coordinator::ProgressSink;
+use tm_core::benchmarks::coordinator::{ProgressSink, StartOptions};
 use tm_core::benchmarks::{
-    BenchmarkKind, BenchmarkProfile, BenchmarkResult, BenchmarkStatus, GpuAdapterInfo,
+    BenchmarkKind, BenchmarkProfile, BenchmarkResult, BenchmarkStatus, DiskPlan, DiskTargetInfo,
+    GpuAdapterInfo, InternetPlan,
 };
 use tm_core::errors::{AppError, AppResult};
 
@@ -40,6 +42,15 @@ fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
+/// Plain-language size for confirmation text.
+fn size(bytes: u64) -> String {
+    if bytes >= 1_000_000_000 {
+        format!("{:.1} GB", bytes as f64 / 1e9)
+    } else {
+        format!("{} MB", bytes / 1_000_000)
+    }
+}
+
 #[tauri::command]
 pub async fn start_benchmark(
     app: AppHandle,
@@ -47,17 +58,80 @@ pub async fn start_benchmark(
     kind: BenchmarkKind,
     profile: BenchmarkProfile,
     adapter: Option<String>,
+    disk_target: Option<String>,
 ) -> AppResult<BenchmarkStatus> {
-    if adapter.as_deref().is_some_and(|a| !valid_id(a)) {
-        return Err(AppError::InvalidArgument("Not a valid adapter id.".into()));
+    if adapter.as_deref().is_some_and(|a| !valid_id(a))
+        || disk_target.as_deref().is_some_and(|t| !valid_id(t))
+    {
+        return Err(AppError::InvalidArgument("Not a valid id.".into()));
     }
     let benchmarks = Arc::clone(&state.benchmarks);
     super::blocking::run(move || {
-        super::confirm::confirm(&app, &format!(
-            "Start the {profile:?} {kind:?} benchmark? It will place heavy load on your hardware. You can cancel it from Benchmarks."
-        ))?;
-        benchmarks.start(kind, profile, adapter, Arc::new(EventSink(app)))
-    }).await
+        let mut options = StartOptions {
+            adapter,
+            disk_target: disk_target.clone(),
+            internet_consent: false,
+        };
+        let message = match kind {
+            BenchmarkKind::Disk => {
+                let id = disk_target
+                    .ok_or_else(|| AppError::InvalidArgument("Choose a location first.".into()))?;
+                let plan = benchmarks.disk_plan(&id, profile)?;
+                if let Some(why) = plan.blocked {
+                    return Err(AppError::InvalidArgument(why));
+                }
+                format!(
+                    "Start the {profile:?} disk benchmark? It creates a temporary {} file in {} and writes about {} to the drive while it runs, then deletes the file. You can cancel it from Benchmarks.",
+                    size(plan.file_bytes),
+                    plan.directory,
+                    size(plan.estimated_bytes_written),
+                )
+            }
+            BenchmarkKind::Internet => {
+                let plan = benchmarks.internet_plan(profile);
+                options.internet_consent = true; // given by pressing OK below
+                format!(
+                    "Start the {profile:?} internet test? It connects to {} ({}) and sends and receives generated test data: up to {} down and {} up. No files or information about your computer are sent, but {} will see your public IP address, the timing of the requests and that this app made them. You can cancel it from Benchmarks.",
+                    plan.host,
+                    plan.provider,
+                    size(plan.max_download_bytes),
+                    size(plan.max_upload_bytes),
+                    plan.host,
+                )
+            }
+            _ => format!(
+                "Start the {profile:?} {kind:?} benchmark? It will place heavy load on your hardware. You can cancel it from Benchmarks."
+            ),
+        };
+        super::confirm::confirm(&app, &message)?;
+        benchmarks.start(kind, profile, options, Arc::new(EventSink(app)))
+    })
+    .await
+}
+
+/// Locations the disk benchmark may use.
+#[tauri::command]
+pub fn list_disk_targets(state: State<'_, AppState>) -> Vec<DiskTargetInfo> {
+    state.benchmarks.disk_targets()
+}
+
+/// What a disk run would write, or why it cannot happen.
+#[tauri::command]
+pub fn disk_plan(
+    state: State<'_, AppState>,
+    target: String,
+    profile: BenchmarkProfile,
+) -> AppResult<DiskPlan> {
+    if !valid_id(&target) {
+        return Err(AppError::InvalidArgument("Not a valid id.".into()));
+    }
+    state.benchmarks.disk_plan(&target, profile)
+}
+
+/// What an internet run would send and receive, and to whom.
+#[tauri::command]
+pub fn internet_plan(state: State<'_, AppState>, profile: BenchmarkProfile) -> InternetPlan {
+    state.benchmarks.internet_plan(profile)
 }
 
 /// Graphics adapters for the GPU benchmark. Loading a graphics driver can

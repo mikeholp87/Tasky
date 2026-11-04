@@ -61,3 +61,38 @@ This is not an end-to-end Internet benchmark validation: total session budget,
 transfer concurrency, cooldown, cancellation while blocked, provider disclosure,
 result integrity and native start authorization must be checked when the runner
 and IPC wiring exist. The coordinator currently refuses Disk/Internet starts.
+
+## Internet benchmark as built (2026-11-04)
+
+Update to the sections above; the audit text is left as written.
+
+- **Provider and endpoints.** One fixed provider, Cloudflare's public speed
+  endpoints at `https://speed.cloudflare.com` (`/__down?bytes=N`, `/__up`). No
+  frontend value reaches a URL, header, proxy or port; the plain-HTTP
+  constructor exists only under `cfg(test)`.
+- **Consent.** The command shows a native dialog naming the provider and host,
+  the largest download and upload for the chosen profile, that no files or
+  system information are sent, and that the server sees the public IP address,
+  request timing and the client name. The backend sets the consent flag only
+  after the dialog is accepted, and the coordinator refuses an internet start
+  without it. The page also states this before the Run button.
+- **Numeric budgets.** Per run: Quick 100 MB down / 30 MB up, Standard 250 / 80,
+  Extended 600 / 200 (decimal). Per app session: 1 GB total, refused up front
+  when the next run's maximum would exceed what is left. Cooldown: 120 s
+  between starts. Request limits: 25 MB (download) and 10 MB (upload) per
+  request, at most 1 GiB by the client's own hard cap; the response body read
+  is bounded by the requested size plus a one-byte sentinel; a ping response
+  is read to at most 1 KiB plus a sentinel.
+- **Deadlines.** Connect 5 s, response headers 10 s, each request body 60 s
+  (a per-chunk total, not an idle timeout), whole request 120 s. Cancellation
+  is checked on every received chunk; on a stalled connection a worker blocked
+  in a read is released only by its deadline, so a cancel can take up to that
+  long to finish in that case.
+- **Concurrency.** At most 8 download and 4 upload connections plus one latency
+  connection, all inside the common benchmark lock (one benchmark at a time).
+- **Rate limiting.** The provider limits repeated large transfers per address
+  (HTTP 429, `Retry-After` of about an hour was observed). 403 and 429 are shown
+  with the retry time; nothing retries automatically.
+- **Not covered.** Whether the real provider's certificate chain is accepted on
+  every platform was exercised on Linux only; certificate-verification failure
+  paths are not unit-tested (only the library's defaults are relied on).

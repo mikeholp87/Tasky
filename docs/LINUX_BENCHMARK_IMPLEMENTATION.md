@@ -1,7 +1,8 @@
 # Benchmark suite: implementation plan
 
-Written 2026-11-03. Status: **phases 1 (framework + CPU) and 4 (GPU) complete**;
-phases 2 (disk), 3 (internet) and 5 (full benchmark) are **not started**.
+Written 2026-11-03, updated 2026-11-04. Status: **phases 1 (framework + CPU),
+2 (disk), 3 (internet) and 4 (GPU) complete**; phase 5 (full benchmark) is **not
+started**. Disk is implemented for Linux/Unix only.
 
 ## 1. Starting point
 
@@ -103,12 +104,12 @@ Debug builds are marked `developmentBuild` and are **not scored**.
 
 ## 5. Comparability
 
-| Benchmark        | Class                                                        | Why                                                                            |
-| ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| CPU              | Cross-platform comparable                                    | Same deterministic code, same method version                                   |
-| GPU (later)      | Comparable only with an identical WGSL workload through wgpu | Driver/backend differences are reported                                        |
-| Disk (later)     | Platform-specific                                            | Page cache, I/O APIs and filesystems differ; I/O mode is part of the method id |
-| Internet (later) | Comparable only for the same provider and method             | Network path dominates                                                         |
+| Benchmark   | Class                                                        | Why                                                                            |
+| ----------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| CPU         | Cross-platform comparable                                    | Same deterministic code, same method version                                   |
+| GPU (later) | Comparable only with an identical WGSL workload through wgpu | Driver/backend differences are reported                                        |
+| Disk        | Platform-specific                                            | Page cache, I/O APIs and filesystems differ; I/O mode is part of the method id |
+| Internet    | Comparable only for the same provider and method             | Network path dominates; the method id names the provider                       |
 
 The UI refuses to compare results whose `methodId` differs.
 
@@ -146,19 +147,33 @@ off, only `std`, `parking_lot`, `wgsl`, plus `vulkan` on Linux and `dx12` and
 functions). `naga` is a test-only dependency (the same version wgpu uses) so
 the shaders are validated in CI without a GPU.
 
-Deferred decisions, to be taken with the owner when each phase starts: an
-`io_uring` crate (only if disk queue-depth accuracy needs it), and the internet
-provider (which endpoint, and consent to use bandwidth).
+Added in the internet phase: `ureq` 3 (MIT/Apache-2.0, blocking HTTP client,
+default features off, `rustls` only) with `rustls` and its `ring` crypto
+provider (the rest is pure Rust; `ring` needs a C compiler at build time, which
+is why the Windows type-check on Linux ran with the HTTPS feature off). No
+async runtime was added. The disk phase added no dependency beyond `libc`,
+already present.
+
+Decisions taken with the owner: the internet provider is Cloudflare's public
+speed endpoints, run only after a native confirmation that states the data used.
+Decided without needing the owner: `io_uring` is **not used**. Threads with
+synchronous direct I/O reached queue depth 32 and matched `sysbench` on the
+test NVMe drive (see the validation report); an `io_uring` crate would add
+`unsafe`, a kernel-version dependency (it is often disabled in containers) and
+no measured accuracy gain. Revisit only if a drive faster than a few million
+IOPS shows the thread count limiting the result.
 
 ## 9. Phases
 
 1. **Framework + CPU** (this phase): models, statistics, cancellation,
    coordinator, history, preflight, CPU method v1, UI page. Tested with fixture
    and live tests; repeatability measured on this machine.
-2. **Disk**: benchmark file lifecycle and space safety, sequential and random
-   I/O, latency histogram and percentiles, buffered vs direct (`O_DIRECT`) with
-   truthful labelling, queue depth, validation against `fio`.
-3. **Internet**: provider abstraction, idle/loaded latency, jitter, data usage.
+2. **Disk** (done, Unix only): benchmark file lifecycle and space safety,
+   sequential and random I/O, latency histogram and percentiles, buffered vs
+   direct (`O_DIRECT`) with truthful labelling, queue depth. Validated against
+   `sysbench fileio` because `fio` was not installed.
+3. **Internet** (done): provider abstraction, idle/loaded latency, jitter, data
+   usage, consent, cooldown and session allowance.
 4. **GPU**: wgpu adapter enumeration and selection, one WGSL workload, timing
    method recorded, output validation.
 5. **Full benchmark**: sequencing, cooldown, partial-result rules, comparison.
@@ -166,3 +181,40 @@ provider (which endpoint, and consent to use bandwidth).
 The final reports (`LINUX_BENCHMARK_SUPPORT.md`, `LINUX_BENCHMARK_VALIDATION.md`,
 `LINUX_BENCHMARK_PORT_REPORT.md`) are written as each phase is validated, and
 state only what was actually run.
+
+## 10. Disk and internet design notes
+
+```text
+tm-core::benchmarks::disk
+    plan.rs      profiles, free-space reserve rule, size cut-down, wear estimate
+    targets.rs   mount-derived location list (the UI picks an id, never a path)
+    file.rs      exclusive private temp file, O_DIRECT with fallback, RAII removal
+                 (three small `libc` calls: fadvise, statvfs, access)
+    aligned.rs   4 KiB-aligned buffers (allocation, slices: `unsafe`, each commented)
+    pattern.rs   incompressible data with a per-4 KiB offset/pass header
+    latency.rs   exact percentiles and histogram
+    device.rs    model/transport/rotational from sysfs
+    engine.rs    phases, rounds, verification, deadlines, cancellation
+tm-core::benchmarks::internet
+    provider.rs  Provider/Session traits, the fixed Cloudflare client, test server
+    route.rs     default-route interface and VPN detection (pure parsing)
+    mod.rs       latency, throughput windows, loaded latency, caps
+```
+
+- **Timed phases are rounds.** A random phase runs in several rounds: all
+  worker threads start together at a barrier, work for their share, and stop at
+  a second barrier, so queue depth is constant and a round's time is a clean
+  denominator. Write rounds end with `fdatasync` inside the timing. Each round's
+  rate is one sample; the median of rounds is the result, outliers flagged.
+- **Random writes use disjoint blocks per thread** (a residue class of the block
+  number), so the final content of every written block is known and a sample can
+  be verified byte for byte afterwards, outside the timing.
+- **Backend-only resources.** Disk locations and the internet endpoint are
+  resolved in the backend. The coordinator refuses an internet start unless the
+  native dialog was accepted (a flag the command sets only after the dialog), and
+  enforces a 120-second cooldown and a 1 GB session allowance.
+- **Result shape.** Raw per-phase data (samples, latency percentiles, bytes) is
+  stored; the disk score is derived from it, and internet results have no score.
+  The disk method id includes the I/O mode.
+- **Time budgets.** Random phases stop adding operations after about 8 s and
+  extra sequential passes after about 40 s, so slow drives finish.

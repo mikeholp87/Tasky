@@ -7,6 +7,9 @@ import type {
   ActivityEvent,
   AppError,
   BenchmarkKind,
+  DiskPlan,
+  DiskTargetInfo,
+  InternetPlan,
   GpuAdapterInfo,
   BenchmarkProfile,
   BenchmarkResult,
@@ -96,9 +99,23 @@ export const backend = {
 
   refreshNow: () => call<void>("refresh_now"),
 
-  startBenchmark: (kind: BenchmarkKind, profile: BenchmarkProfile, adapter?: string) =>
-    call<BenchmarkStatus>("start_benchmark", { kind, profile, adapter: adapter ?? null }),
+  startBenchmark: (
+    kind: BenchmarkKind,
+    profile: BenchmarkProfile,
+    adapter?: string,
+    diskTarget?: string,
+  ) =>
+    call<BenchmarkStatus>("start_benchmark", {
+      kind,
+      profile,
+      adapter: adapter ?? null,
+      diskTarget: diskTarget ?? null,
+    }),
   listGpuAdapters: () => call<GpuAdapterInfo[]>("list_gpu_adapters"),
+  listDiskTargets: () => call<DiskTargetInfo[]>("list_disk_targets"),
+  diskPlan: (target: string, profile: BenchmarkProfile) =>
+    call<DiskPlan>("disk_plan", { target, profile }),
+  internetPlan: (profile: BenchmarkProfile) => call<InternetPlan>("internet_plan", { profile }),
   cancelBenchmark: () => call<void>("cancel_benchmark"),
   getBenchmarkStatus: () => call<BenchmarkStatus>("get_benchmark_status"),
   getBenchmarkHistory: () => call<BenchmarkResult[]>("get_benchmark_history"),

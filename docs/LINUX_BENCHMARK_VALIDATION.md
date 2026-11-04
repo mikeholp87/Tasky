@@ -1,9 +1,9 @@
 # Benchmark validation report
 
 What was actually run to check the benchmarks, and what was not. Date:
-2026-11-03. The CPU and GPU benchmarks exist; disk, internet and the full
-benchmark do not, so they have no section rather than an empty one. The GPU
-validation follows the CPU one.
+2026-11-03 and 2026-11-04. The CPU, GPU, disk and internet benchmarks exist;
+the full benchmark does not, so it has no section rather than an empty one. The
+GPU, disk and internet validations follow the CPU one.
 
 ## Test machine
 
@@ -228,3 +228,159 @@ temperature were not read (not available through a vendor-neutral source).
   construction.
 - **Cross-check against another GPU benchmark:** none was run. Adapter details
   matched `vulkaninfo`; throughput was not compared with any other tool.
+
+# Disk benchmark (`disk-direct-v1`)
+
+## Test hardware
+
+The same machine, with its internal NVMe drive (ext4, the home folder, 588 GiB
+free). A working desktop: the browser and other sessions were running, so some
+background disk traffic is part of the numbers. Release build, direct I/O.
+Only this one drive was tested.
+
+## What was checked
+
+- **Unit and integration tests (52 for the disk module, 22 for the
+  coordinator):** the aligned buffer and the data pattern; the mount-derived
+  location list (tmpfs, network, read-only and virtual file systems excluded);
+  the free-space rule; exclusive creation, owner-only permissions, refusal of a
+  symlinked benchmark folder and of any existing file; clean-up on success,
+  error, cancel and panic; stale-file clean-up that touches only our exact
+  names; full runs in both buffered and direct mode; cancellation before and
+  during a run (stops within seconds, nothing left behind); a stalled phase
+  timing out; a drive too slow for the operation count finishing with fewer
+  operations; and the verification **catching deliberately damaged data**
+  and data from the wrong pass.
+- **Cross-check against another tool.** `fio` is not installed here, so
+  `sysbench fileio` (direct I/O, one 1 GiB file, same machine, same minute) was
+  used. Same block sizes and thread counts, 4 s per case:
+
+  | Test                  | This app (median of 3 Standard runs) | sysbench    |
+  | --------------------- | ------------------------------------ | ----------- |
+  | Sequential read       | 5.17-5.24 GB/s                       | 5.14 GB/s   |
+  | Sequential write      | 5.32-5.55 GB/s                       | 5.71 GB/s   |
+  | Random read, 1 thread | 21.9-23.1 k IOPS                     | 23.1 k IOPS |
+  | Random read, 8        | 141-145 k IOPS                       | 143 k IOPS  |
+  | Random read, 32       | 491-495 k IOPS                       | 502 k IOPS  |
+  | Random write, 1       | 95-110 k IOPS                        | 100 k IOPS  |
+  | Random write, 32      | 1.08-1.16 M IOPS                     | 1.08 M IOPS |
+
+  (sysbench reports MiB/s: 4,900 MiB/s read = 5.14 GB/s, 5,448 MiB/s write =
+  5.71 GB/s.) Reads and random writes agree within a few percent. Sequential
+  write is about 3-7% lower here, as expected: each pass ends with a flush that
+  this app times, while sysbench was run with its flush at the end of the whole
+  run. That is a methodology difference, not an error, and it is the stricter
+  measurement.
+
+## Run times and wear (release build, NVMe)
+
+| Profile  | Time   | Wrote   | Read    | File     |
+| -------- | ------ | ------- | ------- | -------- |
+| Quick    | 1.0 s  | 0.32 GB | 0.95 GB | 256 MiB  |
+| Standard | 4.4 s  | 2.31 GB | 5.98 GB | 1024 MiB |
+| Extended | 12.8 s | 6.77 GB | 16.9 GB | 2048 MiB |
+
+The bytes written are counted by the app, not estimated. No file or folder was
+left behind after the real runs (checked in the home folder afterwards) or in
+the tests, including cancelled runs.
+
+## Repeatability
+
+Three Standard runs, spread (coefficient of variation) of the per-run medians:
+sequential read 0.6%, sequential write 2.4%, random read 0.3-2.9%, random write
+7.5% at queue depth 1 and 4.1% at 32. Within one run, random-write rounds
+varied more (up to 40% at queue depth 1 in one run): an NVMe drive's write
+cache and background flushing make writes noisier than reads. The stability
+label reflects this, and the median is used for that reason.
+
+## Bugs found by measurement
+
+1. **Buffered random reads measured the RAM.** The first buffered run reported
+   6.2 million IOPS at one thread, because the sequential passes had just left
+   the whole file in the page cache. Fixed: this file's own cached pages are
+   dropped (never the system cache) before the random reads; buffered one-thread
+   random reads then read 22.7 k IOPS, matching direct I/O.
+2. **Verification used the wrong pass.** When a slow drive skipped extra
+   sequential write passes, verification expected the last planned pass, not
+   the last pass that ran, and reported corruption. Found by a test; fixed.
+3. **A fixed operation count timed out on slow drives.** Replaced with a time
+   budget per phase (operations actually done are recorded).
+
+## Not validated
+
+- **Any other drive.** No SATA SSD, hard disk, USB drive, NVMe with a different
+  controller, RAID, LVM, encrypted volume or network file system was tested.
+  Hard-disk behaviour (the time budgets) is tested with an artificial limit
+  only.
+- **Other file systems.** Only ext4 with direct I/O. The buffered fallback is
+  tested in temporary folders and with unit tests, not on btrfs, XFS or ZFS. Whether `O_DIRECT` is honoured exactly varies by file system.
+- **`io_uring`.** Not used. Threads with synchronous I/O reach queue depth 32
+  and matched `sysbench` on this drive; whether that holds for faster drives
+  (several million IOPS) was not tested.
+- **Flash wear counters.** The bytes written are counted by the app; the drive's
+  own SMART counters were not read before and after.
+- **Windows.** The disk benchmark is not implemented there.
+- **The reference values** come from this drive, which scores about 1000 by
+  construction.
+
+# Internet benchmark (`internet-cloudflare-v1`)
+
+## What was checked
+
+- **Tests against a local HTTP server (18 for the module, plus coordinator
+  tests).** The real client code runs against a small server on `127.0.0.1`
+  that speaks the Cloudflare endpoints: throughput measured with the server
+  limited to 40 Mbit/s came out within 15% of 40; the bytes counted for an
+  upload matched what the server received; a short body, a non-HTTP reply, a
+  503, a 429 with `Retry-After`, a stalled server, an unreachable port and
+  cancellation in the middle of a transfer each end with a clear message and no
+  result; redirects are refused without contacting the destination; oversized
+  bodies and requests are refused; routing-table and VPN detection were tested
+  against fixture files.
+- **Backend rules.** Starting without consent, or with an unknown disk
+  location, is refused before anything happens; a second run inside the
+  cooldown and a run that would exceed the session allowance are refused.
+- **Real Cloudflare, tiny requests.** A latency request, a 1 MB and a 25 MB
+  download and a 2 MB upload (with and without chunked encoding) were answered
+  with HTTP 200 and the right sizes.
+
+## Bugs found by measurement
+
+1. **`timeout_recv_body` is a total time per body, not an idle time.** The first
+   version used it as a stall detector and aborted healthy transfers. It is now
+   a per-chunk limit (60 s), found by the local-server test.
+2. **Wrong header name, briefly.** I changed the data-centre header from `colo`
+   to `cf-meta-colo` because the latter appears in the response's
+   `access-control-expose-headers` list. The real response header is `colo`;
+   the first real run showed no server location, which exposed the mistake.
+   Reverted.
+3. **Cloudflare answered HTTP 403 for one specific download size** (16,000,000
+   bytes) while 8, 10 and 25 MB worked. The chunk sizes are now ones the
+   provider's own speed test uses.
+4. **Cloudflare rate-limits large transfers per address.** After a few
+   development runs the 25 MB endpoint returned HTTP 429 with `Retry-After:
+3515` (about an hour), while small requests still worked. The test now uses
+   larger chunks and a slower latency probe, lower data caps, a cooldown and a
+   session allowance, and says when to try again.
+
+## Not validated
+
+- **Accuracy of the real-server numbers.** One real Quick run completed
+  end to end after the rate limit expired (2026-11-04, Wi-Fi): idle latency
+  median 45 ms (min 42, jitter 6.2 ms), download median 282 Mbit/s (peak 449),
+  upload median 419 Mbit/s, 100 MB down and 30 MB up. The run worked, but
+  the data caps are **too small for this link**: the download hit its 100 MB
+  cap in 2.8 s and the upload its 30 MB cap in 0.75 s, leaving few samples, one
+  zero-throughput sample (a gap while the four connections requested their next
+  chunk) and a median well below the peak. The result carries the "coarse
+  measurement" and "reached its data limit" notes, but on a connection this fast
+  Quick is a rough figure. Raising the caps risks the provider's rate limit,
+  which was not explored further. Standard and Extended were not run for real.
+- **Accuracy against another tool** (for example the Cloudflare web test or
+  `iperf3`) on the same connection: not compared.
+- **Behaviour on slow links.** A transfer chunk must finish within 60 s, so a
+  link below roughly 15 Mbit/s may fail with a timeout. Not tested.
+- **Wi-Fi, VPN and mobile data paths.** Interface and VPN detection was tested
+  on fixtures and on this machine's connection only.
+- **Windows.** Type-checked with the HTTPS feature off (the TLS library cannot
+  be cross-compiled from Linux without a Windows C toolchain); not run.

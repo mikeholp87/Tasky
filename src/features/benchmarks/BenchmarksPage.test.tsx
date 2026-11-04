@@ -7,14 +7,23 @@ import { runBenchmark } from "@/services/benchmarks";
 import type { GpuAdapterInfo } from "@/types";
 import { BenchmarksPage } from "./BenchmarksPage";
 
-vi.mock("@/services/ipc", async (orig) => ({
-  ...(await orig<typeof import("@/services/ipc")>()),
-  isBackendAvailable: () => true,
-}));
+vi.mock("@/services/ipc", async (orig) => {
+  const real = await orig<typeof import("@/services/ipc")>();
+  return {
+    ...real,
+    isBackendAvailable: () => true,
+    backend: {
+      ...real.backend,
+      diskPlan: () => new Promise(() => {}),
+      internetPlan: () => new Promise(() => {}),
+    },
+  };
+});
 vi.mock("@/services/benchmarks", () => ({
   initBenchmarks: vi.fn(),
   runBenchmark: vi.fn(),
   loadGpuAdapters: vi.fn(),
+  loadDiskTargets: vi.fn(),
   cancelBenchmark: vi.fn(),
   deleteBenchmarkResult: vi.fn(),
 }));
@@ -165,6 +174,8 @@ beforeEach(() => {
     selectedId: null,
     adapters: null,
     adaptersError: null,
+    diskTargets: null,
+    diskTargetsError: null,
   });
 });
 
@@ -213,7 +224,8 @@ describe("BenchmarksPage", () => {
     expect(screen.getByText("61.4 Gops/s")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /run cpu benchmark/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Quick" })).toBeDisabled();
+    for (const quick of screen.getAllByRole("radio", { name: "Quick" }))
+      expect(quick).toBeDisabled();
     // Missing sensors read as unavailable, never as zero.
     expect(screen.getByText("Temperature —")).toBeInTheDocument();
   });
@@ -255,7 +267,7 @@ describe("BenchmarksPage", () => {
       within(select).getByRole("option", { name: /llvmpipe.*software renderer/i }),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /run gpu benchmark/i }));
-    expect(runBenchmark).toHaveBeenCalledWith("gpu", "standard", IGPU.id);
+    expect(runBenchmark).toHaveBeenCalledWith("gpu", "standard", { adapter: IGPU.id });
   });
 
   it("warns that a software renderer is not a GPU result", async () => {

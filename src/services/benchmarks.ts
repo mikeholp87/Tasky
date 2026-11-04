@@ -36,14 +36,22 @@ export async function initBenchmarks(): Promise<void> {
   await refreshHistory();
 }
 
+/** What the user picked for a run; ids from lists the backend produced. */
+export interface RunOptions {
+  adapter?: string;
+  diskTarget?: string;
+}
+
 export async function runBenchmark(
   kind: BenchmarkKind,
   profile: BenchmarkProfile,
-  adapter?: string,
+  options: RunOptions = {},
 ): Promise<void> {
   try {
     useBenchmarkStore.getState().select(null);
-    useBenchmarkStore.getState().setStatus(await backend.startBenchmark(kind, profile, adapter));
+    useBenchmarkStore
+      .getState()
+      .setStatus(await backend.startBenchmark(kind, profile, options.adapter, options.diskTarget));
   } catch (e) {
     toast.error(toAppError(e).message);
   }
@@ -57,6 +65,17 @@ export async function loadGpuAdapters(): Promise<void> {
     store.setAdapters(await backend.listGpuAdapters());
   } catch (e) {
     store.setAdapters([], toAppError(e).message);
+  }
+}
+
+/** Lists disk locations once; a failure is shown in the Disk card. */
+export async function loadDiskTargets(): Promise<void> {
+  const store = useBenchmarkStore.getState();
+  if (store.diskTargets !== null || !isBackendAvailable()) return;
+  try {
+    store.setDiskTargets(await backend.listDiskTargets());
+  } catch (e) {
+    store.setDiskTargets([], toAppError(e).message);
   }
 }
 

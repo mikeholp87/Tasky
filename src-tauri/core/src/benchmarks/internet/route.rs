@@ -33,8 +33,8 @@ pub fn describe_path(
     others: &[(String, InterfaceKind)],
 ) -> NetworkPath {
     let kind = default_interface.as_deref().map(kind_of);
-    let vpn_suspected = kind == Some(InterfaceKind::Vpn)
-        || others.iter().any(|(_, k)| *k == InterfaceKind::Vpn);
+    let vpn_suspected =
+        kind == Some(InterfaceKind::Vpn) || others.iter().any(|(_, k)| *k == InterfaceKind::Vpn);
     NetworkPath {
         interface: default_interface,
         kind,
@@ -83,7 +83,10 @@ mod tests {
         assert_eq!(default_route_interface(down), None, "not up");
         assert_eq!(default_route_interface(""), None);
         assert_eq!(default_route_interface("Iface\nbroken line\nx y z"), None);
-        assert_eq!(default_route_interface("Iface Destination Gateway Flags\neth0 00000000 1 zz"), None);
+        assert_eq!(
+            default_route_interface("Iface Destination Gateway Flags\neth0 00000000 1 zz"),
+            None
+        );
     }
 
     #[test]
@@ -100,12 +103,19 @@ mod tests {
         let p = describe_path(
             Some("wlo1".into()),
             &kind,
-            &[("wlo1".into(), InterfaceKind::Wifi), ("wg0".into(), InterfaceKind::Vpn)],
+            &[
+                ("wlo1".into(), InterfaceKind::Wifi),
+                ("wg0".into(), InterfaceKind::Vpn),
+            ],
         );
         assert_eq!(p.kind, Some(InterfaceKind::Wifi));
         assert!(p.vpn_suspected);
         // A plain connection.
-        let p = describe_path(Some("wlo1".into()), &kind, &[("wlo1".into(), InterfaceKind::Wifi)]);
+        let p = describe_path(
+            Some("wlo1".into()),
+            &kind,
+            &[("wlo1".into(), InterfaceKind::Wifi)],
+        );
         assert!(!p.vpn_suspected);
         // No route at all is reported as unknown, not guessed.
         let p = describe_path(None, &kind, &[]);

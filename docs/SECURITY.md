@@ -86,10 +86,11 @@ iterations; dispatches have deadlines and cancellation between dispatches.
 Device/driver calls may still block beyond application control. Do not infer
 real-device safety from fake-device tests.
 
-No telemetry or Internet benchmark provider exists at the original audit
-baseline. New disk/Internet benchmark code appeared during the audit and must
-meet the requirements in NETWORK_SECURITY.md and SECURITY_CHECKLIST.md before
-release. OS domain/file-manager/mounted-filesystem activity is subject to OS
+No telemetry existed at the original audit baseline and none was added. The
+Internet benchmark (one fixed provider, Cloudflare's speed endpoints) and the
+disk benchmark were completed after the audit; their budgets, consent and
+limits are recorded in NETWORK_SECURITY.md ("Internet benchmark as built") and
+the checklist items still have to be completed for each release. OS domain/file-manager/mounted-filesystem activity is subject to OS
 policy even when the application does not initiate HTTP traffic.
 
 ## Updates, release and reporting

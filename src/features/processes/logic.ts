@@ -411,3 +411,29 @@ export function isNewProcess(startTime: number, nowSecs: number, windowSecs: num
     windowSecs > 0 && startTime > 0 && nowSecs >= startTime && nowSecs - startTime < windowSecs
   );
 }
+
+/** Live execution state of a process, for red/green colouring. */
+export type RunState = "active" | "idle" | "problem";
+
+/** CPU share at or above which a process counts as actively executing. */
+export const ACTIVE_CPU_PERCENT = 0.5;
+
+/**
+ * Green: running, or using CPU right now (most Linux processes are
+ * "sleeping" between bursts, so the state alone would rarely show green).
+ * Red: suspended, zombie, dead or stuck waiting on the disk. Otherwise idle.
+ * Restricted processes report no CPU, so only their state counts.
+ */
+export function runState(row: Pick<ProcessRow, "status" | "cpuPercent" | "restricted">): RunState {
+  switch (row.status) {
+    case "stopped":
+    case "zombie":
+    case "dead":
+    case "diskSleep":
+      return "problem";
+    case "running":
+      return "active";
+    default:
+      return !row.restricted && row.cpuPercent >= ACTIVE_CPU_PERCENT ? "active" : "idle";
+  }
+}

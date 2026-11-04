@@ -1,13 +1,11 @@
-import { Check, Play, Square, Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { Meter } from "@/components/ui/Meter";
 import { cn } from "@/lib/cn";
 import { isBackendAvailable } from "@/services/ipc";
 import {
-  cancelBenchmark,
   deleteBenchmarkResult,
   initBenchmarks,
   loadGpuAdapters,
@@ -20,12 +18,25 @@ import type {
   BenchmarkResult,
   GpuDeviceType,
   GpuResult,
-  Stability,
   WorkloadId,
 } from "@/types";
-import { formatDuration, formatTimestamp } from "@/utils/format";
-import { compareScores, DIFFERENT_METHOD_NOTE, previousComparable } from "./compare";
-import { formatDelta, formatSpread, formatThroughput } from "./format";
+import { formatTimestamp } from "@/utils/format";
+import { compareScores, previousComparable } from "./compare";
+import { DiskCard } from "./DiskCard";
+import { formatSpread, formatThroughput } from "./format";
+import { InternetCard } from "./InternetCard";
+import { STABILITY } from "./stability";
+import {
+  EnvironmentFooter,
+  Outcome,
+  ProfilePicker,
+  Progress,
+  ResultNotes,
+  RunRow,
+  Score,
+  StabilityLabel,
+  Sustained,
+} from "./parts";
 
 const CPU_PROFILES: readonly { id: BenchmarkProfile; label: string; detail: string }[] = [
   { id: "quick", label: "Quick", detail: "About 10 seconds. A fast check." },
@@ -55,12 +66,6 @@ const WORKLOADS: readonly { id: WorkloadId; label: string }[] = [
   { id: "decompress", label: "Decompression" },
 ];
 
-const STABILITY: Record<Stability, { label: string; tone: string }> = {
-  high: { label: "High stability", tone: "text-ok" },
-  medium: { label: "Medium stability", tone: "text-warn" },
-  low: { label: "Low stability", tone: "text-crit" },
-};
-
 const DEVICE_TYPE: Record<GpuDeviceType, string> = {
   discrete: "Discrete GPU",
   integrated: "Integrated GPU",
@@ -74,6 +79,8 @@ export function BenchmarksPage() {
   const history = useBenchmarkStore((s) => s.history);
   const cpuResult = useBenchmarkStore((s) => shownResultFor(s, "cpu"));
   const gpuResult = useBenchmarkStore((s) => shownResultFor(s, "gpu"));
+  const diskResult = useBenchmarkStore((s) => shownResultFor(s, "disk"));
+  const internetResult = useBenchmarkStore((s) => shownResultFor(s, "internet"));
   const select = useBenchmarkStore((s) => s.select);
   const selectedId = useBenchmarkStore((s) => s.selectedId);
 
@@ -85,7 +92,8 @@ export function BenchmarksPage() {
   const development =
     status.developmentBuild ||
     cpuResult?.environment.developmentBuild === true ||
-    gpuResult?.environment.developmentBuild === true;
+    gpuResult?.environment.developmentBuild === true ||
+    diskResult?.environment.developmentBuild === true;
   const openId = selectedId ?? status.runId ?? null;
 
   return (
@@ -109,14 +117,8 @@ export function BenchmarksPage() {
           )}
           <CpuCard result={cpuResult} history={history} />
           <GpuCard result={gpuResult} history={history} />
-          <div className="grid gap-4 md:grid-cols-2">
-            {["Storage", "Internet"].map((name) => (
-              <Card key={name}>
-                <CardHeader title={name} />
-                <p className="px-4 pb-4 pt-2 text-fg-muted">Not available yet.</p>
-              </Card>
-            ))}
-          </div>
+          <DiskCard result={diskResult} history={history} />
+          <InternetCard result={internetResult} history={history} />
           <HistoryCard history={history} openId={openId} onOpen={select} />
         </div>
       )}
@@ -321,7 +323,7 @@ function GpuCard({
               mine={mine}
               detail={GPU_PROFILES.find((p) => p.id === profile)?.detail}
               label="Run GPU benchmark"
-              onRun={() => void runBenchmark("gpu", profile, adapterId)}
+              onRun={() => void runBenchmark("gpu", profile, { adapter: adapterId })}
             />
           </>
         )}
@@ -438,290 +440,22 @@ function GpuResultPanel({
   );
 }
 
-// --------------------------------------------------------------- shared
-
-function ProfilePicker({
-  profiles,
-  value,
-  onChange,
-  disabled,
-}: {
-  profiles: readonly { id: BenchmarkProfile; label: string }[];
-  value: BenchmarkProfile;
-  onChange: (p: BenchmarkProfile) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Benchmark profile"
-      className="inline-flex gap-1 rounded-lg bg-surface-2 p-1"
-    >
-      {profiles.map((p) => (
-        <button
-          key={p.id}
-          type="button"
-          role="radio"
-          aria-checked={value === p.id}
-          disabled={disabled}
-          onClick={() => onChange(p.id)}
-          className={cn(
-            "rounded-md px-3 py-1.5 text-fg-muted disabled:opacity-60",
-            value === p.id && "bg-surface text-fg shadow-sm",
-          )}
-        >
-          {p.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** Run, or Cancel when this card's benchmark is the one running. */
-function RunRow({
-  active,
-  mine,
-  detail,
-  label,
-  onRun,
-}: {
-  active: boolean;
-  mine: boolean;
-  detail: string | undefined;
-  label: string;
-  onRun: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      {mine ? (
-        <button
-          type="button"
-          onClick={() => void cancelBenchmark()}
-          className="flex h-9 items-center gap-2 rounded-lg border border-border px-4 font-medium hover:bg-surface-2"
-        >
-          <Square size={14} aria-hidden /> Cancel
-        </button>
-      ) : (
-        <button
-          type="button"
-          disabled={active}
-          onClick={onRun}
-          title={active ? "Another benchmark is running." : undefined}
-          className="flex h-9 items-center gap-2 rounded-lg bg-accent px-4 font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
-        >
-          <Play size={14} aria-hidden /> {label}
-        </button>
-      )}
-      <span className="text-fg-muted">{detail}</span>
-    </div>
-  );
-}
-
-/** Cancelled or failed outcome of the latest run of this kind. */
-function Outcome({ kind }: { kind: BenchmarkKind }) {
-  const status = useBenchmarkStore((s) => s.status);
-  if (isActive(status) || status.kind !== kind) return null;
-  if (status.state === "cancelled" && status.message) {
-    return <p className="text-fg-muted">{status.message}</p>;
-  }
-  if (status.state === "failed") {
-    return (
-      <p role="alert" className="text-crit">
-        {status.message ?? "The benchmark failed."}
-      </p>
-    );
-  }
-  return null;
-}
-
-function Progress({ kind }: { kind: BenchmarkKind }) {
-  const s = useBenchmarkStore((st) => st.status);
-  const pct = Math.round(s.fraction * 100);
-  const dash = <span className="text-fg-subtle">—</span>;
-  return (
-    <div className="space-y-3 rounded-xl bg-surface-2 p-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <span role="status" className="font-medium">
-          {s.stage || "Starting"}
-        </span>
-        <span className="num text-fg-muted">{pct}%</span>
-      </div>
-      <Meter
-        percent={pct}
-        label="Benchmark progress"
-        color={kind === "gpu" ? "--res-net" : "--res-cpu"}
-      />
-      <div className="flex flex-wrap items-baseline gap-x-8 gap-y-1">
-        <span className="num text-2xl font-medium">
-          {s.live ? formatThroughput(s.live.value, s.live.unit) : dash}
-        </span>
-        <span className="num text-fg-muted">Elapsed {formatDuration(s.elapsedMs / 1000)}</span>
-        {kind === "cpu" ? (
-          <>
-            <span className="num text-fg-muted">
-              CPU {s.cpuPercent != null ? `${s.cpuPercent.toFixed(0)}%` : "—"}
-            </span>
-            <span className="num text-fg-muted">
-              {s.frequencyMhz != null ? `${(s.frequencyMhz / 1000).toFixed(2)} GHz` : "Frequency —"}
-            </span>
-            <span className="num text-fg-muted">
-              {s.temperatureC != null ? `${s.temperatureC.toFixed(0)} °C` : "Temperature —"}
-            </span>
-          </>
-        ) : (
-          <span className="text-fg-muted">
-            GPU utilization, clock speed and temperature are not measured.
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StabilityLabel({ stability }: { stability: Stability }) {
-  const s = STABILITY[stability];
-  return (
-    <span
-      className={cn("font-medium", s.tone)}
-      title="How repeatable this run looked, from the spread between iterations and any warnings. It is not a statistical confidence interval."
-    >
-      {s.label}
-    </span>
-  );
-}
-
-/** Not-scored message, comparison text and warnings shared by both results. */
-function ResultNotes({
-  result,
-  history,
-  previous,
-  scored,
-}: {
-  result: BenchmarkResult;
-  history: readonly BenchmarkResult[];
-  previous: BenchmarkResult | null;
-  scored: boolean;
-}) {
-  const others = history.filter((h) => h.id !== result.id && h.kind === result.kind);
-  const comparable = previous ? compareScores(result, previous) : null;
-  return (
-    <>
-      {!scored && (
-        <p className="text-fg-muted">
-          Not scored: development builds and software renderers are not representative, or a
-          measurement was unavailable.
-        </p>
-      )}
-      {comparable && previous && (
-        <p className="text-fg-muted">
-          Compared with your previous {result.profile} run on{" "}
-          {formatTimestamp(previous.startedAtMs)}. One run is not proof of a real difference.
-        </p>
-      )}
-      {previous === null && others.length > 0 && (
-        <p className="text-fg-muted">
-          No earlier {result.profile} result measured the same way
-          {result.kind === "gpu" ? " on this adapter" : ""} to compare with.
-        </p>
-      )}
-      {others.some((h) => h.method.methodId !== result.method.methodId) && (
-        <p className="text-fg-subtle">{DIFFERENT_METHOD_NOTE}</p>
-      )}
-      {result.warnings.length > 0 && (
-        <ul className="space-y-1 rounded-lg bg-warn-soft px-3 py-2 text-warn">
-          {result.warnings.map((w) => (
-            <li key={w}>{w}</li>
-          ))}
-        </ul>
-      )}
-    </>
-  );
-}
-
-function Sustained({
-  title,
-  peak,
-  sustained,
-  decline,
-  note,
-}: {
-  title: string;
-  peak: string;
-  sustained: string;
-  decline: number;
-  note: string | null;
-}) {
-  return (
-    <div className="space-y-1">
-      <h3 className="font-medium">{title}</h3>
-      <p className="num text-fg-muted">
-        Peak {peak}, sustained {sustained}
-        {decline >= 0.5 && ` (${decline.toFixed(0)}% lower than at the start)`}.
-      </p>
-      {note && <p className="text-fg-muted">{note}</p>}
-    </div>
-  );
-}
-
-function EnvironmentFooter({ result }: { result: BenchmarkResult }) {
-  const env = result.environment;
-  return (
-    <p className="text-[12px] text-fg-subtle">
-      {[
-        env.distribution ?? env.platform,
-        env.cpuModel,
-        `${env.logicalCores} threads`,
-        env.powerSource === "ac" ? "AC power" : env.powerSource === "battery" ? "battery" : null,
-        env.cpuGovernor ? `governor ${env.cpuGovernor}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")}
-      <br />
-      Method {result.method.methodId}, scoring {result.method.scoreVersion}.{" "}
-      {result.method.comparability === "crossPlatform"
-        ? "Comparable across Windows and Linux."
-        : "Comparable only on the same platform."}{" "}
-      {result.affinity === "not pinned" ? "" : `${result.affinity}. `}Outliers are flagged and kept,
-      never removed.
-    </p>
-  );
-}
-
-function Score({
-  label,
-  value,
-  change,
-}: {
-  label: string;
-  value: number | undefined;
-  change: number | null | undefined;
-}) {
-  const delta = formatDelta(change ?? null);
-  return (
-    <div>
-      <div className="text-fg-muted">{label}</div>
-      <div className="flex items-baseline gap-2">
-        <span className="num text-4xl font-medium leading-none tracking-tight">{value ?? "—"}</span>
-        {delta && (
-          <span
-            className={cn(
-              "num font-medium",
-              (change ?? 0) > 0.05
-                ? "text-ok"
-                : (change ?? 0) < -0.05
-                  ? "text-crit"
-                  : "text-fg-muted",
-            )}
-          >
-            {delta}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
+const KIND_NAME: Record<BenchmarkKind, string> = {
+  cpu: "CPU",
+  gpu: "GPU",
+  disk: "Disk",
+  internet: "Internet",
+};
 
 function scoreText(r: BenchmarkResult): string {
+  if (r.kind === "disk") return r.diskScore != null ? `Disk ${r.diskScore}` : "Not scored";
+  if (r.kind === "internet") {
+    const d = r.internet?.download?.medianMbps;
+    const u = r.internet?.upload?.medianMbps;
+    return d != null && u != null
+      ? `↓ ${formatThroughput(d, "Mbit/s")} ↑ ${formatThroughput(u, "Mbit/s")}`
+      : "No speed";
+  }
   if (r.kind === "gpu") return r.gpuScore != null ? `GPU ${r.gpuScore}` : "Not scored";
   return r.scores ? `${r.scores.singleCore} / ${r.scores.multiCore}` : "Not scored";
 }
@@ -757,9 +491,7 @@ function HistoryCard({
                   <span className="num w-40 shrink-0 text-fg-muted">
                     {formatTimestamp(r.startedAtMs)}
                   </span>
-                  <span className="w-10 shrink-0 font-medium">
-                    {r.kind === "gpu" ? "GPU" : "CPU"}
-                  </span>
+                  <span className="w-16 shrink-0 font-medium">{KIND_NAME[r.kind]}</span>
                   <span className="w-20 shrink-0 capitalize">{r.profile}</span>
                   <span className="num">{scoreText(r)}</span>
                   <span className={cn("ml-auto", STABILITY[r.stability].tone)}>

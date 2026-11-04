@@ -43,6 +43,7 @@
   --warn-bar: #c27800;
   --warn-soft: #fcefd2;
   --crit: #b42318;
+  --ok-soft: #dcf2e5;
   --crit-soft: #fde4e1;
   --danger: #b42318;
   --heat-1: rgba(53, 88, 214, 0.08);
@@ -76,6 +77,7 @@
   --warn-bar: #f2b94b;
   --warn-soft: #3a2d12;
   --crit: #ff7f72;
+  --ok-soft: #14301f;
   --crit-soft: #411c19;
   --danger: #c93a28;
   --heat-1: rgba(122, 155, 255, 0.1);

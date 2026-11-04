@@ -4,8 +4,8 @@ What the Benchmarks page measures, how, and what the numbers do and do not
 mean. Implementation plan: [`LINUX_BENCHMARK_IMPLEMENTATION.md`](LINUX_BENCHMARK_IMPLEMENTATION.md).
 Validation data: [`LINUX_BENCHMARK_VALIDATION.md`](LINUX_BENCHMARK_VALIDATION.md).
 
-**Status:** the CPU and GPU benchmarks exist. Storage, internet and the full
-system benchmark are not built yet. The suite is new and shared: Windows and
+**Status:** the CPU, GPU, disk and internet benchmarks exist. The full system
+benchmark is not built yet. The suite is new and shared: Windows and
 Linux run the same code, with the same methods.
 
 ## CPU (`cpu-method-v1`, scoring `score-v1`)
@@ -131,6 +131,109 @@ runs of this application, not other benchmark products.
   test. No stable, vendor-neutral source exists, and none is invented.
 - GPU results compare only with the same adapter and the same timing method.
 
+## Disk (`disk-direct-v1` or `disk-buffered-v1`, scoring `disk-score-v1`)
+
+Measures a real file on the drive you choose, with the operating system's cache
+bypassed where possible, so the number describes the drive and not the RAM.
+
+| Test                      | Definition                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| Sequential write and read | 1 MiB blocks, one at a time, over the whole file                                   |
+| Random read               | 4 KiB blocks at random offsets, at queue depth 1, 8 and 32                         |
+| Random write              | 4 KiB blocks at random offsets, at queue depth 1 and 32                            |
+| Latency                   | Every operation is timed; median, 95th, 99th percentile and maximum are exact      |
+| Verification              | Everything read back is checked against what was written; a mismatch fails the run |
+
+- **File and space.** A private (mode 0600) temporary file is created with
+  exclusive creation in a `.taskmanager-benchmark` folder inside the location
+  you pick, and deleted when the run ends, is cancelled, fails or panics. A crash
+  leaves at most that one file; files older than an hour with our exact names are
+  removed at the next run. The file is 256 MiB (Quick), 1 GiB (Standard) or
+  2 GiB (Extended), cut down to fit: at least 2 GiB or a tenth of the free space
+  is always left untouched, and a run that cannot fit 64 MiB is refused with the
+  reason. Nothing else is written.
+- **Wear.** The page states what a run will write before it starts. Measured on
+  the test machine: Quick wrote 0.32 GB, Standard 2.3 GB, Extended 6.8 GB. Writes
+  end with a flush (`fdatasync`) that is inside the timing, so write results are
+  durable throughput, not the speed of filling a cache.
+- **Direct and buffered I/O.** Direct I/O (`O_DIRECT`, 4 KiB-aligned buffers)
+  is tried first. If the file system refuses it (some network, FUSE and overlay
+  file systems do), the run falls back to buffered I/O, says so, and is
+  **not scored**: the method id carries the mode, so a buffered and a direct
+  result are never compared. Buffered random reads start cold (this file's own
+  cached pages are dropped first; the system cache is never touched).
+- **Queue depth.** Queue depth N means N threads, each with one synchronous
+  request. With direct I/O each really is outstanding at the device, and the
+  page shows "QD32". With buffered I/O the page says "32 threads", because the
+  claim would not be true.
+- **Data.** Incompressible random data with a per-4 KiB header that records the
+  offset and write pass, so stale, misplaced or damaged data is detected, and so
+  a drive that compresses or deduplicates cannot flatter the result.
+- **Slow drives.** Each random phase stops adding operations after about 8
+  seconds and further sequential passes stop after about 40 seconds, so a hard
+  disk (about 100 random reads per second) finishes with fewer operations
+  instead of timing out. The operation counts are recorded.
+- **Where it can run.** The list comes from the mounted file systems: the home
+  folder first, then other writable local ones. Memory-backed (`tmpfs`),
+  network, read-only and virtual file systems are never offered. The page sends
+  an id from this list; no path ever comes from the interface.
+- **Score.** The geometric mean of the seven results against reference values
+  measured on the development NVMe drive, times 1000. Only complete direct-I/O
+  runs are scored. As with the CPU anchor, it compares runs of this application
+  with each other, not with other benchmark products.
+- **Comparing.** Same method id (which includes the I/O mode), profile and
+  location. Platform-specific: Windows and Linux file systems and caching
+  differ, so a Windows disk result is never compared with a Linux one.
+
+**Platform.** The disk benchmark is implemented for Linux (and other Unix
+systems). On Windows it is not implemented yet: the page offers no location and
+nothing is run. The internet benchmark is shared code and is expected to run
+on Windows, but only Linux has been run.
+
+Run times on the test NVMe drive (release build): Quick 1.0 s, Standard 4.4 s,
+Extended 12.8 s. Slower drives take longer, up to the time limits above.
+
+## Internet (`internet-cloudflare-v1`, no score)
+
+Measures latency, jitter, download and upload speed and latency under load
+against one fixed server. It runs only when you press the button **and confirm
+in a dialog** that names the server, the most data it can move, and what the
+server sees.
+
+- **Server.** `https://speed.cloudflare.com` (Cloudflare's public speed-test
+  endpoints), fixed in the program. Ordinary HTTPS certificate checks, no
+  redirects, one fixed client name (`TaskManager-Benchmark`). Nothing from this
+  computer is sent but generated test bytes: no files, no system information, no
+  benchmark history. The server does see your public IP address, the timing of
+  the requests and that this app made them. These are public endpoints without
+  a service guarantee: they limit repeated large transfers per address (HTTP
+  429, observed with a one-hour retry time), and the page then says when to try
+  again.
+- **Data use.** At most 100 MB down and 30 MB up (Quick), 250 / 80 MB
+  (Standard) or 600 / 200 MB (Extended). A direction stops when it reaches its
+  limit, however fast the link is, and the result says so. A session allowance of
+  1 GB in total and a 2-minute wait between runs are enforced by the backend.
+  It counts against data caps and mobile plans.
+- **Latency.** Sequential tiny requests on one kept-alive connection, the first
+  (which pays for connection set-up) discarded. Median, fastest, 95th
+  percentile, maximum, and jitter: the mean absolute difference between
+  consecutive round trips. This is HTTP request time, not ICMP ping.
+- **Throughput.** 4, 6 or 8 parallel connections download (at most 4 upload)
+  for a ramp-up (excluded) and then a measured window, in 250 ms samples of bytes
+  actually moved; the median sample is the result, in megabits per second
+  (decimal). Upload counts bytes handed to the connection, so a very short run
+  can read slightly high.
+- **Latency under load** is measured on a separate connection during the
+  transfer, shown beside each direction.
+- **Not measured.** Packet loss (HTTP cannot tell a lost packet from a
+  retransmission, and a failed request is not a lost packet) and the server's
+  location beyond its data-centre code. There is no internet score: the route to
+  the server dominates the result.
+- **Path.** The interface carrying the default route and its type (Ethernet,
+  Wi-Fi, ...) come from the kernel's routing table and interface facts. A VPN or
+  tunnel being up is noted: results then include its overhead.
+- **Comparing.** Same server and profile only.
+
 ### Comparing results
 
 Two results compare only when `methodId` and `scoreVersion` match and the
@@ -142,7 +245,9 @@ not proof of a real difference.
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CPU `cpu-method-v1`  | Yes: identical deterministic code and constants                                                                                                             |
 | GPU `gpu-compute-v1` | Same shaders and constants everywhere; backend (Vulkan or DirectX 12), driver and timing method are recorded and shown. Comparable only on the same adapter |
-| Storage, internet    | Not built                                                                                                                                                   |
+| Disk                 | No: platform-specific; the I/O mode is part of the method id, and results compare only on the same location.                                                |
+| Internet             | Same server and method only; the route dominates the result.                                                                                                |
+| Full system          | Not built                                                                                                                                                   |
 
 ### Limits to know about
 

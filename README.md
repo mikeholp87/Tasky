@@ -10,7 +10,8 @@ memory, storage and network) and lets you safely end, suspend or reprioritize
 processes.
 
 Built with Tauri 2, Rust and React. All monitoring stays on your machine: no
-telemetry, no network access, works fully offline.
+telemetry, works fully offline. The only network use is the optional internet
+benchmark, which runs only when you press its button and confirm the dialog.
 
 ## Screenshots
 
@@ -48,8 +49,10 @@ builds only), then capture the page.
   integer, floating point, SHA-256, compression) and a GPU compute benchmark
   (integer, floating point, memory bandwidth, with every result checked against
   a CPU reference), with scores, run history and safe comparison between
-  results. Runs on Windows and Linux with the same methods; storage and
-  internet tests are not built yet. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+  results, a disk benchmark (sequential and random speed, latency percentiles,
+  queue depths; Linux) and an internet test (latency, jitter, download and
+  upload against Cloudflare's speed endpoints, only after you confirm).
+  Runs on Windows and Linux with the same methods. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 - **Performance:** large CPU, memory, disk and network graphs over
   60 s / 5 min / 15 min / 1 h.
 - **CPU, Memory, Storage, Network pages:**

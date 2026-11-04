@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import type { BenchmarkKind, BenchmarkResult, BenchmarkStatus, GpuAdapterInfo } from "@/types";
+import type {
+  BenchmarkKind,
+  BenchmarkResult,
+  BenchmarkStatus,
+  DiskTargetInfo,
+  GpuAdapterInfo,
+} from "@/types";
 
 const IDLE: BenchmarkStatus = {
   state: "idle",
@@ -28,12 +34,16 @@ interface BenchmarkState {
   /** Graphics adapters; null until listed. */
   adapters: GpuAdapterInfo[] | null;
   adaptersError: string | null;
+  /** Disk locations; null until listed. */
+  diskTargets: DiskTargetInfo[] | null;
+  diskTargetsError: string | null;
 
   setStatus: (status: BenchmarkStatus) => void;
   setHistory: (history: BenchmarkResult[]) => void;
   setLatest: (result: BenchmarkResult | null) => void;
   select: (id: string | null) => void;
   setAdapters: (adapters: GpuAdapterInfo[] | null, error?: string | null) => void;
+  setDiskTargets: (targets: DiskTargetInfo[] | null, error?: string | null) => void;
 }
 
 export const useBenchmarkStore = create<BenchmarkState>((set) => ({
@@ -43,12 +53,15 @@ export const useBenchmarkStore = create<BenchmarkState>((set) => ({
   selectedId: null,
   adapters: null,
   adaptersError: null,
+  diskTargets: null,
+  diskTargetsError: null,
 
   setStatus: (status) => set({ status }),
   setHistory: (history) => set({ history }),
   setLatest: (latest) => set({ latest, selectedId: null }),
   select: (selectedId) => set({ selectedId }),
   setAdapters: (adapters, error = null) => set({ adapters, adaptersError: error }),
+  setDiskTargets: (diskTargets, error = null) => set({ diskTargets, diskTargetsError: error }),
 }));
 
 /** Whether a run is in progress (owns the benchmark lock). */

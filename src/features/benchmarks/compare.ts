@@ -18,6 +18,14 @@ export function sameMethod(a: BenchmarkResult, b: BenchmarkResult): boolean {
  * measurement even under the same method id.
  */
 function sameDevice(a: BenchmarkResult, b: BenchmarkResult): boolean {
+  // A different drive or server is a different measurement. (The I/O mode is
+  // already part of a disk's method id.)
+  if (a.kind === "disk") {
+    return a.disk != null && b.disk != null && a.disk.target.id === b.disk.target.id;
+  }
+  if (a.kind === "internet") {
+    return a.internet != null && b.internet != null && a.internet.host === b.internet.host;
+  }
   if (a.kind !== "gpu") return true;
   return (
     a.gpu != null &&
@@ -60,6 +68,8 @@ export interface ScoreDelta {
   multiCore: number | null;
   /** GPU score change; null for CPU results. */
   gpu: number | null;
+  /** Disk score change; null otherwise. */
+  disk: number | null;
 }
 
 /**
@@ -75,12 +85,20 @@ export function compareScores(
   if (current.kind === "gpu") {
     if (!sameDevice(current, previous)) return null;
     const gpu = percentChange(previous.gpuScore, current.gpuScore);
-    return gpu === null ? null : { singleCore: null, multiCore: null, gpu };
+    return gpu === null ? null : { singleCore: null, multiCore: null, gpu, disk: null };
   }
+  if (current.kind === "disk") {
+    if (!sameDevice(current, previous)) return null;
+    const disk = percentChange(previous.diskScore, current.diskScore);
+    return disk === null ? null : { singleCore: null, multiCore: null, gpu: null, disk };
+  }
+  // Internet results have no score to compare; the card shows both runs' speeds.
+  if (current.kind === "internet") return null;
   if (!current.scores || !previous.scores) return null;
   return {
     singleCore: percentChange(previous.scores.singleCore, current.scores.singleCore),
     multiCore: percentChange(previous.scores.multiCore, current.scores.multiCore),
     gpu: null,
+    disk: null,
   };
 }

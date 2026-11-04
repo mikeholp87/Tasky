@@ -23,8 +23,17 @@ import {
   type ProcessContext,
   type SortState,
   isNewProcess,
+  runState,
+  type RunState,
 } from "./logic";
 import type { TableItem } from "./tree";
+
+/** Red/green execution state: row marker and status-cell tint. */
+const RUN_COLOR: Record<RunState, { bar: string; bg?: string; fg?: string }> = {
+  active: { bar: "var(--ok)", bg: "var(--ok-soft)", fg: "var(--ok)" },
+  idle: { bar: "transparent" },
+  problem: { bar: "var(--crit)", bg: "var(--crit-soft)", fg: "var(--crit)" },
+};
 
 const HEAT_BG: Record<HeatLevel, string | undefined> = {
   0: undefined,
@@ -354,6 +363,7 @@ const Row = memo(function Row({
   const { row } = item;
   const memPct = ctx.totalMemoryBytes > 0 ? (row.memoryBytes / ctx.totalMemoryBytes) * 100 : 0;
   const isNew = isNewProcess(row.startTime, ctx.nowSecs, highlightSecs);
+  const run = RUN_COLOR[runState(row)];
   return (
     <div
       // Context-menu triggers inject handlers via props when wrapping.
@@ -364,6 +374,7 @@ const Row = memo(function Row({
       aria-level={tree ? (item.depth ?? 0) + 1 : undefined}
       aria-expanded={tree && item.hasChildren ? item.expanded : undefined}
       data-pid={row.pid}
+      data-run={heat ? runState(row) : undefined}
       onClick={() => onSelect(row.pid)}
       onDoubleClick={() => (item.group ? onToggle(row.pid) : onOpen(row.pid))}
       onContextMenu={(e) => {
@@ -379,6 +390,7 @@ const Row = memo(function Row({
     >
       {columns.map((id) => {
         const col = COLUMN_BY_ID[id];
+        const statusTint = heat && id === "status";
         const level: HeatLevel = !heat
           ? 0
           : id === "cpu"
@@ -401,7 +413,12 @@ const Row = memo(function Row({
               id === "name" && "font-medium",
               (id === "exe" || id === "cmd") && "selectable font-mono text-[12px] text-fg-muted",
             )}
-            style={{ background: HEAT_BG[level] }}
+            style={{
+              background: statusTint ? (run.bg ?? HEAT_BG[level]) : HEAT_BG[level],
+              color: statusTint ? run.fg : undefined,
+              // A coloured edge on the first cell marks the live state.
+              boxShadow: heat && id === columns[0] ? `inset 3px 0 0 0 ${run.bar}` : undefined,
+            }}
           >
             {id === "name" && tree && (
               <span

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-disk-plan"
+description = "Enables the disk_plan command without any pre-configured scope."
+commands.allow = ["disk_plan"]
+
+[[permission]]
+identifier = "deny-disk-plan"
+description = "Denies the disk_plan command without any pre-configured scope."
+commands.deny = ["disk_plan"]
