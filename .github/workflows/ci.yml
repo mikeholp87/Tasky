@@ -4,7 +4,7 @@ on:
   # Not on every push: run when a PR is opened or marked ready, or by hand
   # (Actions tab or `gh workflow run`).
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
   workflow_dispatch:
 
 permissions:
@@ -71,8 +71,8 @@ jobs:
   bundle:
     name: Bundle (${{ matrix.os }})
     needs: check
-    # Slow release builds: manual runs only.
-    if: github.event_name == 'workflow_dispatch'
+    # Validate Debian packaging on pull requests; build every bundle manually.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && matrix.os == 'ubuntu-22.04')
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +102,26 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
+      - run: npx tauri build --config src-tauri/tauri.linux.conf.json
+        if: runner.os == 'Linux'
       - run: npx tauri build
+        if: runner.os == 'Windows'
+      - name: Validate Debian package
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y desktop-file-utils
+          mapfile -t packages < <(find src-tauri/target/release/bundle/deb -maxdepth 1 -name '*.deb' -print)
+          test "${#packages[@]}" -eq 1
+          deb=${packages[0]}
+          scripts/validate-deb.sh "$deb"
+          docker run --rm -v "$PWD/$deb:/tmp/Tasky.deb:ro" ubuntu:22.04 bash -euxo pipefail -c '
+            apt-get update
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get install -y /tmp/Tasky.deb desktop-file-utils
+            dpkg-query -s tasky | grep -q "^Status: install ok installed$"
+            desktop-file-validate /usr/share/applications/Tasky.desktop
+            apt-get remove -y tasky
+          '
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bundles-${{ matrix.os }}

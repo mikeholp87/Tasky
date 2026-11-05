@@ -49,7 +49,6 @@
     },
     "linux": {
       "deb": {
-        "depends": ["libayatana-appindicator3-1"],
         "recommends": ["libvulkan1", "mesa-vulkan-drivers"],
         "desktopTemplate": "linux/taskmanager.desktop"
       },

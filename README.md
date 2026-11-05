@@ -105,6 +105,9 @@ then capture the page.
 KDE Plasma and GNOME. On GNOME the system tray needs the AppIndicator
 extension. Packages: `.deb`, `.rpm` and AppImage (see Building).
 
+For Debian package support, APT installation, and release setup, see
+[docs/DEBIAN_PACKAGING.md](docs/DEBIAN_PACKAGING.md).
+
 Platform differences are documented in
 [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).
 
