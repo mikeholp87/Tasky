@@ -1,19 +1,42 @@
 # Task Manager
 
+![Task Manager overview in the dark theme: CPU with a per-core load strip, memory, storage and network](docs/screenshots/overview-dark.png)
+
+<sub>Overview in the dark theme (synthetic sample data).</sub>
+
 A fast, private, cross-platform task manager and system monitor for Windows
-and Linux. It shows what your computer is doing in real time (processes, CPU,
+and Linux, with a native Linux port that works on both **KDE Plasma** and
+**GNOME**. It shows what your computer is doing in real time (processes, CPU,
 memory, storage and network) and lets you safely end, suspend or reprioritize
 processes.
 
 Built with Tauri 2, Rust and React. All monitoring stays on your machine: no
-telemetry, no network access, works fully offline.
+telemetry, works fully offline. The only network use is the optional internet
+benchmark, which runs only when you press its button and confirm the dialog.
 
 ## Screenshots
 
-Screenshots are not committed because they reveal the host's process list,
-hostname and network addresses. To add some, capture them on a clean demo
-machine (or with **Mock processes** enabled in a development build: System
-Information → Monitoring diagnostics) and place them in `docs/screenshots/`.
+### Linux (GNOME)
+
+The native Linux port running on GNOME (Wayland), dark theme.
+
+![Overview on GNOME: CPU, memory, storage, network and system cards](docs/screenshots/gnome-overview.png)
+
+![Memory page on GNOME: usage history and what is using memory](docs/screenshots/gnome-memory.png)
+
+![Process tree on GNOME with status heat mapping](docs/screenshots/gnome-processes.png)
+
+### Themes
+
+![Process table in the light theme with CPU and memory heat mapping](docs/screenshots/processes-light.png)
+
+<sub>Processes in the light theme (synthetic sample data).</sub>
+
+The `overview-dark` and `processes-light` screenshots are generated from
+synthetic data; the three GNOME screenshots are from a real machine. To
+refresh the synthetic ones, run `npm run dev` and open
+`http://localhost:1420/?preview&theme=dark&route=overview` (dev builds only),
+then capture the page.
 
 ## Features
 
@@ -36,6 +59,14 @@ Information → Monitoring diagnostics) and place them in `docs/screenshots/`.
   - Confirmation dialogs with escalating warnings.
   - Server-side protection for critical system processes and for Task Manager
     itself.
+- **Benchmarks:** a repeatable CPU benchmark (single-core and multi-core:
+  integer, floating point, SHA-256, compression) and a GPU compute benchmark
+  (integer, floating point, memory bandwidth, with every result checked against
+  a CPU reference), with scores, run history and safe comparison between
+  results, a disk benchmark (sequential and random speed, latency percentiles,
+  queue depths; Linux) and an internet test (latency, jitter, download and
+  upload against Cloudflare's speed endpoints, only after you confirm).
+  Runs on Windows and Linux with the same methods. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 - **Performance:** large CPU, memory, disk and network graphs over
   60 s / 5 min / 15 min / 1 h.
 - **CPU, Memory, Storage, Network pages:**
@@ -67,8 +98,12 @@ Information → Monitoring diagnostics) and place them in `docs/screenshots/`.
 | OS                                         | Status                                               |
 | ------------------------------------------ | ---------------------------------------------------- |
 | Windows 11 (x64)                           | Supported (primary)                                  |
-| Debian / Ubuntu and other mainstream Linux | Supported                                            |
+| Debian / Ubuntu and other mainstream Linux | Supported; works on KDE Plasma and GNOME             |
 | macOS                                      | Not yet; the architecture has a platform slot for it |
+
+**Linux desktops:** the Linux port is available and compatible with both
+KDE Plasma and GNOME. On GNOME the system tray needs the AppIndicator
+extension. Packages: `.deb`, `.rpm` and AppImage (see Building).
 
 Platform differences are documented in
 [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).

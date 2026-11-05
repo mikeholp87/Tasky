@@ -9,6 +9,7 @@ use crate::monitoring::history::RingBuffer;
 
 /// Five minutes at 1 s, 2.5 minutes at 500 ms.
 pub const PROCESS_HISTORY_POINTS: usize = 300;
+const MAX_TRACKED_PROCESSES: usize = 4_096;
 
 /// Keyed by (pid, start time) so a reused PID never inherits another
 /// process's history.
@@ -21,8 +22,8 @@ pub struct ProcessHistory {
 
 impl ProcessHistory {
     pub fn record(&mut self, t: u64, rows: &[ProcessRow]) {
-        let mut next = HashMap::with_capacity(rows.len());
-        for row in rows {
+        let mut next = HashMap::with_capacity(rows.len().min(MAX_TRACKED_PROCESSES));
+        for row in rows.iter().take(MAX_TRACKED_PROCESSES) {
             let key = (row.pid, row.start_time);
             let mut buf = self
                 .map
@@ -72,6 +73,8 @@ mod tests {
             exe: None,
             cmd: None,
             session_id: None,
+            kernel_thread: false,
+            pss_bytes: None,
             restricted: false,
         }
     }
@@ -86,6 +89,16 @@ mod tests {
             [1.0, 3.0]
         );
         assert!(h.get(20, 100).is_empty(), "exited process is pruned");
+    }
+
+    #[test]
+    fn total_process_history_has_a_global_memory_bound() {
+        let mut h = ProcessHistory::default();
+        let rows: Vec<_> = (0..MAX_TRACKED_PROCESSES + 100)
+            .map(|i| row(i as u32 + 1, 100, 0.0))
+            .collect();
+        h.record(1, &rows);
+        assert_eq!(h.map.len(), MAX_TRACKED_PROCESSES);
     }
 
     #[test]

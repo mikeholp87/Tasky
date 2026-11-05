@@ -29,7 +29,9 @@ const CSV_HEADER: &[&str] = &[
 /// Quotes a CSV field when needed, and neutralizes values a spreadsheet
 /// would interpret as a formula (process names are attacker-controlled).
 pub fn csv_field(value: &str) -> String {
-    let guarded = if value.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+    let guarded = if value.starts_with(['=', '+', '-', '@', '\t', '\r', '\n'])
+        || value.trim_start().starts_with(['=', '+', '-', '@'])
+    {
         format!("'{value}")
     } else {
         value.to_owned()
@@ -160,6 +162,8 @@ mod tests {
             exe: Some(r"C:\Program Files\app\app.exe".into()),
             cmd: Some(cmd.into()),
             session_id: None,
+            kernel_thread: false,
+            pss_bytes: None,
             restricted: false,
         }
     }
@@ -171,6 +175,9 @@ mod tests {
         assert_eq!(csv_field("say \"hi\""), "\"say \"\"hi\"\"\"");
         assert_eq!(csv_field("=cmd|' /C calc'!A0"), "'=cmd|' /C calc'!A0");
         assert_eq!(csv_field("-2+3"), "'-2+3");
+        for value in [" =1+1", "\n=HYPERLINK(\"test\")", "\t@SUM(1)", "+1", "@x"] {
+            assert!(csv_field(value).trim_start_matches('"').starts_with('\''));
+        }
     }
 
     #[test]

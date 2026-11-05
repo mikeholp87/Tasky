@@ -1,3 +1,4 @@
+import { memoryOf } from "@/features/processes/logic";
 import type { ProcessPoint, ProcessRow } from "@/types";
 
 /** Matches the backend's per-process ring buffer. */
@@ -7,7 +8,7 @@ export function toPoint(row: ProcessRow, t: number): ProcessPoint {
   return {
     t,
     cpu: row.cpuPercent,
-    memory: row.memoryBytes,
+    memory: memoryOf(row),
     read: row.diskReadPerSec,
     write: row.diskWritePerSec,
   };

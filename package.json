@@ -16,9 +16,12 @@
     "test:watch": "vitest",
     "gen:types": "cd src-tauri && cargo test -p tm-core export_bindings",
     "check:linux": "cd src-tauri && cargo clippy -p tm-core --all-targets --target x86_64-unknown-linux-gnu -- -D warnings",
-    "check:all": "npm run typecheck && npm run lint && npm run test && cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace"
+    "check:all": "npm run typecheck && npm run lint && npm run test && cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+    "check:windows": "cd src-tauri && cargo clippy -p tm-core --all-targets --target x86_64-pc-windows-msvc -- -D warnings"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@tanstack/react-virtual": "^3.14.25",
     "@tauri-apps/api": "^2.12.4",
     "clsx": "^2.1.1",
@@ -52,5 +55,8 @@
     "typescript-eslint": "^8.72.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
   }
 }

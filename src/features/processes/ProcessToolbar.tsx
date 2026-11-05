@@ -1,4 +1,13 @@
-import { ChevronsDownUp, ChevronsUpDown, Columns3, List, ListTree, Search, X } from "lucide-react";
+import {
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Columns3,
+  Layers,
+  List,
+  ListTree,
+  Search,
+  X,
+} from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/cn";
@@ -6,6 +15,7 @@ import { useProcessStore } from "@/stores/processStore";
 import type { ProcessRow } from "@/types";
 import { COLUMNS, FILTER_PRESETS } from "./logic";
 import { ExportMenu } from "./ExportMenu";
+import { groupIds } from "./apps";
 import { parentPids } from "./tree";
 
 export function ProcessToolbar({
@@ -23,12 +33,12 @@ export function ProcessToolbar({
       <SearchBox />
       <PresetSelect />
       <span className="num text-fg-muted" aria-live="polite">
-        {mode === "tree" || shown === total
+        {mode !== "list" || shown === total
           ? `${total} processes`
           : `${shown} of ${total} processes`}
       </span>
       <div className="ml-auto flex items-center gap-1">
-        {mode === "tree" && <TreeButtons rows={rows} />}
+        <TreeButtons rows={rows} apps={mode === "apps"} />
         <ModeToggle />
         <ColumnMenu />
         <ExportMenu />
@@ -53,7 +63,7 @@ function SearchBox() {
   return (
     <div className="relative w-72">
       <Search
-        size={14}
+        size="0.875rem"
         aria-hidden
         className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle"
       />
@@ -79,7 +89,7 @@ function SearchBox() {
           onClick={() => setSearch("")}
           className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-fg-subtle hover:text-fg"
         >
-          <X size={13} />
+          <X size="0.8125rem" />
         </button>
       )}
     </div>
@@ -123,13 +133,14 @@ function ModeToggle() {
         mode === id && "bg-surface text-fg shadow-sm",
       )}
     >
-      <Icon size={15} />
+      <Icon size="0.9375rem" />
     </button>
   );
   return (
     <div role="radiogroup" aria-label="View" className="flex gap-0.5 rounded-md bg-surface-2 p-0.5">
       {item("list", "List view", List)}
       {item("tree", "Tree view", ListTree)}
+      {item("apps", "Applications view (group processes by program)", Layers)}
     </div>
   );
 }
@@ -145,7 +156,7 @@ function ColumnMenu() {
           type="button"
           className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg"
         >
-          <Columns3 size={14} aria-hidden />
+          <Columns3 size="0.875rem" aria-hidden />
           Columns
         </button>
       </DropdownMenu.Trigger>
@@ -153,7 +164,7 @@ function ColumnMenu() {
         <DropdownMenu.Content
           align="end"
           sideOffset={4}
-          className="z-50 max-h-[70vh] min-w-48 overflow-y-auto rounded-lg border border-border bg-surface p-1 text-[13px] shadow-lg"
+          className="z-50 max-h-[70vh] min-w-48 overflow-y-auto rounded-lg border border-border bg-surface p-1 text-[0.875rem] shadow-lg"
         >
           {COLUMNS.map((c) => (
             <DropdownMenu.CheckboxItem
@@ -185,19 +196,22 @@ function ColumnMenu() {
   );
 }
 
-function TreeButtons({ rows }: { rows: readonly ProcessRow[] }) {
-  const expandAll = useProcessStore((s) => s.expandAll);
-  const collapseAll = useProcessStore((s) => s.collapseAll);
+function TreeButtons({ rows, apps }: { rows: readonly ProcessRow[]; apps: boolean }) {
+  const treeExpand = useProcessStore((s) => s.expandAll);
+  const treeCollapse = useProcessStore((s) => s.collapseAll);
+  const setExpandedApps = useProcessStore((s) => s.setExpandedApps);
+  const expandAll = apps ? () => setExpandedApps(groupIds(rows)) : treeExpand;
+  const collapseAll = (pids: Iterable<number>) => (apps ? setExpandedApps([]) : treeCollapse(pids));
   const cls =
     "flex h-8 items-center gap-1.5 rounded-md px-2 text-fg-muted hover:bg-surface-2 hover:text-fg";
   return (
     <>
       <button type="button" className={cls} onClick={expandAll}>
-        <ChevronsUpDown size={14} aria-hidden />
+        <ChevronsUpDown size="0.875rem" aria-hidden />
         Expand all
       </button>
       <button type="button" className={cls} onClick={() => collapseAll(parentPids(rows))}>
-        <ChevronsDownUp size={14} aria-hidden />
+        <ChevronsDownUp size="0.875rem" aria-hidden />
         Collapse all
       </button>
     </>

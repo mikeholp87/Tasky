@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-export-system-summary"
+description = "Enables the export_system_summary command without any pre-configured scope."
+commands.allow = ["export_system_summary"]
+
+[[permission]]
+identifier = "deny-export-system-summary"
+description = "Denies the export_system_summary command without any pre-configured scope."
+commands.deny = ["export_system_summary"]

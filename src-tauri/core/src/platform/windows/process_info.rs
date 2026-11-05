@@ -23,12 +23,17 @@ pub fn process_extras(_pids: &[u32]) -> HashMap<u32, ProcessExtras> {
     let len = buf.len() * size_of::<u64>();
     let mut offset = 0usize;
     loop {
-        if offset + size_of::<SYSTEM_PROCESS_INFORMATION>() > len {
+        if offset
+            .checked_add(size_of::<SYSTEM_PROCESS_INFORMATION>())
+            .is_none_or(|end| end > len)
+        {
             break;
         }
-        // SAFETY: bounds checked above; the kernel writes 8-byte aligned
-        // entries into our u64-backed buffer, chained by NextEntryOffset.
-        let entry = unsafe { &*base.add(offset).cast::<SYSTEM_PROCESS_INFORMATION>() };
+        // SAFETY: the complete structure is in bounds. Read by value so
+        // a malformed or changed offset cannot create an unaligned reference.
+        let entry = unsafe {
+            std::ptr::read_unaligned(base.add(offset).cast::<SYSTEM_PROCESS_INFORMATION>())
+        };
         let pid = entry.UniqueProcessId.0 as usize as u32;
         out.insert(
             pid,
@@ -42,7 +47,10 @@ pub fn process_extras(_pids: &[u32]) -> HashMap<u32, ProcessExtras> {
         if entry.NextEntryOffset == 0 {
             break;
         }
-        offset += entry.NextEntryOffset as usize;
+        match offset.checked_add(entry.NextEntryOffset as usize) {
+            Some(next) if next > offset => offset = next,
+            _ => break,
+        }
     }
     out
 }
@@ -52,6 +60,9 @@ pub fn process_extras(_pids: &[u32]) -> HashMap<u32, ProcessExtras> {
 fn query_snapshot() -> Option<Vec<u64>> {
     let mut bytes: u32 = 512 * 1024;
     for _ in 0..5 {
+        if bytes > 16 * 1024 * 1024 {
+            return None;
+        }
         let mut buf = vec![0u64; (bytes as usize).div_ceil(size_of::<u64>())];
         let mut needed = 0u32;
         // SAFETY: the buffer is `bytes` long and writable.

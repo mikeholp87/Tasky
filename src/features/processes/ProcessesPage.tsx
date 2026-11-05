@@ -1,23 +1,25 @@
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { useMetricsStore } from "@/stores/metricsStore";
-import { useProcessStore } from "@/stores/processStore";
+import { useMemoryDetail } from "@/features/memory/useMemoryDetail";
 import { requestAction } from "./actions";
 import { ProcessContextMenu } from "./ProcessContextMenu";
 import { ProcessTable } from "./ProcessTable";
 import type { ProcessRow } from "@/types";
 
-const withContextMenu = (row: ProcessRow, element: React.ReactElement) => (
-  <ProcessContextMenu row={row}>{element}</ProcessContextMenu>
-);
+const withContextMenu = (
+  table: React.ReactElement,
+  find: (pid: number) => ProcessRow | undefined,
+) => <ProcessContextMenu find={find}>{table}</ProcessContextMenu>;
 const requestTerminate = (row: ProcessRow) => void requestAction(row, { type: "terminate" });
 import { ProcessToolbar } from "./ProcessToolbar";
 import { useProcessView } from "./useProcessView";
 
 export function ProcessesPage() {
+  // Proportional memory, so every view shows the figure the Memory page does.
+  useMemoryDetail();
   const hasTick = useMetricsStore((s) => s.tick !== null);
   const selfPid = useMetricsStore((s) => s.staticInfo?.selfPid);
-  const mode = useProcessStore((s) => s.mode);
   const { rows, items, ctx } = useProcessView();
 
   return (
@@ -32,8 +34,8 @@ export function ProcessesPage() {
             items={items}
             ctx={ctx}
             selfPid={selfPid}
-            tree={mode === "tree"}
-            renderRow={withContextMenu}
+            tree
+            wrapTable={withContextMenu}
             onRequestTerminate={requestTerminate}
           />
         </>

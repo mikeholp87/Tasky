@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-sockets"
+description = "Enables the list_sockets command without any pre-configured scope."
+commands.allow = ["list_sockets"]
+
+[[permission]]
+identifier = "deny-list-sockets"
+description = "Denies the list_sockets command without any pre-configured scope."
+commands.deny = ["list_sockets"]

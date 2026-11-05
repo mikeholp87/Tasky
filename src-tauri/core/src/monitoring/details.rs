@@ -28,7 +28,7 @@ pub fn process_details(engine: &Engine, pid: u32) -> AppResult<ProcessDetails> {
                     .with_disk_usage(),
             );
             match sys.process(Pid::from_u32(pid)) {
-                Some(p) => {
+                Some(p) if p.start_time() == row.start_time => {
                     let usage = p.disk_usage();
                     (
                         p.cwd()
@@ -39,7 +39,7 @@ pub fn process_details(engine: &Engine, pid: u32) -> AppResult<ProcessDetails> {
                     )
                 }
                 // Exited between the engine tick and this query.
-                None => return Err(AppError::ProcessNotFound(pid)),
+                _ => return Err(AppError::ProcessNotFound(pid)),
             }
         }
         Err(_) => (None, None, None),

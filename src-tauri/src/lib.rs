@@ -4,6 +4,7 @@
 mod commands;
 mod desktop;
 mod logging;
+mod security;
 mod settings;
 mod state;
 
@@ -12,6 +13,7 @@ use std::sync::atomic::AtomicBool;
 
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
+use tm_core::benchmarks::coordinator::Coordinator;
 use tm_core::models::MonitoringState;
 use tm_core::monitoring::Engine;
 
@@ -21,6 +23,7 @@ use crate::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    desktop::prefer_x11_on_gnome_wayland();
     let app = tauri::Builder::default()
         // Must be registered first: a second launch focuses the running
         // instance instead of starting another engine and window.
@@ -28,6 +31,11 @@ pub fn run() {
             desktop::show_main_window(app);
         }))
         .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("navigation-policy")
+                .on_navigation(|_, url| security::navigation_allowed(url))
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -49,8 +57,14 @@ pub fn run() {
                 paused: false,
                 interval_ms: s.refresh_interval_ms,
             })?);
+            let benchmarks = Arc::new(Coordinator::new(
+                Arc::clone(&engine),
+                paths.app_data_dir().ok().as_deref(),
+            ));
             let state = AppState {
                 engine: Arc::clone(&engine),
+                benchmarks,
+                threads: Arc::default(),
                 settings,
                 logging,
                 visibility: Arc::new(WindowVisibility::default()),
@@ -77,6 +91,10 @@ pub fn run() {
                     // Without a tray to come back from, start minimized in the taskbar.
                     let _ = window.show();
                     let _ = window.minimize();
+                } else {
+                    // Starts hidden in the tray; if the desktop has none (stock
+                    // GNOME), show the window instead of stranding it.
+                    desktop::show_window_if_no_tray(app.handle().clone());
                 }
             }
             Ok(())
@@ -90,8 +108,10 @@ pub fn run() {
                 return;
             };
             match event {
+                // Close hides to the tray only when there is a tray to restore
+                // it from; otherwise closing quits, as it would without the setting.
                 WindowEvent::CloseRequested { api, .. }
-                    if state.settings.get().minimize_to_tray =>
+                    if state.settings.get().minimize_to_tray && desktop::tray_host_available() =>
                 {
                     api.prevent_close();
                     hide_main_window(app);
@@ -115,7 +135,28 @@ pub fn run() {
             commands::monitoring::get_monitoring_state,
             commands::monitoring::set_monitoring_state,
             commands::monitoring::refresh_now,
+            commands::monitoring::set_memory_detail,
+            commands::benchmarks::start_benchmark,
+            commands::benchmarks::list_gpu_adapters,
+            commands::benchmarks::list_disk_targets,
+            commands::benchmarks::disk_plan,
+            commands::benchmarks::internet_plan,
+            commands::benchmarks::cancel_benchmark,
+            commands::benchmarks::get_benchmark_status,
+            commands::benchmarks::get_benchmark_history,
+            commands::benchmarks::delete_benchmark_result,
             commands::processes::get_process_details,
+            commands::inspect::list_sockets,
+            commands::inspect::list_startup_items,
+            commands::inspect::set_startup_enabled,
+            commands::inspect::get_open_files,
+            commands::inspect::find_file_users,
+            commands::inspect::get_memory_map,
+            commands::inspect::get_modules,
+            commands::inspect::get_threads,
+            commands::inspect::get_activity,
+            commands::inspect::pick_path,
+            commands::inspect::get_hardware_info,
             commands::control::assess_process_action,
             commands::control::perform_process_action,
             commands::control::reveal_executable,
@@ -134,6 +175,8 @@ pub fn run() {
         if let RunEvent::Exit = event
             && let Some(state) = handle.try_state::<AppState>()
         {
+            // Stop a running benchmark so its workers do not outlive the app.
+            state.benchmarks.cancel();
             state.engine.shutdown();
         }
     });

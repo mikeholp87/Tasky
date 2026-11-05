@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name={{name}}
+GenericName=System Monitor
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Exec={{exec}}
+StartupWMClass={{exec}}
+Icon={{icon}}
+Terminal=false
+Categories=System;Monitor;
+Keywords=task;process;monitor;cpu;memory;performance;kill;

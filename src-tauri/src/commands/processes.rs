@@ -6,7 +6,7 @@ use tauri::State;
 
 use crate::commands::validate;
 use crate::state::AppState;
-use tm_core::errors::{AppError, AppResult};
+use tm_core::errors::AppResult;
 use tm_core::models::ProcessDetails;
 use tm_core::monitoring::details;
 
@@ -19,7 +19,5 @@ pub async fn get_process_details(
 ) -> AppResult<ProcessDetails> {
     let pid = validate::pid(pid)?;
     let engine = Arc::clone(&state.engine);
-    tauri::async_runtime::spawn_blocking(move || details::process_details(&engine, pid))
-        .await
-        .map_err(|e| AppError::SystemQueryFailed(format!("details task failed: {e}")))?
+    super::blocking::run(move || details::process_details(&engine, pid)).await
 }

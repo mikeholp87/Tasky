@@ -20,6 +20,8 @@ function p(pid: number, parentPid: number | null, name: string, startTime = 100)
     exe: null,
     cmd: null,
     sessionId: null,
+    kernelThread: false,
+    pssBytes: null,
     restricted: false,
   };
 }
@@ -85,13 +87,23 @@ describe("flattenTree", () => {
     });
   });
 
-  it("shows matches with their ancestors, expanded, when filtering", () => {
+  it("shows matches with their ancestors when expanded and filtering", () => {
     const items = flattenTree(rows, {
-      collapsed: new Set(parentPids(rows)),
+      collapsed: new Set(),
       compare: byName,
       matches: (r) => r.name === "renderer",
     });
     expect(names(items)).toEqual(["systemd", "  session", "    brave", "      renderer"]);
+  });
+
+  it("honors collapsed ancestors while filtering", () => {
+    const items = flattenTree(rows, {
+      collapsed: parentPids(rows),
+      compare: byName,
+      matches: (r) => r.name === "renderer",
+    });
+    expect(names(items)).toEqual(["systemd"]);
+    expect(items[0]).toMatchObject({ hasChildren: true, expanded: false });
   });
 });
 

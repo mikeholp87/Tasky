@@ -1,5 +1,5 @@
+import { usePersistedState } from "@/hooks/usePersistedState";
 import type { ReactNode } from "react";
-import { useState } from "react";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { type ChartSeries, TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
@@ -86,8 +86,16 @@ const RESOURCES: readonly ResourceDef[] = [
 export function PerformancePage() {
   const tick = useMetricsStore((s) => s.tick);
   const info = useMetricsStore((s) => s.staticInfo);
-  const [selected, setSelected] = useState<Resource>("cpu");
-  const [seconds, setSeconds] = useState<number>(60);
+  const [selected, setSelected] = usePersistedState<Resource>(
+    "perf.resource",
+    "cpu",
+    RESOURCES.map((r) => r.id),
+  );
+  const [seconds, setSeconds] = usePersistedState<number>(
+    "perf.seconds",
+    60,
+    RANGES.map((r) => r.seconds),
+  );
   const def = RESOURCES.find((r) => r.id === selected) as ResourceDef;
 
   return (
@@ -117,7 +125,9 @@ export function PerformancePage() {
               >
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-medium">{r.label}</span>
-                  <span className="num truncate text-[12px] text-fg-muted">{r.summary(tick)}</span>
+                  <span className="num truncate text-[0.8125rem] text-fg-muted">
+                    {r.summary(tick)}
+                  </span>
                 </div>
                 <div className="mt-2">
                   <TimeSeriesChart
@@ -188,7 +198,7 @@ function RangePicker({ value, onChange }: { value: number; onChange: (s: number)
 function Legend({ series }: { series: readonly ChartSeries[] }) {
   if (series.length < 2) return null;
   return (
-    <div className="flex gap-4 text-[12px] text-fg-muted">
+    <div className="flex gap-4 text-[0.8125rem] text-fg-muted">
       {series.map((s) => (
         <span key={s.label} className="flex items-center gap-1.5">
           <span

@@ -2,10 +2,10 @@ import { memo } from "react";
 import { cn } from "@/lib/cn";
 import { usageLevel, type UsageLevel } from "@/utils/levels";
 
-const FILL: Record<UsageLevel, string> = {
-  normal: "bg-accent",
-  warning: "bg-warn",
-  critical: "bg-crit",
+const LEVEL_VAR: Record<UsageLevel, string | null> = {
+  normal: null,
+  warning: "--warn-bar",
+  critical: "--crit",
 };
 
 interface MeterProps {
@@ -14,10 +14,18 @@ interface MeterProps {
   label: string;
   className?: string;
   size?: "sm" | "md";
+  /** CSS variable for the fill while usage is normal, e.g. "--res-mem". */
+  color?: string;
 }
 
 /** Horizontal usage bar. Exposed to assistive tech as a meter. */
-export const Meter = memo(function Meter({ percent, label, className, size = "md" }: MeterProps) {
+export const Meter = memo(function Meter({
+  percent,
+  label,
+  className,
+  size = "md",
+  color,
+}: MeterProps) {
   const clamped = Math.min(100, Math.max(0, percent));
   return (
     <div
@@ -33,11 +41,12 @@ export const Meter = memo(function Meter({ percent, label, className, size = "md
       )}
     >
       <div
-        className={cn(
-          "h-full rounded-full transition-[width] duration-300",
-          FILL[usageLevel(clamped)],
-        )}
-        style={{ width: `${clamped}%` }}
+        className="h-full rounded-full transition-[width] duration-300"
+        style={{
+          width: `${clamped}%`,
+          // Fades in from the left so the bright end marks where the value stops.
+          background: `linear-gradient(90deg, color-mix(in srgb, var(${LEVEL_VAR[usageLevel(clamped)] ?? color ?? "--accent"}) 45%, transparent), var(${LEVEL_VAR[usageLevel(clamped)] ?? color ?? "--accent"}))`,
+        }}
       />
     </div>
   );

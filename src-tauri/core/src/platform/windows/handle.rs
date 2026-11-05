@@ -35,7 +35,7 @@ pub fn map_error(pid: u32, e: &::windows::core::Error, action: &str) -> AppError
     let code = e.code();
     if code == E_ACCESSDENIED {
         AppError::PermissionDenied(format!(
-            "Windows denied permission to {action}. It may belong to another user or a protected service; running Task Manager as administrator may allow it."
+            "Windows denied permission to {action}. It may belong to another user or a protected service."
         ))
     } else if code == WIN32_ERROR(ERROR_INVALID_PARAMETER.0).to_hresult() {
         // OpenProcess reports a PID that no longer exists as an invalid parameter.

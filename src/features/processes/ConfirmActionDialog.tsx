@@ -81,9 +81,9 @@ export function ConfirmActionDialog() {
                   {assessment.reasons.map((r) => (
                     <li key={r} className="flex gap-2">
                       {blocked ? (
-                        <OctagonX size={15} className="mt-0.5 shrink-0" aria-hidden />
+                        <OctagonX size="0.9375rem" className="mt-0.5 shrink-0" aria-hidden />
                       ) : (
-                        <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden />
+                        <TriangleAlert size="0.9375rem" className="mt-0.5 shrink-0" aria-hidden />
                       )}
                       <span>{r}</span>
                     </li>

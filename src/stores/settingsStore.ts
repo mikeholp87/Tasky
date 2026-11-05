@@ -18,8 +18,13 @@ export const DEFAULT_SETTINGS: Settings = {
   heatMapping: true,
   visibleColumns: [],
   columnWidths: {},
+  showKernelThreads: false,
+  showVirtualAdapters: false,
   notificationsEnabled: true,
   alertRules: [],
+  cpuSpikePercent: 80,
+  memoryJumpMb: 512,
+  newProcessSeconds: 10,
   debugLogging: false,
 };
 
@@ -41,16 +46,42 @@ function pick(state: SettingsState): Settings {
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let lastSaved: Settings = DEFAULT_SETTINGS;
+/** Counts local edits, so a failed save can tell whether newer edits exist. */
+let edits = 0;
+let queue: Promise<void> = Promise.resolve();
 
-async function persist(): Promise<void> {
+async function save(): Promise<void> {
+  const sent = edits;
   const current = pick(useSettingsStore.getState());
   try {
     lastSaved = await backend.updateSettings(current);
   } catch (e) {
-    // Roll back to what the backend last accepted.
-    useSettingsStore.setState(lastSaved);
+    // Roll back to what the backend last accepted, unless a newer edit is
+    // already on its way (its own save will report and roll back if needed).
+    if (edits === sent) useSettingsStore.setState(lastSaved);
     toast.error(`Settings were not saved: ${toAppError(e).message}`);
   }
+}
+
+/** One save at a time, in order, so a slow earlier save cannot land last. */
+function persist(): Promise<void> {
+  queue = queue.then(save);
+  return queue;
+}
+
+/** Saves a pending edit now (the window is closing or hiding). */
+export function flushSettings(): void {
+  if (saveTimer === undefined) return;
+  clearTimeout(saveTimer);
+  saveTimer = undefined;
+  void persist();
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushSettings);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushSettings();
+  });
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -60,8 +91,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   update: (patch) => {
     set(patch);
     if (!isBackendAvailable()) return;
+    edits += 1;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => void persist(), SAVE_DELAY_MS);
+    saveTimer = setTimeout(() => {
+      saveTimer = undefined;
+      void persist();
+    }, SAVE_DELAY_MS);
   },
 
   hydrate: (settings) => {
@@ -71,6 +106,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
   reset: async () => {
     clearTimeout(saveTimer);
+    saveTimer = undefined;
+    edits += 1;
     if (!isBackendAvailable()) {
       set(DEFAULT_SETTINGS);
       return;

@@ -6,6 +6,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList, Unavailable } from "@/components/ui/KeyValueList";
 import { Meter } from "@/components/ui/Meter";
 import { useMetricsStore } from "@/stores/metricsStore";
+import { TopMemoryCard } from "./TopMemoryCard";
 import { formatBytes, formatPercent } from "@/utils/format";
 
 export function MemoryPage() {
@@ -30,24 +31,27 @@ export function MemoryPage() {
         description={`${formatBytes(mem.usedBytes)} of ${formatBytes(mem.totalBytes)} in use`}
       />
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-        <Card>
-          <CardHeader title={`Usage · ${formatPercent(mem.usedPercent)}`} />
-          <div className="px-2 pb-3 pt-2">
-            <TimeSeriesChart
-              series={MEMORY_SERIES}
-              seconds={60}
-              height={220}
-              yMax={100}
-              formatValue={percentAxis}
-              ariaLabel={`Memory usage over the last minute, currently ${formatPercent(mem.usedPercent)}`}
-            />
-          </div>
-        </Card>
+        <div className="min-w-0 space-y-4">
+          <Card>
+            <CardHeader title={`Usage · ${formatPercent(mem.usedPercent)}`} />
+            <div className="px-2 pb-3 pt-2">
+              <TimeSeriesChart
+                series={MEMORY_SERIES}
+                seconds={60}
+                height={150}
+                yMax={100}
+                formatValue={percentAxis}
+                ariaLabel={`Memory usage over the last minute, currently ${formatPercent(mem.usedPercent)}`}
+              />
+            </div>
+          </Card>
+          <TopMemoryCard />
+        </div>
         <div className="space-y-4">
           <Card>
             <CardHeader title="Physical memory" />
             <div className="space-y-3 px-4 pb-4 pt-3">
-              <Meter percent={mem.usedPercent} label="Physical memory used" />
+              <Meter percent={mem.usedPercent} label="Physical memory used" color="--res-mem" />
               <KeyValueList
                 items={[
                   { label: "Total", value: formatBytes(mem.totalBytes) },
@@ -77,7 +81,7 @@ export function MemoryPage() {
             <div className="space-y-3 px-4 pb-4 pt-3">
               {mem.swapTotalBytes > 0 ? (
                 <>
-                  <Meter percent={swapPct} label="Swap used" />
+                  <Meter percent={swapPct} label="Swap used" color="--res-mem" />
                   <KeyValueList
                     items={[
                       { label: "Total", value: formatBytes(mem.swapTotalBytes) },

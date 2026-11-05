@@ -10,6 +10,7 @@
 //! While paused the thread blocks on the control channel and uses no CPU.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::thread::{self, JoinHandle};
@@ -17,9 +18,10 @@ use std::time::{Duration, Instant};
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    AlertEvent, AlertRule, HistoryPoint, MetricsTick, MonitoringState, ProcessPoint, ProcessRow,
-    ProcessState, StaticSystemInfo,
+    ActivityEvent, ActivityKind, AlertEvent, AlertRule, HistoryPoint, MetricsTick, MonitoringState,
+    ProcessPoint, ProcessRow, ProcessState, StaticSystemInfo,
 };
+use crate::monitoring::activity::{ActivityConfig, ActivityDetector, ActivityLog, Pending};
 use crate::monitoring::alerts::AlertEvaluator;
 use crate::monitoring::collector::{Collector, unix_millis};
 use crate::monitoring::history::RingBuffer;
@@ -60,7 +62,14 @@ struct Shared {
     /// engine reports the state it caused.
     suspended: Mutex<HashSet<(u32, u64)>>,
     alert_rules: RwLock<Vec<AlertRule>>,
+    /// Linux kernel threads are dropped from ticks unless enabled: they are
+    /// often over half of all rows and cannot be acted on.
+    include_kernel_threads: AtomicBool,
+    /// The UI is showing per-process shared-memory accounting (extra reads).
+    memory_detail: AtomicBool,
     alert_log: Mutex<RingBuffer<AlertEvent>>,
+    activity_log: Mutex<ActivityLog>,
+    activity_config: RwLock<ActivityConfig>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
 }
 
@@ -75,38 +84,72 @@ fn write<T>(l: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
 }
 
 pub struct Engine {
-    control: mpsc::Sender<Control>,
+    control: mpsc::SyncSender<Control>,
+    refresh_requested: Mutex<Option<Instant>>,
     shared: Arc<Shared>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Engine {
     pub fn start(initial: MonitoringState) -> AppResult<Self> {
-        let collector = Collector::new()?;
+        let (tx, rx) = mpsc::sync_channel(16);
+        let (ready_tx, ready_rx) = mpsc::sync_channel::<AppResult<StaticSystemInfo>>(1);
+        let (shared_tx, shared_rx) = mpsc::sync_channel::<Arc<Shared>>(1);
+        let handle = thread::Builder::new()
+            .name("monitoring-engine".into())
+            .spawn(move || {
+                // sysinfo's GPU handles (Vulkan/NVML) are not `Send`, so the
+                // collector is created, used and dropped on this thread only.
+                let collector = match Collector::new() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(e));
+                        return;
+                    }
+                };
+                if ready_tx.send(Ok(collector.static_info())).is_err() {
+                    return;
+                }
+                let Ok(shared) = shared_rx.recv() else {
+                    return;
+                };
+                let worker = Worker {
+                    collector,
+                    alerts: AlertEvaluator::default(),
+                    detector: ActivityDetector::default(),
+                    kernel_threads_shown: false,
+                    emitted_activity: 0,
+                    shared,
+                    last_payload: 0,
+                };
+                worker.run(rx, initial);
+            })
+            .map_err(|e| AppError::SystemQueryFailed(format!("cannot start engine: {e}")))?;
+        let static_info = ready_rx.recv().map_err(|_| AppError::EngineUnavailable)??;
         let shared = Arc::new(Shared {
-            static_info: collector.static_info(),
+            static_info,
             state: RwLock::new(initial),
             latest: RwLock::new(None),
             history: RwLock::new(RingBuffer::new(MAX_HISTORY_POINTS)),
             process_history: RwLock::new(ProcessHistory::default()),
             suspended: Mutex::new(HashSet::new()),
             alert_rules: RwLock::new(Vec::new()),
+            include_kernel_threads: AtomicBool::new(false),
+            memory_detail: AtomicBool::new(false),
             alert_log: Mutex::new(RingBuffer::new(ALERT_LOG_LEN)),
+            activity_log: Mutex::new(ActivityLog::default()),
+            activity_config: RwLock::new(ActivityConfig {
+                cpu_spike_percent: 80.0,
+                memory_jump_bytes: 512 * 1024 * 1024,
+            }),
             sinks: Mutex::new(HashMap::new()),
         });
-        let (tx, rx) = mpsc::channel();
-        let worker = Worker {
-            collector,
-            alerts: AlertEvaluator::default(),
-            shared: Arc::clone(&shared),
-            last_payload: 0,
-        };
-        let handle = thread::Builder::new()
-            .name("monitoring-engine".into())
-            .spawn(move || worker.run(rx, initial))
-            .map_err(|e| AppError::SystemQueryFailed(format!("cannot start engine: {e}")))?;
+        shared_tx
+            .send(Arc::clone(&shared))
+            .map_err(|_| AppError::EngineUnavailable)?;
         Ok(Self {
             control: tx,
+            refresh_requested: Mutex::new(None),
             shared,
             thread: Mutex::new(Some(handle)),
         })
@@ -121,13 +164,25 @@ impl Engine {
     }
 
     pub fn set_state(&self, state: MonitoringState) -> AppResult<MonitoringState> {
-        *write(&self.shared.state) = state;
+        crate::models::validate_interval(state.interval_ms)?;
+        let mut current = write(&self.shared.state);
         self.send(Control::SetState(state))?;
+        *current = state;
         Ok(state)
     }
 
     pub fn refresh_now(&self) -> AppResult<()> {
-        self.send(Control::RefreshNow)
+        self.refresh_at(Instant::now())
+    }
+
+    fn refresh_at(&self, now: Instant) -> AppResult<()> {
+        let mut last = lock(&self.refresh_requested);
+        if last.is_some_and(|t| now.saturating_duration_since(t) < Duration::from_millis(500)) {
+            return Ok(());
+        }
+        self.send(Control::RefreshNow)?;
+        *last = Some(now);
+        Ok(())
     }
 
     pub fn latest(&self) -> Option<Arc<MetricsTick>> {
@@ -147,6 +202,18 @@ impl Engine {
     /// Resizes the system history buffer (e.g. from the "history length" setting).
     pub fn set_history_capacity(&self, points: usize) {
         write(&self.shared.history).set_capacity(points.clamp(60, MAX_HISTORY_POINTS));
+    }
+
+    /// Turns per-process proportional memory (PSS) sampling on or off.
+    pub fn set_memory_detail(&self, enabled: bool) {
+        self.shared.memory_detail.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Whether kernel threads appear in process lists (takes effect next tick).
+    pub fn set_include_kernel_threads(&self, include: bool) {
+        self.shared
+            .include_kernel_threads
+            .store(include, Ordering::Relaxed);
     }
 
     /// The latest row for `pid`, if it is still running.
@@ -183,6 +250,25 @@ impl Engine {
         lock(&self.shared.alert_log).iter().cloned().collect()
     }
 
+    /// Sets the thresholds for CPU spike and memory jump events.
+    pub fn set_activity_config(&self, cpu_spike_percent: u32, memory_jump_mb: u32) {
+        *write(&self.shared.activity_config) = ActivityConfig {
+            cpu_spike_percent: cpu_spike_percent as f32,
+            memory_jump_bytes: u64::from(memory_jump_mb) * 1024 * 1024,
+        };
+    }
+
+    /// Adds an event from outside the engine (a process action, a benchmark).
+    /// It reaches the UI with the next tick.
+    pub fn record_activity(&self, event: Pending) {
+        lock(&self.shared.activity_log).record(unix_millis(), event);
+    }
+
+    /// Timeline events with a sequence number above `after`, oldest first.
+    pub fn activity_since(&self, after: u64) -> Vec<ActivityEvent> {
+        lock(&self.shared.activity_log).since(after)
+    }
+
     /// Registers (or replaces) the sink with the given key. Re-subscribing
     /// after a webview reload replaces the stale channel instead of leaking it.
     pub fn subscribe(&self, key: String, sink: Arc<dyn TickSink>) {
@@ -197,9 +283,10 @@ impl Engine {
     }
 
     fn send(&self, msg: Control) -> AppResult<()> {
-        self.control
-            .send(msg)
-            .map_err(|_| AppError::EngineUnavailable)
+        self.control.try_send(msg).map_err(|e| match e {
+            mpsc::TrySendError::Full(_) => AppError::OperationBusy,
+            mpsc::TrySendError::Disconnected(_) => AppError::EngineUnavailable,
+        })
     }
 }
 
@@ -207,6 +294,12 @@ impl Engine {
 struct Worker {
     collector: Collector,
     alerts: AlertEvaluator,
+    detector: ActivityDetector,
+    /// Whether the previous tick included kernel threads; a change makes
+    /// rows appear or vanish without any process starting or exiting.
+    kernel_threads_shown: bool,
+    /// Highest activity sequence already delivered in a tick.
+    emitted_activity: u64,
     shared: Arc<Shared>,
     last_payload: u32,
 }
@@ -248,7 +341,16 @@ impl Worker {
     /// Collects, evaluates, publishes and delivers one sample.
     fn tick(&mut self, state: &MonitoringState) {
         let shared = &*self.shared;
-        let mut sample = self.collector.sample(state.interval_ms, self.last_payload);
+        let mut sample = self.collector.sample(
+            state.interval_ms,
+            self.last_payload,
+            shared.memory_detail.load(Ordering::Relaxed),
+        );
+        let kernel_threads = shared.include_kernel_threads.load(Ordering::Relaxed);
+        if !kernel_threads {
+            sample.processes.retain(|p| !p.kernel_thread);
+            sample.engine.process_count = u32::try_from(sample.processes.len()).unwrap_or(u32::MAX);
+        }
         apply_suspended(shared, &mut sample.processes);
 
         let rules = read(&shared.alert_rules).clone();
@@ -259,6 +361,32 @@ impl Worker {
                 tracing::info!(rule = %event.rule_id, "alert fired");
                 log.push(event.clone());
             }
+        }
+
+        // Timeline: diff against the previous snapshot, add alerts, then
+        // deliver everything recorded since the last tick (including events
+        // other threads recorded in between).
+        if kernel_threads != self.kernel_threads_shown {
+            self.kernel_threads_shown = kernel_threads;
+            self.detector.reset();
+        }
+        let cfg = *read(&shared.activity_config);
+        let found = self
+            .detector
+            .observe(sample.timestamp_ms, &sample.processes, &cfg);
+        {
+            let mut log = lock(&shared.activity_log);
+            for event in found {
+                log.record(sample.timestamp_ms, event);
+            }
+            for alert in &sample.alerts {
+                let mut e = Pending::new(ActivityKind::AlertFired).detail(alert.message.clone());
+                e.pid = alert.pid;
+                e.name = Some(alert.rule_name.clone());
+                log.record(alert.timestamp_ms, e);
+            }
+            sample.activity = log.since(self.emitted_activity);
+            self.emitted_activity = log.last_seq();
         }
 
         write(&shared.history).push(sample.point.clone());
@@ -429,6 +557,20 @@ mod tests {
         engine.refresh_now().unwrap();
         assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
         engine.shutdown();
+    }
+
+    #[test]
+    fn repeated_refresh_requests_are_coalesced_at_the_backend() {
+        let engine = engine(true);
+        let sink = CountingSink::new(false);
+        engine.subscribe("refresh-limit".into(), sink.clone());
+        let now = Instant::now();
+        for _ in 0..10_000 {
+            engine.refresh_at(now).unwrap();
+        }
+        assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
+        engine.shutdown();
+        assert_eq!(sink.count.load(Ordering::SeqCst), 1);
     }
 
     #[test]

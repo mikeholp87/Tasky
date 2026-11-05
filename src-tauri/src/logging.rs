@@ -10,6 +10,7 @@
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;
+use std::io::{self, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -23,6 +24,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer, Registry, reload};
 
 const MAX_LOG_FILES: usize = 7;
+const MAX_LOG_BYTES: u64 = 56 * 1024 * 1024;
 const RECENT_LEN: usize = 50;
 
 #[derive(Debug, Clone, Serialize)]
@@ -89,14 +91,56 @@ pub fn init(log_dir: Option<&Path>, debug: bool) -> Logging {
     }
 }
 
-fn file_appender(dir: &Path) -> Result<RollingFileAppender, Box<dyn std::error::Error>> {
-    std::fs::create_dir_all(dir)?;
-    Ok(RollingFileAppender::builder()
+fn file_appender(dir: &Path) -> Result<BoundedLogs, Box<dyn std::error::Error>> {
+    tm_core::filesystem::private_dir(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let inner = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
         .filename_prefix("taskmanager")
         .filename_suffix("log")
         .max_log_files(MAX_LOG_FILES)
-        .build(dir)?)
+        .build(dir)?;
+    Ok(BoundedLogs {
+        inner,
+        dir: dir.to_owned(),
+        max_bytes: MAX_LOG_BYTES,
+    })
+}
+
+/// Runs behind tracing-appender's bounded non-blocking queue. At the disk
+/// budget, discard further output until daily rotation frees old files.
+struct BoundedLogs {
+    inner: RollingFileAppender,
+    dir: std::path::PathBuf,
+    max_bytes: u64,
+}
+
+impl Write for BoundedLogs {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.inner.write(&[])?; // Allow rotation even after reaching the cap.
+        let used = std::fs::read_dir(&self.dir)?
+            .filter_map(Result::ok)
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|n| n.starts_with("taskmanager.") && n.ends_with(".log"))
+            })
+            .filter_map(|e| e.path().symlink_metadata().ok())
+            .filter(|m| m.is_file())
+            .fold(0u64, |sum, m| sum.saturating_add(m.len()));
+        if used.saturating_add(bytes.len() as u64) > self.max_bytes {
+            return Ok(bytes.len());
+        }
+        self.inner.write(bytes)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 impl Logging {
@@ -155,5 +199,31 @@ impl Visit for MessageVisitor {
         } else {
             let _ = write!(self.0, "{}={value:?}", field.name());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn log_output_stays_within_the_disk_budget() {
+        let dir = std::env::temp_dir().join(format!(
+            "tm-log-cap-{}-{}",
+            std::process::id(),
+            tm_core::monitoring::unix_millis()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let mut writer = file_appender(&dir).unwrap();
+        writer.max_bytes = 4;
+        writer.write_all(b"1234").unwrap();
+        writer.write_all(b"discard this").unwrap();
+        writer.flush().unwrap();
+        let used: u64 = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().metadata().unwrap().len())
+            .sum();
+        assert_eq!(used, 4);
+        drop(writer);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

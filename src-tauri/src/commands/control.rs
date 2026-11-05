@@ -1,23 +1,16 @@
 //! Process control commands. Validation, PID-reuse checks and protection
 //! rules live in `tm_core::process_control`; these handlers only adapt IPC.
 
+use super::blocking::run as blocking;
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{AppHandle, State};
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::{ActionOutcome, ProcessAction, ProtectionAssessment};
 use tm_core::process_control::{self, ActionRequest};
 
 use crate::commands::validate;
 use crate::state::AppState;
-
-async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> AppResult<T> + Send + 'static,
-) -> AppResult<T> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| AppError::SystemQueryFailed(format!("background task failed: {e}")))?
-}
 
 /// Protection verdict shown in the confirmation dialog before acting.
 #[tauri::command]
@@ -33,6 +26,7 @@ pub async fn assess_process_action(
 
 #[tauri::command]
 pub async fn perform_process_action(
+    app: AppHandle,
     state: State<'_, AppState>,
     pid: i64,
     start_time: u64,
@@ -46,7 +40,25 @@ pub async fn perform_process_action(
         acknowledge_warnings,
     };
     let engine = Arc::clone(&state.engine);
-    blocking(move || process_control::perform(&engine, req)).await
+    blocking(move || {
+        // Name the process in the prompt, and refuse before asking if the PID
+        // now belongs to a different process than the one the user saw.
+        let row = engine
+            .process(req.pid)
+            .filter(|r| r.start_time == req.start_time)
+            .ok_or(AppError::ProcessNotFound(req.pid))?;
+        let assessment = process_control::assess(&engine, req.pid, req.action)?;
+        if assessment.level == tm_core::models::ProtectionLevel::Blocked {
+            return Err(AppError::ProcessProtected(assessment.reasons.join(" ")));
+        }
+        if req.action.is_disruptive() || assessment.level == tm_core::models::ProtectionLevel::Warning {
+            super::confirm::confirm(&app, &format!(
+                "Apply {:?} to {} (PID {})?\nThis may stop work, lose unsaved data, or make dependent programs unresponsive.\n{}",
+                req.action, row.name, req.pid, assessment.reasons.join(" ")
+            ))?;
+        }
+        process_control::perform(&engine, req)
+    }).await
 }
 
 /// Opens the file manager at the process's executable. The path comes from

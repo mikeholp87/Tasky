@@ -95,7 +95,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     minWidth: 70,
     defaultVisible: true,
     descendingFirst: true,
-    sortValue: (r) => r.memoryBytes,
+    sortValue: (r) => memoryOf(r),
   },
   {
     id: "memoryPercent",
@@ -105,7 +105,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     minWidth: 60,
     defaultVisible: false,
     descendingFirst: true,
-    sortValue: (r) => r.memoryBytes,
+    sortValue: (r) => memoryOf(r),
   },
   {
     id: "diskRead",
@@ -264,7 +264,7 @@ export const FILTER_PRESETS: readonly {
     id: "highMemory",
     label: "High memory",
     description: "Memory above 1 GB",
-    test: (r) => r.memoryBytes > GIB,
+    test: (r) => memoryOf(r) > GIB,
   },
   {
     id: "user",
@@ -403,4 +403,47 @@ export function processView(
 export function userOf(rows: readonly ProcessRow[], pid: number | undefined): string | null {
   if (pid == null) return null;
   return rows.find((r) => r.pid === pid)?.user ?? null;
+}
+
+/** Whether a process started within the last `windowSecs` (0 turns the highlight off). */
+export function isNewProcess(startTime: number, nowSecs: number, windowSecs: number): boolean {
+  return (
+    windowSecs > 0 && startTime > 0 && nowSecs >= startTime && nowSecs - startTime < windowSecs
+  );
+}
+
+/** Execution state of a process, for red/green colouring. */
+/**
+ * The memory figure shown for a process in every view: proportional memory
+ * (PSS, shared pages split between the processes using them) when the system
+ * has measured it, else resident memory. Using one figure everywhere makes an
+ * application's total equal the sum of its processes and match the Memory page.
+ */
+export function memoryOf(row: Pick<ProcessRow, "pssBytes" | "memoryBytes">): number {
+  return row.pssBytes ?? row.memoryBytes;
+}
+
+export type RunState = "active" | "idle" | "problem";
+
+/**
+ * The colour follows the status label exactly, so the two can never disagree.
+ * (The backend already reports "Running" for a process that used CPU during
+ * the last interval, since the instantaneous kernel state is "sleeping" for
+ * almost every busy process.)
+ *
+ * Green: Running. Red: Suspended, Zombie, Dead or Disk sleep (stuck waiting on
+ * the disk). Everything else, including Sleeping and Idle, is uncoloured.
+ */
+export function runState(row: Pick<ProcessRow, "status">): RunState {
+  switch (row.status) {
+    case "running":
+      return "active";
+    case "stopped":
+    case "zombie":
+    case "dead":
+    case "diskSleep":
+      return "problem";
+    default:
+      return "idle";
+  }
 }

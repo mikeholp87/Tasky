@@ -1,0 +1,90 @@
+name: Linux Debian release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check release version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "${TAG#v}" = "$(jq -r .version src-tauri/tauri.conf.json)"
+      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev desktop-file-utils
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
+        with:
+          toolchain: 1.96.0
+      - run: npm ci
+      - run: npx tauri build --bundles deb --config src-tauri/tauri.linux.conf.json
+      - name: Validate package and checksum
+        run: |
+          deb=$(find src-tauri/target/release/bundle/deb -name '*.deb' -print -quit)
+          test -n "$deb"
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" | grep -q '/usr/share/applications/.*\.desktop'
+          dpkg-deb --extract "$deb" "$RUNNER_TEMP/tasky-deb"
+          desktop=$(find "$RUNNER_TEMP/tasky-deb/usr/share/applications" -name '*.desktop' -print -quit)
+          desktop-file-validate "$desktop"
+          cp "$deb" Tasky.deb
+          sha256sum Tasky.deb > Tasky.deb.sha256
+      - uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
+        with:
+          files: |
+            Tasky.deb
+            Tasky.deb.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deb-release
+          path: Tasky.deb
+
+  apt:
+    needs: build
+    runs-on: ubuntu-22.04
+    environment: apt-signing
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: deb-release
+      - name: Install aptly and signing key
+        env:
+          APTLY_GPG_KEY: ${{ secrets.APTLY_GPG_KEY }}
+          APTLY_KEY_ID: ${{ vars.APTLY_KEY_ID }}
+        run: |
+          test -n "$APTLY_GPG_KEY" && test -n "$APTLY_KEY_ID"
+          sudo apt-get update && sudo apt-get install -y aptly gnupg
+          printf '%s' "$APTLY_GPG_KEY" | gpg --batch --import
+          gpg --batch --list-secret-keys "$APTLY_KEY_ID"
+      - name: Build signed repository
+        env:
+          APTLY_KEY_ID: ${{ vars.APTLY_KEY_ID }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          aptly repo create -distribution=stable -component=main tasky
+          aptly repo add tasky Tasky.deb
+          aptly publish repo -batch -gpg-key="$APTLY_KEY_ID" tasky filesystem:tasky
+          mkdir -p public
+          cp -a "$HOME/.aptly/public/." public/
+          gpg --armor --export "$APTLY_KEY_ID" > public/tasky-archive-keyring.asc
+          printf '%s\n' "$VERSION" > public/latest
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: public
+      - uses: actions/deploy-pages@d6db901e5e6ddc4a69a133f8e9940b8ba9b3e7b # v4

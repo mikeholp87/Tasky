@@ -16,7 +16,11 @@ pub enum ErrorKind {
     InvalidArgument,
     ProcessProtected,
     ActionUnavailable,
+    OperationCancelled,
+    OperationBusy,
     EngineUnavailable,
+    BenchmarkAlreadyRunning,
+    BenchmarkFailed,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -39,8 +43,16 @@ pub enum AppError {
     /// graceful close for a process without windows).
     #[error("{0}")]
     ActionUnavailable(String),
+    #[error("Operation cancelled.")]
+    OperationCancelled,
+    #[error("Another operation is running. Try again shortly.")]
+    OperationBusy,
     #[error("The monitoring engine is not running.")]
     EngineUnavailable,
+    #[error("Another benchmark is currently running.")]
+    BenchmarkAlreadyRunning,
+    #[error("The benchmark could not finish: {0}")]
+    BenchmarkFailed(String),
 }
 
 impl AppError {
@@ -54,7 +66,11 @@ impl AppError {
             Self::InvalidArgument(_) => ErrorKind::InvalidArgument,
             Self::ProcessProtected(_) => ErrorKind::ProcessProtected,
             Self::ActionUnavailable(_) => ErrorKind::ActionUnavailable,
+            Self::OperationCancelled => ErrorKind::OperationCancelled,
+            Self::OperationBusy => ErrorKind::OperationBusy,
             Self::EngineUnavailable => ErrorKind::EngineUnavailable,
+            Self::BenchmarkAlreadyRunning => ErrorKind::BenchmarkAlreadyRunning,
+            Self::BenchmarkFailed(_) => ErrorKind::BenchmarkFailed,
         }
     }
 }

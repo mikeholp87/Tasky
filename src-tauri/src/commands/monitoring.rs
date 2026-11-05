@@ -39,6 +39,13 @@ impl TickSink for ChannelSink {
     }
 }
 
+/// Turns per-process shared-memory accounting (PSS) on while the Memory page
+/// is open. It costs extra `/proc` reads, so it is off the rest of the time.
+#[tauri::command]
+pub fn set_memory_detail(state: State<'_, AppState>, enabled: bool) {
+    state.engine.set_memory_detail(enabled);
+}
+
 #[tauri::command]
 pub fn get_static_info(state: State<'_, AppState>) -> StaticSystemInfo {
     state.engine.static_info().clone()

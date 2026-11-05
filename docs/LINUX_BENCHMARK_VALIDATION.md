@@ -1,0 +1,386 @@
+# Benchmark validation report
+
+What was actually run to check the benchmarks, and what was not. Date:
+2026-11-03 and 2026-11-04. The CPU, GPU, disk and internet benchmarks exist;
+the full benchmark does not, so it has no section rather than an empty one. The
+GPU, disk and internet validations follow the CPU one.
+
+## Test machine
+
+Debian forky/sid, kernel 7.2.12, Intel Core 7 150U (10 cores, 12 logical CPUs,
+hybrid: 2 performance + 8 efficiency cores), 32 GiB RAM, KDE Plasma on Wayland,
+CPU governor `powersave`, release build. It was an ordinary working desktop:
+a browser, an editor and this app were open, so numbers include real
+background noise. Power source reads "unknown" (no battery or mains entry).
+
+## What was checked
+
+| Check                                                    | Result                                                                                                                                     |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Workload output deterministic and chunk-independent      | Unit-tested against an unchunked reference implementation                                                                                  |
+| SHA-256 correct                                          | Matches the published vector (one round over 32 zero bytes) in a unit test                                                                 |
+| SHA-256 speed vs an independent tool                     | `openssl speed` on one thread: 2.07 GiB/s. This benchmark, single-core: 1.95-2.2 GiB/s                                                     |
+| Compression round trip                                   | Byte-for-byte equal; ratio checked (about 3-4:1)                                                                                           |
+| Floating point stays finite and inside (0,1)             | 32 seeds x 50,000 steps, plus every real run                                                                                               |
+| Single-core uses exactly one worker                      | Asserted in tests (`workers == 1`)                                                                                                         |
+| Multi-core uses one worker per logical CPU               | Asserted in tests; 12 on the test machine                                                                                                  |
+| Every chunk runs exactly once per round whoever takes it | Unit test with deliberately uneven chunk speeds                                                                                            |
+| Single vs multi scaling plausible                        | `sysbench cpu`: 3,752 to 24,396 events/s (6.5x). This benchmark: integer 4.2-4.7x, floating point 5.5-6.2x, hashing 6.4-6.8x               |
+| Panicking worker does not hang the run                   | Unit test: run fails with a clear message                                                                                                  |
+| Output that changes between iterations is rejected       | Unit test                                                                                                                                  |
+| Cancellation, mid-run                                    | Real coordinator, Standard profile, cancelled at 8.0 s: stopped at 8.1 s, state Cancelled, history file not created                        |
+| Only one benchmark at a time                             | Unit test: second start returns "already running"; lock is free after cancel                                                               |
+| State only moves forward                                 | Unit test over the full state sequence. This caught a real bug: the runner re-announced `Preparing` after `Preflight`                      |
+| Progress rate limit                                      | Unit test: 5,000 updates in a burst produce one emission per 100 ms; a state change always goes out. Real runs: 1.8-4.6 updates per second |
+| Corrupt or unwritable history                            | Unit tests: corrupt file moved aside; failed write leaves memory unchanged; bounded to 200                                                 |
+| Development builds                                       | Unit test: flagged, unscored, not saved                                                                                                    |
+| Windows target compiles and lints                        | `cargo clippy --target x86_64-pc-windows-msvc` clean. **Not run on Windows.**                                                              |
+
+Test counts at the end of this phase: 183 Rust tests (65 for benchmarks) and
+134 frontend tests, all passing; clippy and formatting clean.
+
+## Run times (release build, real coordinator)
+
+| Profile  | Wall time                                 |
+| -------- | ----------------------------------------- |
+| Quick    | 10.4-10.6 s                               |
+| Standard | 25.7-28.0 s                               |
+| Extended | 68.6 s (includes the 30 s sustained test) |
+
+## Repeatability
+
+Run-to-run coefficient of variation of the per-run medians. Standard, three
+runs each:
+
+| Workload       | Single-core, unpinned | Single-core, pinned | Multi-core, unpinned | Multi-core, pinned |
+| -------------- | --------------------- | ------------------- | -------------------- | ------------------ |
+| Integer        | 1.0%                  | 1.1%                | 10.6%                | 7.0%               |
+| Floating point | 5.3%                  | 11.5%               | 12.6%                | 4.5%               |
+| Hashing        | 1.2%                  | 5.8%                | 4.2%                 | 3.7%               |
+| Compression    | 4.8%                  | 1.1%                | 5.2%                 | 5.0%               |
+| Decompression  | 1.0%                  | 2.5%                | 3.9%                 | 7.0%               |
+
+Quick (after raising its per-iteration work), four runs: single-core
+0.9-3.3%, multi-core 1.2-7.7%.
+
+Conclusions, stated as measured and not smoothed over:
+
+- Single-core is steady (about 1-5%). Multi-core is noisier (up to about 12%)
+  on this busy hybrid machine.
+- **Pinning the single-core worker did not reduce the spread** (floating point
+  got worse, 11.5% vs 5.3%), so it stays off by default. The capability exists
+  and its outcome is recorded in each result.
+- The Stability rating is a heuristic. A first version used the single noisiest
+  workload and rated nearly every run Low; it now uses the typical spread with a
+  cap for the worst, and one test covers that.
+
+## Design changes forced by measurement
+
+1. **Chunked work queue instead of fixed work per thread.** The first design
+   gave every worker equal work. On this hybrid CPU each multi-core round
+   waited for the slowest efficiency core while performance cores sat idle.
+2. **Compression sized down.** At about 14 MiB/s the first sizing made a
+   Standard run take 52 s, almost all of it compression. Work is now sliced
+   (256 KiB per chunk) and Standard takes about 26 s.
+3. **Quick profile enlarged (scale 0.3 to 0.6).** At 0.3 an iteration lasted
+   70-100 ms, dominated by frequency ramp-up, and produced multi-core scores 36%
+   apart between consecutive runs. At 0.6 the spread matches Standard.
+
+## Sustained test (Extended, real hardware)
+
+30 one-second windows: peak 66,504 Mops/s, median 58,482, last third 61,284,
+decline 0%, so no note was generated. CPU frequency read 2,258 MHz in the first
+window and 2,599 MHz in the last; CPU package temperature 74 and 77 degrees C,
+read from the `coretemp Package` sensor. Nothing was claimed about throttling.
+
+## Not validated
+
+- **Windows:** compiled and linted only.
+- **GNOME and X11:** the CPU benchmark does not depend on the display server,
+  but the page was not opened under them. It was checked in a headless browser
+  with simulated progress, and the Rust flow was run from a command-line tool,
+  not from the installed app window.
+- **Battery, virtual machine and container paths:** unit-tested with
+  fixtures, never run on such a system.
+- **Debian 12 and Ubuntu:** not run.
+- **aarch64:** nothing x86-specific was written, but it was never built.
+- **Temperature and frequency during Quick and Standard:** shown live, but only
+  the Extended run's windows were inspected.
+- **Disk, internet, memory, full benchmark:** not built.
+- **Reference anchor:** measured on the same machine that scores about 1000 by
+  construction. Scores from other hardware are meaningful relative to it, but
+  no second machine was available to test that.
+
+---
+
+# GPU benchmark (`gpu-compute-v1`)
+
+## Test hardware
+
+The same machine, with its **integrated GPU: Intel RPL-U graphics, Mesa 26.1.6,
+Vulkan 1.4**, GPU timestamps supported. A second Vulkan adapter, `llvmpipe` (a
+software renderer on the CPU), was present and was used to test selection. The
+machine was a working desktop: the compositor and a browser were using the GPU,
+and another session was often compiling, which shares the processor's power
+budget with the integrated GPU (see "Sensitivity to load").
+
+## What was checked
+
+| Check                         | Result                                                                                                                                                                                                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adapters listed correctly     | Two Vulkan adapters, same names and types as `vulkaninfo --summary` (used only as a development cross-check): Intel RPL-U (integrated), llvmpipe (software). Enumeration 23-27 ms; opening the device 0.07-0.1 s |
+| Default selection             | Intel integrated GPU recommended; llvmpipe never the default. Unit-tested for discrete, integrated, virtual and software ordering, and ties                                                                      |
+| Shaders valid WGSL            | Parsed and validated with `naga` in CI, with no GPU                                                                                                                                                              |
+| Integer output exact          | Bit for bit against the CPU reference on sampled threads, on real hardware, every run                                                                                                                            |
+| Float output correct          | Within 1e-3 of the mathematical solution on every run. The CPU's own fused multiply-add stays under 1e-4 at 1 to 5,000 iterations (unit test), so the tolerance has margin                                       |
+| Memory output correct         | Contents at both ends of the buffer verified, including across back-to-back runs with odd and even pass counts (hardware test)                                                                                   |
+| **Validation can fail**       | Hardware test corrupts the device's output on purpose; the check returns "wrong output". A validator that cannot fail would prove nothing                                                                        |
+| Wrong output discards the run | Fake-device test: no score, plain message                                                                                                                                                                        |
+| Timeout is reported, not hung | Hardware test: a far too large job with a 1 ms timeout returns a timeout, and the device is still usable afterwards                                                                                              |
+| Device lost, out of memory    | Handled and turned into plain messages (fake-device tests). **A real device-lost event was not provoked**                                                                                                        |
+| Cancellation                  | Real coordinator, Standard profile cancelled 2.0 s in: stopped at 2.1 s, state Cancelled, history file not created                                                                                               |
+| One lock across CPU and GPU   | Unit test: a running CPU benchmark rejects a GPU start, and the reverse works after cancel                                                                                                                       |
+| Progress rate                 | 8-9 updates per second, under the limit of 10                                                                                                                                                                    |
+| No adapter at all             | Clear message ("A working Vulkan driver is needed"), the app keeps working, a CPU run can follow                                                                                                                 |
+| Software renderer             | Runs and verifies on `llvmpipe` (about 1 Gops/s against about 300 on the integrated GPU); flagged as not a GPU result and never scored                                                                           |
+| Old history still loads       | Unit test: results saved before GPU support load with the new fields empty                                                                                                                                       |
+| Windows target                | `cargo clippy --target x86_64-pc-windows-msvc` is clean with `wgpu`'s DirectX 12 and Vulkan backends. **Not run on Windows**                                                                                     |
+
+Test counts when this was written: 297 Rust tests in `tm-core` (including work
+from a parallel session), 178 frontend tests, plus 4 opt-in hardware tests.
+
+## Run times (release build, real coordinator, real GPU)
+
+| Profile  | Wall time                               |
+| -------- | --------------------------------------- |
+| Quick    | 3.9 s                                   |
+| Standard | 6.1 s                                   |
+| Extended | 38 s (includes the 30 s sustained test) |
+
+## Repeatability
+
+Run-to-run coefficient of variation of the per-run medians. This integrated GPU
+is noticeably less repeatable than the CPU: **about 5-12%**, depending on the
+workload and the day.
+
+| Configuration                                   | Runs | Floating point | Integer | Memory |
+| ----------------------------------------------- | ---- | -------------- | ------- | ------ |
+| Standard, 3 warm-up dispatches                  | 4    | 12.2%          | 7.1%    | 11.4%  |
+| Quick, 3 warm-up dispatches                     | 4    | 14.9%          | 13.8%   | 8.8%   |
+| Standard, 12 warm-up dispatches                 | 4    | 2.6%           | 11.3%   | 3.2%   |
+| Quick, 12 warm-up, 9 iterations                 | 5    | 7.5%           | 12.5%   | 6.6%   |
+| Standard, 12 warm-up, 15 iterations             | 5    | 9.1%           | 7.7%    | 10.5%  |
+| Quick, final code, quiet machine (load about 2) | 4    | 6.7%           | 10.1%   | 10.1%  |
+
+Within one run the spread between iterations is 4-17%, which is why the
+Stability rating is often Medium or Low on this hardware. That is a true
+statement about this GPU, not a flaw to hide.
+
+Experiments, including the ones that did not help:
+
+- **Longer warm-up** (3 to 12 dispatches) helped in one batch of runs (floating
+  point 12% to 2.6%) and not consistently in the next. It was kept: it costs
+  about a second.
+- **Longer dispatches (200 ms instead of 80 ms) were reverted.** Throughput fell
+  15-25% (the GPU slowed under longer continuous load) and integer and
+  floating-point spread did not improve.
+- **More Quick iterations** (5 to 9) did not clearly reduce the spread.
+
+## Sensitivity to load
+
+Floating-point throughput was 340-376 GFLOPS while the machine's load average
+was about 30 (a security scan and compiles running), against 494-577 GFLOPS at a
+load average of about 2. The integrated GPU shares the processor's power
+budget, so a busy CPU lowers the GPU score. The benchmark's preflight warns when
+other applications use more than 25% CPU, but it measures CPU load only.
+
+## Sustained test (Extended, real GPU)
+
+Peak 516 GFLOPS, median 459, last third 407: a **15.7% decline** over 30 s, with
+the note "Performance decreased by 16% during sustained load. Temperature or
+power limits may have contributed." No cause was claimed, and GPU clock and
+temperature were not read (not available through a vendor-neutral source).
+
+## Bugs found by measurement
+
+1. **Memory bandwidth read half its true value.** The byte count was divided
+   by 2 with no basis. Noticed because the work per dispatch did not match
+   passes x elements x 32 bytes; fixed.
+2. **Calibration was fooled by shader compilation.** On `llvmpipe` the first
+   dispatch included compile time, so the device looked slow and the smallest
+   possible size was chosen. The first dispatch is now discarded; a unit test
+   covers it.
+3. **The GPU warm-up was too short** (3 dispatches, about a quarter of a second)
+   for the clocks to ramp up; raised to 12.
+
+## Not validated
+
+- **Discrete GPUs, NVIDIA and AMD:** none available. Only an Intel integrated
+  GPU and a software renderer were tested.
+- **Hybrid graphics** selection on real hybrid hardware (two real GPUs).
+- **DirectX 12 and Windows:** compiled and linted only.
+- **Wall-clock timing path on real hardware:** the test GPU supports
+  timestamps. The fallback is tested with a fake device only.
+- **A real device-lost event or driver reset:** the handling is unit-tested with
+  injected faults; a driver reset was not provoked.
+- **GNOME, X11, Debian 12, Ubuntu, aarch64:** not run.
+- **Reference anchors** come from the same machine that scores about 1000 by
+  construction.
+- **Cross-check against another GPU benchmark:** none was run. Adapter details
+  matched `vulkaninfo`; throughput was not compared with any other tool.
+
+# Disk benchmark (`disk-direct-v1`)
+
+## Test hardware
+
+The same machine, with its internal NVMe drive (ext4, the home folder, 588 GiB
+free). A working desktop: the browser and other sessions were running, so some
+background disk traffic is part of the numbers. Release build, direct I/O.
+Only this one drive was tested.
+
+## What was checked
+
+- **Unit and integration tests (52 for the disk module, 22 for the
+  coordinator):** the aligned buffer and the data pattern; the mount-derived
+  location list (tmpfs, network, read-only and virtual file systems excluded);
+  the free-space rule; exclusive creation, owner-only permissions, refusal of a
+  symlinked benchmark folder and of any existing file; clean-up on success,
+  error, cancel and panic; stale-file clean-up that touches only our exact
+  names; full runs in both buffered and direct mode; cancellation before and
+  during a run (stops within seconds, nothing left behind); a stalled phase
+  timing out; a drive too slow for the operation count finishing with fewer
+  operations; and the verification **catching deliberately damaged data**
+  and data from the wrong pass.
+- **Cross-check against another tool.** `fio` is not installed here, so
+  `sysbench fileio` (direct I/O, one 1 GiB file, same machine, same minute) was
+  used. Same block sizes and thread counts, 4 s per case:
+
+  | Test                  | This app (median of 3 Standard runs) | sysbench    |
+  | --------------------- | ------------------------------------ | ----------- |
+  | Sequential read       | 5.17-5.24 GB/s                       | 5.14 GB/s   |
+  | Sequential write      | 5.32-5.55 GB/s                       | 5.71 GB/s   |
+  | Random read, 1 thread | 21.9-23.1 k IOPS                     | 23.1 k IOPS |
+  | Random read, 8        | 141-145 k IOPS                       | 143 k IOPS  |
+  | Random read, 32       | 491-495 k IOPS                       | 502 k IOPS  |
+  | Random write, 1       | 95-110 k IOPS                        | 100 k IOPS  |
+  | Random write, 32      | 1.08-1.16 M IOPS                     | 1.08 M IOPS |
+
+  (sysbench reports MiB/s: 4,900 MiB/s read = 5.14 GB/s, 5,448 MiB/s write =
+  5.71 GB/s.) Reads and random writes agree within a few percent. Sequential
+  write is about 3-7% lower here, as expected: each pass ends with a flush that
+  this app times, while sysbench was run with its flush at the end of the whole
+  run. That is a methodology difference, not an error, and it is the stricter
+  measurement.
+
+## Run times and wear (release build, NVMe)
+
+| Profile  | Time   | Wrote   | Read    | File     |
+| -------- | ------ | ------- | ------- | -------- |
+| Quick    | 1.0 s  | 0.32 GB | 0.95 GB | 256 MiB  |
+| Standard | 4.4 s  | 2.31 GB | 5.98 GB | 1024 MiB |
+| Extended | 12.8 s | 6.77 GB | 16.9 GB | 2048 MiB |
+
+The bytes written are counted by the app, not estimated. No file or folder was
+left behind after the real runs (checked in the home folder afterwards) or in
+the tests, including cancelled runs.
+
+## Repeatability
+
+Three Standard runs, spread (coefficient of variation) of the per-run medians:
+sequential read 0.6%, sequential write 2.4%, random read 0.3-2.9%, random write
+7.5% at queue depth 1 and 4.1% at 32. Within one run, random-write rounds
+varied more (up to 40% at queue depth 1 in one run): an NVMe drive's write
+cache and background flushing make writes noisier than reads. The stability
+label reflects this, and the median is used for that reason.
+
+## Bugs found by measurement
+
+1. **Buffered random reads measured the RAM.** The first buffered run reported
+   6.2 million IOPS at one thread, because the sequential passes had just left
+   the whole file in the page cache. Fixed: this file's own cached pages are
+   dropped (never the system cache) before the random reads; buffered one-thread
+   random reads then read 22.7 k IOPS, matching direct I/O.
+2. **Verification used the wrong pass.** When a slow drive skipped extra
+   sequential write passes, verification expected the last planned pass, not
+   the last pass that ran, and reported corruption. Found by a test; fixed.
+3. **A fixed operation count timed out on slow drives.** Replaced with a time
+   budget per phase (operations actually done are recorded).
+
+## Not validated
+
+- **Any other drive.** No SATA SSD, hard disk, USB drive, NVMe with a different
+  controller, RAID, LVM, encrypted volume or network file system was tested.
+  Hard-disk behaviour (the time budgets) is tested with an artificial limit
+  only.
+- **Other file systems.** Only ext4 with direct I/O. The buffered fallback is
+  tested in temporary folders and with unit tests, not on btrfs, XFS or ZFS. Whether `O_DIRECT` is honoured exactly varies by file system.
+- **`io_uring`.** Not used. Threads with synchronous I/O reach queue depth 32
+  and matched `sysbench` on this drive; whether that holds for faster drives
+  (several million IOPS) was not tested.
+- **Flash wear counters.** The bytes written are counted by the app; the drive's
+  own SMART counters were not read before and after.
+- **Windows.** The disk benchmark is not implemented there.
+- **The reference values** come from this drive, which scores about 1000 by
+  construction.
+
+# Internet benchmark (`internet-cloudflare-v1`)
+
+## What was checked
+
+- **Tests against a local HTTP server (18 for the module, plus coordinator
+  tests).** The real client code runs against a small server on `127.0.0.1`
+  that speaks the Cloudflare endpoints: throughput measured with the server
+  limited to 40 Mbit/s came out within 15% of 40; the bytes counted for an
+  upload matched what the server received; a short body, a non-HTTP reply, a
+  503, a 429 with `Retry-After`, a stalled server, an unreachable port and
+  cancellation in the middle of a transfer each end with a clear message and no
+  result; redirects are refused without contacting the destination; oversized
+  bodies and requests are refused; routing-table and VPN detection were tested
+  against fixture files.
+- **Backend rules.** Starting without consent, or with an unknown disk
+  location, is refused before anything happens; a second run inside the
+  cooldown and a run that would exceed the session allowance are refused.
+- **Real Cloudflare, tiny requests.** A latency request, a 1 MB and a 25 MB
+  download and a 2 MB upload (with and without chunked encoding) were answered
+  with HTTP 200 and the right sizes.
+
+## Bugs found by measurement
+
+1. **`timeout_recv_body` is a total time per body, not an idle time.** The first
+   version used it as a stall detector and aborted healthy transfers. It is now
+   a per-chunk limit (60 s), found by the local-server test.
+2. **Wrong header name, briefly.** I changed the data-centre header from `colo`
+   to `cf-meta-colo` because the latter appears in the response's
+   `access-control-expose-headers` list. The real response header is `colo`;
+   the first real run showed no server location, which exposed the mistake.
+   Reverted.
+3. **Cloudflare answered HTTP 403 for one specific download size** (16,000,000
+   bytes) while 8, 10 and 25 MB worked. The chunk sizes are now ones the
+   provider's own speed test uses.
+4. **Cloudflare rate-limits large transfers per address.** After a few
+   development runs the 25 MB endpoint returned HTTP 429 with `Retry-After:
+3515` (about an hour), while small requests still worked. The test now uses
+   larger chunks and a slower latency probe, lower data caps, a cooldown and a
+   session allowance, and says when to try again.
+
+## Not validated
+
+- **Accuracy of the real-server numbers.** One real Quick run completed
+  end to end after the rate limit expired (2026-11-04, Wi-Fi): idle latency
+  median 45 ms (min 42, jitter 6.2 ms), download median 282 Mbit/s (peak 449),
+  upload median 419 Mbit/s, 100 MB down and 30 MB up. The run worked, but
+  the data caps are **too small for this link**: the download hit its 100 MB
+  cap in 2.8 s and the upload its 30 MB cap in 0.75 s, leaving few samples, one
+  zero-throughput sample (a gap while the four connections requested their next
+  chunk) and a median well below the peak. The result carries the "coarse
+  measurement" and "reached its data limit" notes, but on a connection this fast
+  Quick is a rough figure. Raising the caps risks the provider's rate limit,
+  which was not explored further. Standard and Extended were not run for real.
+- **Accuracy against another tool** (for example the Cloudflare web test or
+  `iperf3`) on the same connection: not compared.
+- **Behaviour on slow links.** A transfer chunk must finish within 60 s, so a
+  link below roughly 15 Mbit/s may fail with a timeout. Not tested.
+- **Wi-Fi, VPN and mobile data paths.** Interface and VPN detection was tested
+  on fixtures and on this machine's connection only.
+- **Windows.** Type-checked with the HTTPS feature off (the TLS library cannot
+  be cross-compiled from Linux without a Windows C toolchain); not run.

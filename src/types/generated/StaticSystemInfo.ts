@@ -13,4 +13,24 @@ bootTimeSecs: number | null, appVersion: string,
 /**
  * PID of this task manager process, so the UI can mark it.
  */
-selfPid: number, };
+selfPid: number, 
+/**
+ * Linux: os-release `PRETTY_NAME`, e.g. "Debian GNU/Linux 13 (trixie)".
+ */
+distribution: string | null, 
+/**
+ * Linux: desktop environment from the session, e.g. "KDE Plasma".
+ */
+desktopEnvironment: string | null, 
+/**
+ * Linux: "Wayland" or "X11" for the user's session.
+ */
+displayServer: string | null, 
+/**
+ * Container or compatibility layer the app runs in, e.g. "Docker", "WSL".
+ */
+container: string | null, 
+/**
+ * Linux: name of PID 1, e.g. "systemd".
+ */
+initSystem: string | null, };

@@ -14,52 +14,63 @@ use crate::models::{Connection, Protocol, TcpState};
 
 /// All TCP/UDP sockets owned by `pid`. Returns `None` if the tables cannot be read.
 pub fn connections(pid: u32) -> Option<Vec<Connection>> {
+    Some(
+        owned_sockets()?
+            .into_iter()
+            .filter(|(owner, _)| *owner == pid)
+            .map(|(_, c)| c)
+            .collect(),
+    )
+}
+
+/// Every TCP/UDP socket on the machine with its owning PID (0 when the
+/// system attributes it to nobody, e.g. sockets in TIME_WAIT).
+pub fn owned_sockets() -> Option<Vec<(u32, Connection)>> {
     let mut out = Vec::new();
 
     for row in table::<MIB_TCPROW_OWNER_PID>(Kind::Tcp, AF_INET.0.into())? {
-        if row.dwOwningPid != pid {
-            continue;
-        }
         let state = tcp_state(row.dwState);
         let listening = state == TcpState::Listen;
-        out.push(Connection {
-            protocol: Protocol::Tcp,
-            local_address: ipv4(row.dwLocalAddr).to_string(),
-            local_port: port(row.dwLocalPort),
-            remote_address: (!listening).then(|| ipv4(row.dwRemoteAddr).to_string()),
-            remote_port: (!listening).then(|| port(row.dwRemotePort)),
-            state: Some(state),
-        });
+        out.push((
+            row.dwOwningPid,
+            Connection {
+                protocol: Protocol::Tcp,
+                local_address: ipv4(row.dwLocalAddr).to_string(),
+                local_port: port(row.dwLocalPort),
+                remote_address: (!listening).then(|| ipv4(row.dwRemoteAddr).to_string()),
+                remote_port: (!listening).then(|| port(row.dwRemotePort)),
+                state: Some(state),
+            },
+        ));
     }
     for row in table::<MIB_TCP6ROW_OWNER_PID>(Kind::Tcp, AF_INET6.0.into())? {
-        if row.dwOwningPid != pid {
-            continue;
-        }
         let state = tcp_state(row.dwState);
         let listening = state == TcpState::Listen;
-        out.push(Connection {
-            protocol: Protocol::Tcp6,
-            local_address: Ipv6Addr::from(row.ucLocalAddr).to_string(),
-            local_port: port(row.dwLocalPort),
-            remote_address: (!listening).then(|| Ipv6Addr::from(row.ucRemoteAddr).to_string()),
-            remote_port: (!listening).then(|| port(row.dwRemotePort)),
-            state: Some(state),
-        });
+        out.push((
+            row.dwOwningPid,
+            Connection {
+                protocol: Protocol::Tcp6,
+                local_address: Ipv6Addr::from(row.ucLocalAddr).to_string(),
+                local_port: port(row.dwLocalPort),
+                remote_address: (!listening).then(|| Ipv6Addr::from(row.ucRemoteAddr).to_string()),
+                remote_port: (!listening).then(|| port(row.dwRemotePort)),
+                state: Some(state),
+            },
+        ));
     }
     for row in table::<MIB_UDPROW_OWNER_PID>(Kind::Udp, AF_INET.0.into())? {
-        if row.dwOwningPid == pid {
-            out.push(udp(
+        out.push((
+            row.dwOwningPid,
+            udp(
                 Protocol::Udp,
                 ipv4(row.dwLocalAddr).to_string(),
                 row.dwLocalPort,
-            ));
-        }
+            ),
+        ));
     }
     for row in table::<MIB_UDP6ROW_OWNER_PID>(Kind::Udp, AF_INET6.0.into())? {
-        if row.dwOwningPid == pid {
-            let addr = Ipv6Addr::from(row.ucLocalAddr).to_string();
-            out.push(udp(Protocol::Udp6, addr, row.dwLocalPort));
-        }
+        let addr = Ipv6Addr::from(row.ucLocalAddr).to_string();
+        out.push((row.dwOwningPid, udp(Protocol::Udp6, addr, row.dwLocalPort)));
     }
     Some(out)
 }
@@ -86,6 +97,9 @@ enum Kind {
 fn table<Row: Copy>(kind: Kind, family: u32) -> Option<Vec<Row>> {
     let mut size = 0u32;
     for _ in 0..4 {
+        if size > 16 * 1024 * 1024 || align_of::<Row>() > align_of::<u32>() {
+            return None;
+        }
         // u32 backing keeps the buffer aligned for the row structs.
         let mut buf = vec![0u32; (size as usize).div_ceil(4).max(1)];
         let ptr = Some(buf.as_mut_ptr().cast());
@@ -111,7 +125,11 @@ fn table<Row: Copy>(kind: Kind, family: u32) -> Option<Vec<Row>> {
         let row_bytes = size_of::<Row>();
         // Rows start after the count, padded to the row alignment.
         let offset = align_of::<Row>().max(4);
-        if offset + count * row_bytes > buf.len() * 4 {
+        if count
+            .checked_mul(row_bytes)
+            .and_then(|bytes| offset.checked_add(bytes))
+            .is_none_or(|end| end > buf.len() * 4)
+        {
             return None;
         }
         // SAFETY: bounds checked above; Row is a plain-old-data FFI struct.

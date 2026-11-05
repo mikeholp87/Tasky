@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cancel-benchmark"
+description = "Enables the cancel_benchmark command without any pre-configured scope."
+commands.allow = ["cancel_benchmark"]
+
+[[permission]]
+identifier = "deny-cancel-benchmark"
+description = "Denies the cancel_benchmark command without any pre-configured scope."
+commands.deny = ["cancel_benchmark"]

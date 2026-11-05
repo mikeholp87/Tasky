@@ -8,11 +8,17 @@ rust-version = "1.90"
 publish = false
 
 [dependencies]
+flate2 = "1.1.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sysinfo = { version = "0.40", default-features = false, features = ["disk", "network", "system", "user"] }
+sha2 = "0.11.1"
+sysinfo = { version = "0.40", default-features = false, features = ["component", "disk", "gpu", "network", "system", "user"] }
 thiserror = "2"
+tempfile = "3"
 tracing = "0.1"
+wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "wgsl"] }
+pollster = "1"
+ureq = { version = "3.5.1", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 ts-rs = "12"
@@ -25,7 +31,9 @@ windows = { version = "0.62", features = [
   "Win32_Security",
   "Win32_Security_Authorization",
   "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Memory",
   "Win32_System_ProcessStatus",
+  "Win32_System_RestartManager",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
   "Win32_System_WindowsProgramming",
@@ -38,3 +46,17 @@ windows = { version = "0.62", features = [
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# GPU backends per platform: Vulkan on Linux; DirectX 12 and Vulkan on Windows.
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["vulkan"] }
+
+[target.'cfg(windows)'.dependencies.wgpu]
+version = "30"
+default-features = false
+features = ["dx12", "vulkan"]
+
+[dev-dependencies.naga]
+# Same version wgpu uses; lets tests check the WGSL shaders without a GPU.
+version = "30"
+features = ["wgsl-in"]

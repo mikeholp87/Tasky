@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Information that does not change while the app runs. Collected once at
 /// startup and fetched by the frontend with a single command.
@@ -23,9 +23,19 @@ pub struct StaticSystemInfo {
     pub app_version: String,
     /// PID of this task manager process, so the UI can mark it.
     pub self_pid: u32,
+    /// Linux: os-release `PRETTY_NAME`, e.g. "Debian GNU/Linux 13 (trixie)".
+    pub distribution: Option<String>,
+    /// Linux: desktop environment from the session, e.g. "KDE Plasma".
+    pub desktop_environment: Option<String>,
+    /// Linux: "Wayland" or "X11" for the user's session.
+    pub display_server: Option<String>,
+    /// Container or compatibility layer the app runs in, e.g. "Docker", "WSL".
+    pub container: Option<String>,
+    /// Linux: name of PID 1, e.g. "systemd".
+    pub init_system: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum Platform {

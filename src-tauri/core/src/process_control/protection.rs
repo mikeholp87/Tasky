@@ -22,6 +22,10 @@ pub struct ProcessFacts<'a> {
     pub is_critical: Option<bool>,
     /// Windows `%SystemRoot%`, e.g. `C:\Windows`.
     pub system_root: Option<&'a str>,
+    /// Linux `PF_KTHREAD`.
+    pub kernel_thread: bool,
+    /// Already exited, waiting for its parent to reap it.
+    pub zombie: bool,
 }
 
 /// Session/kernel processes whose loss crashes or locks Windows.
@@ -162,10 +166,17 @@ fn assess_unix(facts: &ProcessFacts<'_>, action: ProcessAction, a: &mut Protecti
     }
     // kthreadd (PID 2) and its children are kernel threads; signals cannot
     // stop them and trying is meaningless.
-    if facts.pid == 2 || facts.parent_pid == Some(2) {
+    if facts.kernel_thread || facts.pid == 2 || facts.parent_pid == Some(2) {
         a.add(
             ProtectionLevel::Blocked,
             "This is a kernel thread and cannot be stopped from user space.",
+        );
+        return;
+    }
+    if facts.zombie {
+        a.add(
+            ProtectionLevel::Blocked,
+            "This process has already exited. It is a zombie: only its entry in the process table remains, and it disappears once its parent process collects its exit status. Signals have no effect on it; ending or restarting the parent process removes it.",
         );
         return;
     }
@@ -200,6 +211,7 @@ mod tests {
             self_pid: 9_999,
             is_critical: Some(false),
             system_root: Some(ROOT),
+            ..Default::default()
         }
     }
 
@@ -338,6 +350,33 @@ mod tests {
         assert_eq!(
             level(Platform::Linux, &user_app, ProcessAction::ForceKill),
             ProtectionLevel::Allowed
+        );
+
+        let zombie = ProcessFacts {
+            zombie: true,
+            ..user_app.clone()
+        };
+        for action in [
+            ProcessAction::Terminate,
+            ProcessAction::ForceKill,
+            ProcessAction::Suspend,
+        ] {
+            assert_eq!(
+                level(Platform::Linux, &zombie, action),
+                ProtectionLevel::Blocked
+            );
+        }
+
+        // Kernel threads are identified by flag, not only by kthreadd parentage
+        // (containers may not show PID 2).
+        let flagged = ProcessFacts {
+            kernel_thread: true,
+            parent_pid: None,
+            ..user_app
+        };
+        assert_eq!(
+            level(Platform::Linux, &flagged, ProcessAction::Terminate),
+            ProtectionLevel::Blocked
         );
     }
 

@@ -4,14 +4,17 @@ use std::time::Duration;
 
 use sysinfo::Networks;
 
-use crate::models::NetworkInterfaceSnapshot;
+use crate::models::{InterfaceKind, NetworkInterfaceSnapshot};
 use crate::monitoring::rates::counter_rate;
+use crate::platform;
 
 pub struct NetworkTracker {
     /// `None` when the platform cannot enumerate interfaces at all.
     networks: Option<Networks>,
     /// Previous (rx, tx) totals per interface name.
     previous: HashMap<String, (u64, u64)>,
+    /// Classified once per name; an interface's kind does not change.
+    kinds: HashMap<String, InterfaceKind>,
 }
 
 impl NetworkTracker {
@@ -27,7 +30,11 @@ impl NetworkTracker {
                 (name, (d.total_received(), d.total_transmitted()))
             })
             .collect();
-        Self { networks, previous }
+        Self {
+            networks,
+            previous,
+            kinds: HashMap::new(),
+        }
     }
 
     pub fn sample(&mut self, elapsed: Duration) -> Vec<NetworkInterfaceSnapshot> {
@@ -56,6 +63,13 @@ impl NetworkTracker {
                 None => (0.0, 0.0),
             };
             let mac = data.mac_address();
+            let kind = *self
+                .kinds
+                .entry(name.clone())
+                .or_insert_with(|| platform::interface_kind(&name));
+            if kind == InterfaceKind::Loopback {
+                continue;
+            }
             out.push(NetworkInterfaceSnapshot {
                 name,
                 rx_bytes_per_sec: rx_rate,
@@ -74,9 +88,14 @@ impl NetworkTracker {
                     .collect(),
                 mac_address: (!mac.is_unspecified()).then(|| mac.to_string()),
                 is_primary: false,
+                kind,
             });
         }
         self.previous = seen;
+        // Forget interfaces that went away (names can be reused by a
+        // different kind of device, e.g. a new VPN).
+        self.kinds
+            .retain(|name, _| self.previous.contains_key(name));
 
         mark_primary(&mut out);
         out.sort_by(|a, b| b.is_primary.cmp(&a.is_primary).then(a.name.cmp(&b.name)));
@@ -116,9 +135,10 @@ fn mark_primary(interfaces: &mut [NetworkInterfaceSnapshot]) {
         .iter()
         .enumerate()
         .filter(|(_, i)| {
-            i.ipv4
-                .iter()
-                .any(|ip| !ip.starts_with("169.254.") && !ip.starts_with("127."))
+            i.kind.counts_in_totals()
+                && i.ipv4
+                    .iter()
+                    .any(|ip| !ip.starts_with("169.254.") && !ip.starts_with("127."))
         })
         .max_by_key(|(_, i)| i.total_rx_bytes.saturating_add(i.total_tx_bytes))
         .map(|(idx, _)| idx);
@@ -142,6 +162,7 @@ mod tests {
             ipv6: vec![],
             mac_address: None,
             is_primary: false,
+            kind: InterfaceKind::Unknown,
         }
     }
 

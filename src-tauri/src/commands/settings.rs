@@ -65,6 +65,8 @@ pub fn apply_runtime(state: &AppState, s: &Settings) {
     }
     engine.set_history_capacity(history_points(s));
     engine.set_alert_rules(s.alert_rules.clone());
+    engine.set_include_kernel_threads(s.show_kernel_threads);
+    engine.set_activity_config(s.cpu_spike_percent, s.memory_jump_mb);
     state
         .notifications_enabled
         .store(s.notifications_enabled, Ordering::Relaxed);

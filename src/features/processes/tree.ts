@@ -15,6 +15,8 @@ export interface TableItem {
   depth?: number;
   hasChildren?: boolean;
   expanded?: boolean;
+  /** Applications view: a synthetic row summing the processes of one program. */
+  group?: boolean;
 }
 
 export interface Forest {
@@ -74,8 +76,8 @@ export interface FlattenOptions {
   collapsed: ReadonlySet<number>;
   compare: (a: ProcessRow, b: ProcessRow) => number;
   /**
-   * When set, only matching processes and their ancestors are shown, and
-   * ancestors of matches are expanded regardless of `collapsed`.
+   * When set, only matching processes and their ancestors are included.
+   * Collapsed ancestors still hide their descendants.
    */
   matches?: (row: ProcessRow) => boolean;
 }
@@ -113,8 +115,7 @@ export function flattenTree(rows: readonly ProcessRow[], options: FlattenOptions
       visited.add(row.pid);
       const kids = (children.get(row.pid) ?? []).filter((c) => !keep || keep.has(c.pid));
       const hasChildren = kids.length > 0;
-      // While filtering, always reveal the path to matches.
-      const expanded = hasChildren && (keep !== null || !collapsed.has(row.pid));
+      const expanded = hasChildren && !collapsed.has(row.pid);
       out.push({ row, depth, hasChildren, expanded });
       if (expanded) walk(kids, depth + 1);
     }

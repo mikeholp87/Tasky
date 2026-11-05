@@ -1,4 +1,13 @@
-import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick, Network, Server } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Network,
+  Server,
+} from "lucide-react";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
@@ -12,6 +21,7 @@ import {
 } from "@/components/charts/series";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList } from "@/components/ui/KeyValueList";
+import { CoreStrip } from "@/components/ui/CoreStrip";
 import { Meter } from "@/components/ui/Meter";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -60,10 +70,10 @@ function BigValue({
 }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <span className="num text-3xl font-semibold tracking-tight">{value}</span>
+      <span className="num text-4xl font-medium leading-none tracking-tight">{value}</span>
       {sub && <span className="num text-fg-muted">{sub}</span>}
       {warning && (
-        <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[11px] font-medium text-warn">
+        <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[0.75rem] font-medium text-warn">
           {warning}
         </span>
       )}
@@ -83,7 +93,7 @@ function CpuCard() {
     <Card>
       <CardHeader
         title="CPU"
-        icon={<Cpu size={14} aria-hidden />}
+        icon={<Cpu size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("cpu")} label="CPU details" />}
       />
       <div className="space-y-3 px-4 pb-4 pt-2">
@@ -92,7 +102,8 @@ function CpuCard() {
           sub={[cores, formatFrequency(cpu.frequencyMhz)].filter(Boolean).join(" · ")}
           warning={levelLabel(usageLevel(cpu.usagePercent), "CPU")}
         />
-        <Meter percent={cpu.usagePercent} label="CPU usage" />
+        <CoreStrip perCore={cpu.perCore} height={44} fill />
+        <Meter percent={cpu.usagePercent} label="CPU usage" color="--res-cpu" />
         <TimeSeriesChart
           series={CPU_SERIES}
           seconds={CHART_SECONDS}
@@ -122,7 +133,7 @@ function MemoryCard() {
     <Card>
       <CardHeader
         title="Memory"
-        icon={<MemoryStick size={14} aria-hidden />}
+        icon={<MemoryStick size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("memory")} label="Memory details" />}
       />
       <div className="space-y-3 px-4 pb-4 pt-2">
@@ -131,7 +142,7 @@ function MemoryCard() {
           sub={formatPercent(mem.usedPercent)}
           warning={levelLabel(usageLevel(mem.usedPercent), "memory")}
         />
-        <Meter percent={mem.usedPercent} label="Memory usage" />
+        <Meter percent={mem.usedPercent} label="Memory usage" color="--res-mem" />
         <TimeSeriesChart
           series={MEMORY_SERIES}
           seconds={CHART_SECONDS}
@@ -162,7 +173,7 @@ function StorageCard() {
     <Card>
       <CardHeader
         title="Storage"
-        icon={<HardDrive size={14} aria-hidden />}
+        icon={<HardDrive size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("storage")} label="Storage details" />}
       />
       <ul className="space-y-3 px-4 pb-4 pt-3">
@@ -178,9 +189,14 @@ function StorageCard() {
                 {formatBytes(d.availableBytes)} free of {formatBytes(d.totalBytes)}
               </span>
             </div>
-            <Meter percent={d.usedPercent} label={`${d.mountPoint} used`} size="sm" />
+            <Meter
+              percent={d.usedPercent}
+              label={`${d.mountPoint} used`}
+              size="sm"
+              color="--res-disk"
+            />
             {d.readBytesPerSec != null && (
-              <div className="num mt-1 text-[12px] text-fg-subtle">
+              <div className="num mt-1 text-[0.8125rem] text-fg-subtle">
                 Read {formatBytesPerSecond(d.readBytesPerSec)} · Write{" "}
                 {formatBytesPerSecond(d.writeBytesPerSec)}
               </div>
@@ -194,26 +210,28 @@ function StorageCard() {
 
 function NetworkCard() {
   const networks = useMetricsStore((s) => s.tick?.networks);
+  const point = useMetricsStore((s) => s.tick?.point);
   const navigate = useUiStore((s) => s.navigate);
-  if (!networks) return null;
+  if (!networks || !point) return null;
   const primary = networks.find((n) => n.isPrimary) ?? networks[0];
-  const rx = networks.reduce((sum, n) => sum + n.rxBytesPerSec, 0);
-  const tx = networks.reduce((sum, n) => sum + n.txBytesPerSec, 0);
+  // Engine totals skip VPN and virtual interfaces, which re-count bytes.
+  const rx = point.netRx;
+  const tx = point.netTx;
   return (
     <Card>
       <CardHeader
         title="Network"
-        icon={<Network size={14} aria-hidden />}
+        icon={<Network size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("network")} label="Network details" />}
       />
       <div className="space-y-3 px-4 pb-4 pt-2">
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
           <span className="num flex items-center gap-1 text-2xl font-semibold">
-            <ArrowDown size={18} className="text-[var(--chart-1)]" aria-label="Download" />
+            <ArrowDown size="1.125rem" className="text-[var(--res-net)]" aria-label="Download" />
             {formatBytesPerSecond(rx)}
           </span>
           <span className="num flex items-center gap-1 text-2xl font-semibold">
-            <ArrowUp size={18} className="text-[var(--chart-2)]" aria-label="Upload" />
+            <ArrowUp size="1.125rem" className="text-[var(--res-net-2)]" aria-label="Upload" />
             {formatBytesPerSecond(tx)}
           </span>
         </div>
@@ -256,13 +274,16 @@ function SystemCard() {
     <Card className="xl:col-span-2">
       <CardHeader
         title="System"
-        icon={<Server size={14} aria-hidden />}
+        icon={<Server size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("system")} label="System information" />}
       />
       <div className="grid gap-x-10 gap-y-1.5 px-4 pb-4 pt-3 md:grid-cols-2">
         <KeyValueList
           items={[
-            { label: "Operating system", value: info.longOsVersion ?? info.osName ?? "—" },
+            {
+              label: "Operating system",
+              value: info.distribution ?? info.longOsVersion ?? info.osName ?? "—",
+            },
             { label: "Kernel", value: info.kernelVersion ?? "—" },
             { label: "Hostname", value: info.hostname ?? "—" },
             { label: "Architecture", value: info.architecture },
@@ -287,9 +308,10 @@ function DetailsLink({ onClick, label }: { onClick: () => void; label: string })
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="rounded px-1.5 py-0.5 text-[12px] text-fg-muted hover:bg-surface-2 hover:text-fg"
+      className="flex items-center gap-0.5 rounded-md py-0.5 pl-2 pr-1 text-[0.8125rem] text-fg-muted hover:bg-surface-2 hover:text-fg"
     >
-      Details →
+      Details
+      <ChevronRight size="0.875rem" aria-hidden />
     </button>
   );
 }

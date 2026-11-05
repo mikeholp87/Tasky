@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-internet-plan"
+description = "Enables the internet_plan command without any pre-configured scope."
+commands.allow = ["internet_plan"]
+
+[[permission]]
+identifier = "deny-internet-plan"
+description = "Denies the internet_plan command without any pre-configured scope."
+commands.deny = ["internet_plan"]

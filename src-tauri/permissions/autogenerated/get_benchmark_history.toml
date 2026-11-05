@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-benchmark-history"
+description = "Enables the get_benchmark_history command without any pre-configured scope."
+commands.allow = ["get_benchmark_history"]
+
+[[permission]]
+identifier = "deny-get-benchmark-history"
+description = "Denies the get_benchmark_history command without any pre-configured scope."
+commands.deny = ["get_benchmark_history"]

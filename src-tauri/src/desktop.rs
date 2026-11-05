@@ -47,6 +47,140 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Wayland lets an app neither read nor set its own window position, so on
+/// GNOME (whose compositor does not remember positions either) a restored
+/// window always opens wherever the shell puts it. XWayland windows can be
+/// positioned, so at 100% scaling, where XWayland looks identical, Tasky runs
+/// through it and remembers position as well as size. Fractional or HiDPI
+/// scaling would make an X11 window blurry or tiny, so those stay on native
+/// Wayland (size is still remembered). Setting `GDK_BACKEND` yourself wins.
+#[cfg(target_os = "linux")]
+fn gnome_wayland_with_xwayland(
+    session: Option<&str>,
+    desktop: Option<&str>,
+    display: Option<&str>,
+    backend: Option<&str>,
+) -> bool {
+    backend.is_none()
+        && session == Some("wayland")
+        && desktop.is_some_and(|d| d.split(':').any(|p| p.eq_ignore_ascii_case("gnome")))
+        && display.is_some_and(|d| !d.is_empty())
+}
+
+/// Whether every monitor is at exactly 100%. Unknown (empty) counts as no.
+#[cfg(target_os = "linux")]
+fn all_unscaled(scales: &[f64]) -> bool {
+    !scales.is_empty() && scales.iter().all(|&s| (s - 1.0).abs() < f64::EPSILON)
+}
+
+#[cfg(target_os = "linux")]
+fn parse_monitor_scales(state: &gio::glib::Variant) -> Option<Vec<f64>> {
+    let logical = state.try_child_value(2)?;
+    if !logical.is_container() {
+        return None;
+    }
+    (0..logical.n_children())
+        .map(|i| logical.try_child_value(i)?.try_child_value(2)?.get::<f64>())
+        .collect()
+}
+
+/// Scale factor of every logical monitor, from GNOME's display service;
+/// empty when it cannot be asked.
+#[cfg(target_os = "linux")]
+fn monitor_scales() -> Vec<f64> {
+    let ask = || -> Result<Vec<f64>, gio::glib::Error> {
+        let bus = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)?;
+        // GetCurrentState -> (serial, monitors, logical monitors, properties).
+        let state = bus.call_sync(
+            Some("org.gnome.Mutter.DisplayConfig"),
+            "/org/gnome/Mutter/DisplayConfig",
+            "org.gnome.Mutter.DisplayConfig",
+            "GetCurrentState",
+            None,
+            None,
+            gio::DBusCallFlags::NONE,
+            500,
+            gio::Cancellable::NONE,
+        )?;
+        Ok(parse_monitor_scales(&state).unwrap_or_default())
+    };
+    ask().unwrap_or_default()
+}
+
+/// Call first thing in `run`, before GTK opens a display.
+#[cfg(target_os = "linux")]
+pub fn prefer_x11_on_gnome_wayland() {
+    let var = |k: &str| std::env::var(k).ok();
+    let (session, desktop) = (var("XDG_SESSION_TYPE"), var("XDG_CURRENT_DESKTOP"));
+    let (display, backend) = (var("DISPLAY"), var("GDK_BACKEND"));
+    // The bus is only asked on a GNOME Wayland session that has XWayland.
+    if gnome_wayland_with_xwayland(
+        session.as_deref(),
+        desktop.as_deref(),
+        display.as_deref(),
+        backend.as_deref(),
+    ) && all_unscaled(&monitor_scales())
+    {
+        // GIO starts threads; select the backend without changing the environment.
+        gdk::set_allowed_backends("x11,wayland");
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn prefer_x11_on_gnome_wayland() {}
+
+/// How long a window that starts hidden waits for a tray to appear. Right
+/// after login the shell may not have started its tray yet.
+const TRAY_WAIT_SECS: u64 = 15;
+
+/// Whether something on this desktop shows tray icons: an owner of the
+/// StatusNotifier watcher name, which KDE, Xfce and GNOME's AppIndicator
+/// extension all provide. Stock GNOME does not, so a window hidden "to the
+/// tray" there could never be brought back. If the bus cannot be asked, the
+/// answer is no: the safe failure is a window that stays visible.
+#[cfg(target_os = "linux")]
+pub fn tray_host_available() -> bool {
+    use gio::glib::{ToVariant, VariantTy};
+
+    let ask = || -> Result<bool, gio::glib::Error> {
+        let bus = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)?;
+        let reply = bus.call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameHasOwner",
+            Some(&("org.kde.StatusNotifierWatcher",).to_variant()),
+            Some(VariantTy::new("(b)").expect("valid type")),
+            gio::DBusCallFlags::NONE,
+            500,
+            gio::Cancellable::NONE,
+        )?;
+        Ok(reply.get::<(bool,)>().is_some_and(|(owned,)| owned))
+    };
+    ask().unwrap_or(false)
+}
+
+/// Other platforms always have a tray or taskbar to come back from.
+#[cfg(not(target_os = "linux"))]
+pub fn tray_host_available() -> bool {
+    true
+}
+
+/// For a window that starts hidden in the tray: if no tray ever appears,
+/// show the window rather than leave the app running with no way to reach it.
+pub fn show_window_if_no_tray<R: Runtime>(app: AppHandle<R>) {
+    std::thread::spawn(move || {
+        for _ in 0..TRAY_WAIT_SECS {
+            if tray_host_available() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+        tracing::warn!("no system tray is available; showing the window instead of hiding it");
+        show_main_window(&app);
+    });
+}
+
 pub fn hide_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.hide();
@@ -192,5 +326,69 @@ impl<R: Runtime> TickSink for DesktopSink<R> {
             });
         }
         true
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::{all_unscaled, gnome_wayland_with_xwayland as gnome};
+
+    const WAYLAND: Option<&str> = Some("wayland");
+    const GNOME: Option<&str> = Some("ubuntu:GNOME");
+    const X: Option<&str> = Some(":0");
+
+    #[test]
+    fn uses_xwayland_only_on_gnome_wayland_with_xwayland() {
+        assert!(gnome(WAYLAND, GNOME, X, None));
+        assert!(!gnome(WAYLAND, Some("KDE"), X, None), "KDE");
+        assert!(!gnome(Some("x11"), GNOME, X, None), "already X11");
+        assert!(!gnome(WAYLAND, GNOME, None, None), "no XWayland");
+        assert!(!gnome(WAYLAND, GNOME, X, Some("wayland")), "user chose");
+    }
+
+    /// Needs a live GNOME session: `cargo test -- --ignored reads_real`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs a running GNOME session"]
+    fn reads_real_monitor_scales() {
+        let scales = super::monitor_scales();
+        assert!(!scales.is_empty(), "no logical monitors read");
+        assert!(scales.iter().all(|&s| s >= 1.0), "{scales:?}");
+    }
+
+    #[test]
+    fn only_a_100_percent_setup_qualifies() {
+        assert!(all_unscaled(&[1.0, 1.0]));
+        // Fractional or HiDPI scaling would blur or shrink an X11 window.
+        assert!(!all_unscaled(&[1.0, 1.5]) && !all_unscaled(&[2.0]));
+        // The display service could not be asked: stay on native Wayland.
+        assert!(!all_unscaled(&[]));
+    }
+
+    #[test]
+    fn rejects_missing_or_unknown_monitor_scales() {
+        use gio::glib::{ToVariant, Variant};
+
+        let reply = |monitors: Vec<Variant>| {
+            Variant::tuple_from_iter([
+                0u32.to_variant(),
+                ().to_variant(),
+                Variant::tuple_from_iter(monitors),
+            ])
+        };
+        let good = (0, 0, 1.0f64).to_variant();
+        assert_eq!(
+            super::parse_monitor_scales(&reply(vec![good.clone()])),
+            Some(vec![1.0])
+        );
+        assert_eq!(super::parse_monitor_scales(&false.to_variant()), None);
+        assert_eq!(
+            super::parse_monitor_scales(&(0, 0, false).to_variant()),
+            None
+        );
+        assert_eq!(
+            super::parse_monitor_scales(&reply(vec![good, (0, 0, "unknown").to_variant()])),
+            None
+        );
     }
 }

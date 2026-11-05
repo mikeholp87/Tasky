@@ -1,0 +1,1663 @@
+{
+  "audit_date": "2026-11-03",
+  "baseline_commit": "5fd2546c8f420fbe7213eaef5666491c66cd00fb",
+  "final_head_observed": "f43ab219efaecc311307e1d5cab904f8871eaa71",
+  "validation_source_changes": [],
+  "coverage_method": "Repository inventory and sink searches; call-path source review of registered commands, native controls, filesystem, benchmarks, unsafe/FFI, frontend rendering/storage and CI; tests/compilation where recorded. Not a formal proof or exhaustive dependency source audit.",
+  "not_validated": [
+    "Windows runtime and full Windows Tauri build",
+    "Interactive Linux release UI (no display)",
+    "Future disk/Internet IPC wiring",
+    "Production GPU driver stress",
+    "Complete dependency/native-library memory safety"
+  ],
+  "checks": [
+    {
+      "name": "rust-format",
+      "command": "cargo fmt --all --check",
+      "exit_code": 0,
+      "seconds": 0.15
+    },
+    {
+      "name": "rust-check",
+      "command": "cargo check --workspace --all-features --locked",
+      "exit_code": 0,
+      "seconds": 2.3
+    },
+    {
+      "name": "rust-tests",
+      "command": "cargo test --workspace --all-features --locked",
+      "exit_code": 0,
+      "seconds": 24.73
+    },
+    {
+      "name": "rust-clippy",
+      "command": "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+      "exit_code": 0,
+      "seconds": 2.5
+    },
+    {
+      "name": "windows-core",
+      "command": "cargo clippy -p tm-core --all-targets --target x86_64-pc-windows-msvc --locked -- -D warnings",
+      "exit_code": 101,
+      "seconds": 0.89
+    },
+    {
+      "name": "frontend-typecheck",
+      "command": "npm run typecheck",
+      "exit_code": 0,
+      "seconds": 2.35
+    },
+    {
+      "name": "frontend-lint",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "seconds": 2.8
+    },
+    {
+      "name": "frontend-tests",
+      "command": "npm test",
+      "exit_code": 0,
+      "seconds": 4.83
+    },
+    {
+      "name": "frontend-format",
+      "command": "npm run format:check",
+      "exit_code": 1,
+      "seconds": 1.97
+    },
+    {
+      "name": "frontend-build",
+      "command": "npm run build",
+      "exit_code": 0,
+      "seconds": 2.82
+    }
+  ],
+  "source_sha256": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "89021ca27572e8933117ba024160eb4330630d6ca3d9bc318860674583619f0f"
+    },
+    {
+      "path": ".github/workflows/security.yml",
+      "sha256": "f97e9331c90e4c88d068a5b5d09b1d8a0cc560d4fec85276ddca8f76aaf62eeb"
+    },
+    {
+      "path": ".prettierrc.json",
+      "sha256": "1ed88d3b99eced8dc3b6f58f26645466dd1ceaca6c5a9b818531c941ac28e55b"
+    },
+    {
+      "path": ".vscode/extensions.json",
+      "sha256": "8988c707a30230dcaa815dc690caab61f43c57b13fb42e2d632e06a794b58454"
+    },
+    {
+      "path": "deny.toml",
+      "sha256": "a599c9cdae854869c9af4ee3da2fbaa0add5892d32996077683b363114e7977d"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "8b81c903526804028ca2853929fd7511414edeb6f76efd6bb9fa9e8782879d48"
+    },
+    {
+      "path": "package.json",
+      "sha256": "e22c3ae38bbd6bb8c83a3a320a40268ed6f10cd73565624565c5cb020573220b"
+    },
+    {
+      "path": "src-tauri/.cargo/config.toml",
+      "sha256": "e35557aca8b93b792b3b4c99597afde67f890dcf9c81c764c1ff086434d24aed"
+    },
+    {
+      "path": "src-tauri/Cargo.toml",
+      "sha256": "cd0023367b3c75dced8593ed7794ff74aec6dfc4236dec5c02f1e6ea9d673340"
+    },
+    {
+      "path": "src-tauri/build.rs",
+      "sha256": "cbe030c6a26cc143a9dc4e8da86667d12b883ef724cd74faa84bdd845c451c33"
+    },
+    {
+      "path": "src-tauri/capabilities/default.json",
+      "sha256": "b8ac168a4c565538b7b89826f0667e2855558cfc3e2549e9f293713f205df03d"
+    },
+    {
+      "path": "src-tauri/core/Cargo.toml",
+      "sha256": "eec621edccc0a66394e65e00243729bed93564e689cadc8715e8ce0129dadea6"
+    },
+    {
+      "path": "src-tauri/core/examples/bench_cpu.rs",
+      "sha256": "afe7c8a84fafb539b33bfffcab84c6f28f75d0afba8090807dc49a1bc6d87f3b"
+    },
+    {
+      "path": "src-tauri/core/examples/bench_disk.rs",
+      "sha256": "5e590dedaa79f53e0d34a9769643444aa883c7dba24167d01d892497da7e339a"
+    },
+    {
+      "path": "src-tauri/core/examples/bench_gpu.rs",
+      "sha256": "62eaa5c596c23a98e0ce012d23bb165107a3eb45029d1b3c26ae148d110c25fd"
+    },
+    {
+      "path": "src-tauri/core/examples/bench_run.rs",
+      "sha256": "379c50748481ff1bfa76bbf41fec3bd8fede4edba3465d0582afa5045e6b433a"
+    },
+    {
+      "path": "src-tauri/core/examples/probe.rs",
+      "sha256": "0a2b1f11a4f3a4d307cc8bf3e7dab2a8355108078333d3bba8c20be0625eb3ea"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/cancel.rs",
+      "sha256": "9ac4bc20d286d697fb1eb7481bc0ac21666c53be7c5ee06adc04019132d8e55a"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/coordinator.rs",
+      "sha256": "2d9ef7047a9ba2afcb8cf4f8e22ae7d28a235ef9a6f08e0ecde366c38d0798f2"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/cpu/mod.rs",
+      "sha256": "669fe10665716de6c74e3fdd1850c2a211807e37c70784acdc509a24a8a28cb5"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/cpu/runner.rs",
+      "sha256": "788a89fd5c7ef1bbdce0b5fe02916c346eb165a11f21e3463206c08af4fcf56d"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/cpu/workloads.rs",
+      "sha256": "0c457b710d630971503d379ef9cbb70f70306e8e63d74c4ec26d062673e29c96"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/disk/aligned.rs",
+      "sha256": "0d2b3d14a075f25163ed1ba26d0e521e25ad723da6ae1a5297400fbde963b7cd"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/disk/device.rs",
+      "sha256": "b73d6a64664d789054f716625d0a5194daaaef06467c2905a91801ece37753df"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/disk/engine.rs",
+      "sha256": "6b8ea062aa5d9fef04bac189924d24847daa6dfbdc79d856073b4842618f2311"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/disk/file.rs",
+      "sha256": "61c43d1bceacf7691a6d14d5b2f7cc710882a054cc63f7cdb6a53f8807d535c2"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/disk/latency.rs",
+      "sha256": "aa6c25d766cb87b610e3c278b7ab7f9f5e17e63cfbc3a66cd5481cc408634b2e"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/disk/mod.rs",
+      "sha256": "f45db4f67ef59136738787c7814b4178264d110991bfd91f9346425eb4536f54"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/disk/pattern.rs",
+      "sha256": "5aa452dcd0136e12a91f4405b09678bfc1cea31317faae46e36ce5f66f75acd2"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/disk/plan.rs",
+      "sha256": "52164bfefce1babcf85ddce54d1051415a00d83c3b38da4d9b56fc75a5597869"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/disk/targets.rs",
+      "sha256": "45175edf02191a82f90d5d09dbb453fdd9520c24ecc5b2e6d9568bff7af1eb8d"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/environment.rs",
+      "sha256": "8adf92ee864bdbe2ff45cd8078cb40646b2f3b26f0794c0383413272df1693a1"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/gpu/adapters.rs",
+      "sha256": "e50c380c1d4230dd8de6adfd9bd9fcd5daf173aea128a253a480f32043daf699"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/gpu/mod.rs",
+      "sha256": "ff23e967cc3fa85992a47e0814ea5f7c0a0a0932155529382753371f204b8730"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/gpu/runner.rs",
+      "sha256": "1ba66e8473552cee980043c7a9da36b6674959230437450fe48ebcb0c1d96a39"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/gpu/shaders.rs",
+      "sha256": "4b2dac273220bbd0d44346cea3243cd58e7e335d9cdbf9bed89f3e635df9df66"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/gpu/wgpu_backend.rs",
+      "sha256": "f9cf2c2d87aad37f6a1bb8ee481077180d26a96d4026a2fed3a9f9dcd3a92865"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/history.rs",
+      "sha256": "3b2f50e09210b730972eab1fb0612663caeec5a16760812715e8622fbd77c6b6"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/internet/provider.rs",
+      "sha256": "5520f3c05137be801bd4b477a00e02a799af6b3caed83b5c2ddfc8c250ec266a"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/internet/route.rs",
+      "sha256": "482f20dc21c6f13c0dbfa916510870bbedf6cbe51e80bfade4fbcfbd4750e584"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/mod.rs",
+      "sha256": "52c9e0297df2a84ae9426a7c1b906e7fc0be7cf9f43bf1ed9502420b82339dd6"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/model.rs",
+      "sha256": "19145b4013aa2ffc28738c6dbf964ab406759dc56132aea71253301bbb4ae0bc"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/scoring.rs",
+      "sha256": "3f9e669406b0d9f48bc3f5099b96ff05212c55b1a17e6e85be68da03303a2040"
+    },
+    {
+      "path": "src-tauri/core/src/benchmarks/stats.rs",
+      "sha256": "524015c0f7282db5024557c864203cb3dcc75a90a0550f7230b3d3d30f557c8a"
+    },
+    {
+      "path": "src-tauri/core/src/errors.rs",
+      "sha256": "a6eee08a7cd13949cef1ddc00c35bef439b8ebe9c9c1ca4e2195efd764260ff1"
+    },
+    {
+      "path": "src-tauri/core/src/export.rs",
+      "sha256": "389eb2336c97c767f2f1f71b047ac29149657ae4ac95886b1a7b4d3c228ff529"
+    },
+    {
+      "path": "src-tauri/core/src/filesystem.rs",
+      "sha256": "18000633adf07100f76b9329ffad615359b2f748deae8d89616c5578d35f7c58"
+    },
+    {
+      "path": "src-tauri/core/src/inspect.rs",
+      "sha256": "925353bd752c4a907afccf1265092be1e1b82ebf7dd0f608b17efe356500d390"
+    },
+    {
+      "path": "src-tauri/core/src/lib.rs",
+      "sha256": "a5e581edaa470893fe1efbf78d54790c5eee9ccd91a1ab5a551fa262752dd523"
+    },
+    {
+      "path": "src-tauri/core/src/models/activity.rs",
+      "sha256": "871b4606175a77fada0a75870c640dbfb85b263387afcaab3b9f6364dd2b3faa"
+    },
+    {
+      "path": "src-tauri/core/src/models/alerts.rs",
+      "sha256": "b748d840495058e05d1f23332608ae5f2f2748e663ec00ed815db80378d1b210"
+    },
+    {
+      "path": "src-tauri/core/src/models/control.rs",
+      "sha256": "97d59799ee8f63d3b33215bddb5ec4d59589c717cef3bddd900cf2fcfa360a66"
+    },
+    {
+      "path": "src-tauri/core/src/models/details.rs",
+      "sha256": "392ce4fdb97a9ed0ccd347f88f602f90a44d4f59c73bfc00061ce36cc924c1ac"
+    },
+    {
+      "path": "src-tauri/core/src/models/hardware.rs",
+      "sha256": "abcb19f87585240eae1f3504f454032a535342fc5fba88dc45ed8774430f71b6"
+    },
+    {
+      "path": "src-tauri/core/src/models/inspect.rs",
+      "sha256": "9034632dd62ae854aebd2f0619d2bebfae00e2af9468f85aba741e23b688ca9a"
+    },
+    {
+      "path": "src-tauri/core/src/models/metrics.rs",
+      "sha256": "690efedb5a89b97086cbb0fea05f44ae3609ace5608cf0a53911d4aaa5208a97"
+    },
+    {
+      "path": "src-tauri/core/src/models/mod.rs",
+      "sha256": "ffcd49a35b9d2fc74aaf445bc375d68645e66995eeea6b0f0ef419d37e6fa78c"
+    },
+    {
+      "path": "src-tauri/core/src/models/monitoring.rs",
+      "sha256": "499070ed7a8fe96a26c3b181efde8d920d954aac683469dd8f981f91d6266b12"
+    },
+    {
+      "path": "src-tauri/core/src/models/process.rs",
+      "sha256": "57c3532aab34fe1afcd111c83d6d8dd95f99a13fe8ad311f6ed144597b7a8246"
+    },
+    {
+      "path": "src-tauri/core/src/models/settings.rs",
+      "sha256": "be89245191c78c1a39fc2e782e8ff73f704f3776b98c2634c2715e73c84007e1"
+    },
+    {
+      "path": "src-tauri/core/src/models/startup.rs",
+      "sha256": "ca9d00273def05f873c072fbf8067e442619a16a4a62775102392df9bde2b60c"
+    },
+    {
+      "path": "src-tauri/core/src/models/system.rs",
+      "sha256": "32e5543864bd50b239b1bf58b48ce988efd7f0547d9960ec4d58690a0dd69dfa"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/activity.rs",
+      "sha256": "f830fbf5a10f0edb1f9512b11268d5cf0d04a86c509228c734f0e9a81e0e3aaa"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/alerts.rs",
+      "sha256": "581a547d9875b1eec17be35f18eddc27dfd3f9e37fd1325655a6d8695ec42bcf"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/collector.rs",
+      "sha256": "dc63421c8fad45f1f589ea43ff3b0ac2f4f4d164b2d2727e2ef08b93fa830775"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/cpu.rs",
+      "sha256": "ec72dbcc2e7c5dfddfcdf5d82157e6297341db18304c4e063e4ed2f27601a677"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/details.rs",
+      "sha256": "de4248bf83332412ec497cd71d3dff11f0a4ec09789847e47bc606e3100cb3a1"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/disks.rs",
+      "sha256": "187b201a069c8076c056fbf9cfe1a568c75d67d1e5f1135258ed14544ba4d7d0"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/engine.rs",
+      "sha256": "369e68f89d2ff7b9079cdcacf3a2009e9e6fc502493f2ac0f4ef2f6c9fcb65b7"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/history.rs",
+      "sha256": "eead2df26540ce19c5152177755d465d40774d03797ac43f06aa4eae53432f8e"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/memory.rs",
+      "sha256": "9ea578d6b8fd0be99394bb2a65997d95e4143034082ecbca72a0a0ffdda3e2e4"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/memory_detail.rs",
+      "sha256": "de55ff0f6547a2121045d1cb360b09e57d0ddbe07b756e93f084e64473118c75"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/mod.rs",
+      "sha256": "db077fb5b26cbff08a547715cc75d6fc535c3f53701a7dc85a8af0b073e85454"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/network.rs",
+      "sha256": "27bf9dcaef59da20936e7f235ca53756bffbfe3696d42d1fc91008fda8d26fb1"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/process_history.rs",
+      "sha256": "e61f0ed0f8cc497e2d85c9e24867a0a8d5f1edbaa764593b4e1d43e55b4e2538"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/processes.rs",
+      "sha256": "7abd1b7c421fb603930ea45d4e5fb04cfdae9a8bd474e1fd47ead231f0dacdb8"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/rates.rs",
+      "sha256": "fb86804eff5a3e5bdb0cbb0155af5573ef0432eb6cc930562ea7ca2460527629"
+    },
+    {
+      "path": "src-tauri/core/src/monitoring/sensors.rs",
+      "sha256": "9ee1e9523789e93c48cb265051beacb5ceabeac7d214a7404039aad3717751f8"
+    },
+    {
+      "path": "src-tauri/core/src/platform/linux/autostart.rs",
+      "sha256": "d13782c80e83c9e9eaa95afb94a732c1b0e6dfed7c36496ed3eda2bafad648ad"
+    },
+    {
+      "path": "src-tauri/core/src/platform/linux/connections.rs",
+      "sha256": "9a179a5d643b2df50854406c0ab6212c2edba7196af3c6516429f67b0af0d027"
+    },
+    {
+      "path": "src-tauri/core/src/platform/linux/control.rs",
+      "sha256": "bc5b2d928138844cd1c59ac28fa83eaa6ebcdd730687d73bd88cb736e7f9ed18"
+    },
+    {
+      "path": "src-tauri/core/src/platform/linux/hardware.rs",
+      "sha256": "5270a8c710c8bf267fb9bb8c6b9681a62d73435afa25fd0964a6b590aeb42557"
+    },
+    {
+      "path": "src-tauri/core/src/platform/linux/inspect.rs",
+      "sha256": "88303ab86a30c53b264d13222e3729577cdd57337f1080e3d8b41ed98062d4ea"
+    },
+    {
+      "path": "src-tauri/core/src/platform/linux/mod.rs",
+      "sha256": "4c986dc11af67dec72d8073bd03b69cb91f85c5cb5c43564edec2a7c6101b172"
+    },
+    {
+      "path": "src-tauri/core/src/platform/linux/net.rs",
+      "sha256": "8f8b2cbeaab717fe6ae337ca271ac715a8fd2803f8924cc44708a0da6092b6d1"
+    },
+    {
+      "path": "src-tauri/core/src/platform/linux/system.rs",
+      "sha256": "82e7f69c8d427dc25436d79f3e2b49d58666504cf56ae7f2b2d400b91a6f0e2a"
+    },
+    {
+      "path": "src-tauri/core/src/platform/linux_facts.rs",
+      "sha256": "dc6a8df2eaffaf570ccf04a4ec7bbc90305e5404b36b2e7cd39130cd71798abf"
+    },
+    {
+      "path": "src-tauri/core/src/platform/macos/mod.rs",
+      "sha256": "6ea57944661717860b640d0250e2f5eb62317576d0d8f56d1f9df77e64a4988a"
+    },
+    {
+      "path": "src-tauri/core/src/platform/mod.rs",
+      "sha256": "58c5403f1bad55f295ca82021447f0c6fd9f2fcce33367794603110fd09e88c6"
+    },
+    {
+      "path": "src-tauri/core/src/platform/procfs.rs",
+      "sha256": "7a7521bbf0aa27399169b757d74d40b07facd8b1e8b3b04b4379c819db77c8cc"
+    },
+    {
+      "path": "src-tauri/core/src/platform/windows/account.rs",
+      "sha256": "16711c92ad75211adb3be0d36c97ecfe39c3ff233fc54c99436926171c8878ee"
+    },
+    {
+      "path": "src-tauri/core/src/platform/windows/connections.rs",
+      "sha256": "de0248d1ede0ffad65fae023adc8d86e5d1150795346ba996d27a7a8bc80f2b4"
+    },
+    {
+      "path": "src-tauri/core/src/platform/windows/control.rs",
+      "sha256": "7197296f993ebec95895920acd37ef64217e70a9557771e10665369bb6a849aa"
+    },
+    {
+      "path": "src-tauri/core/src/platform/windows/disk_io.rs",
+      "sha256": "271aff7709a2bec29afdb4660f5fd4a5f639219ae59f09e9597b6087b9dada05"
+    },
+    {
+      "path": "src-tauri/core/src/platform/windows/handle.rs",
+      "sha256": "adc1c50fad98fd1b0fef51ce4314d0b74a22444673fc71f35a0a7e20e4c90ca8"
+    },
+    {
+      "path": "src-tauri/core/src/platform/windows/inspect.rs",
+      "sha256": "f788e11aad126fda8a8889d912a053d0ba547c9ec8236b50a187c9a09b55018b"
+    },
+    {
+      "path": "src-tauri/core/src/platform/windows/memory.rs",
+      "sha256": "5fcaedc7a057e1b3f988f7d2eaac664ecf87fad7d591704900add5338d4bb5d9"
+    },
+    {
+      "path": "src-tauri/core/src/platform/windows/mod.rs",
+      "sha256": "cbdeb81cebf83f186061e67556acf9de389cc49e3bb5beb83d64ed7f64dcfffc"
+    },
+    {
+      "path": "src-tauri/core/src/platform/windows/process_info.rs",
+      "sha256": "b09b8102b14e7d127daf91237fe39b07ecd2cbc7000e495a45a9b0a82a9c6e50"
+    },
+    {
+      "path": "src-tauri/core/src/process_control/mod.rs",
+      "sha256": "3d672fe26a374b4b67ba6c2f27e89e5174c374147ff5441191da3e54e06d7148"
+    },
+    {
+      "path": "src-tauri/core/src/process_control/protection.rs",
+      "sha256": "e174a4f020e2fff42c340f7c12096538e5a71f676da4db308f9845f2504d4cbc"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/assess_process_action.toml",
+      "sha256": "67f38c90cf2ea094b90b3fd353c64bbe24bcf972cdf7344e2455b7006dc4e5c4"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/cancel_benchmark.toml",
+      "sha256": "0c00ca70a9b7887239499b63d3e6425d11f48555ee64a6186ca6edf06735db37"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/delete_benchmark_result.toml",
+      "sha256": "0d8c3b9f3fc4de0a59d71ae3d89a296bc82c35624cc349af9693cb9a37fbf5f7"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/export_diagnostics.toml",
+      "sha256": "254736c7665821e335c0f37cd5b654c8b043e8c0fafc494b9f4da867d36b9deb"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/export_processes.toml",
+      "sha256": "2a49161e1c7666300e4a206127df2a501a06fd04cf065e18e40bc560a1f29e9a"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/export_system_summary.toml",
+      "sha256": "8e37f42655cc403a43fb5a2e57f9dd14ce1119493fc6b79d992d2cf5ebb002cb"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/find_file_users.toml",
+      "sha256": "870cae13591c8c2d7ded09e73d9a22fec7ac37063023b64f55064a16678e7f17"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_activity.toml",
+      "sha256": "e987af0f1813d913a43ebcaa6ed2445151c3fc02123f4ba22f90e46c11aa3ba8"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_benchmark_history.toml",
+      "sha256": "3e0c45e516389902fbcff807624630fdb28367ddf9cbadac4112f9075878e221"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_benchmark_status.toml",
+      "sha256": "8b28424ac8f10b6738c63d719fa48205c42dd441300e4b5811f1ab8e58ac4cc0"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_hardware_info.toml",
+      "sha256": "952f18f32dea6393a0c429628e474ab0c28eeb666bd4f4cdee5f12ce49eec8a3"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_history.toml",
+      "sha256": "1ebaf18a41e262e074b5c860350a12efb3cd3904de1e7eba5080131c440c5d7e"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_memory_map.toml",
+      "sha256": "1a45eb5c6eb3015198c88865ca0bb4b5036a1da044e9cf5cdf43ae494003ce4c"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_modules.toml",
+      "sha256": "58393576eb74edd195d335675eee6e17a633c9a1d3ad11ed743961195db4d534"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_monitoring_state.toml",
+      "sha256": "9dee403dfb5f92c92798c46aa5aa83766ac8b596f96b0ba899733a0d63a641e8"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_open_files.toml",
+      "sha256": "79c52bfc4b5c4d94a4537250d119e3c49dca69c40bfbf37b583d9b5ba95b2248"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_process_details.toml",
+      "sha256": "82f08cd57ffe9001a61738d3d2cd861a475d9d50740c7ccd4e9c0df6652b24d4"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_recent_alerts.toml",
+      "sha256": "4ccf13e16b1b3b6c58526a6e07aaecfdf68883d9479424f266dca917b85a9461"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_settings.toml",
+      "sha256": "a424981fc925815ae430319367518e098b2f3f85c4d58d42cd171e5cb568a628"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_static_info.toml",
+      "sha256": "e7bfba1589465bfa47909918ac114aafce7f2536b79d467c21f8ae84576d7549"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/get_threads.toml",
+      "sha256": "f9a619ddaef9593a1a50c3ad8442be9ec95116a598be50659dcc99c76b807f0d"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/list_gpu_adapters.toml",
+      "sha256": "927cd256d8d28040457bcb3588da71fe58ff568c98e70560d8253c5f0fa4859a"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/list_sockets.toml",
+      "sha256": "4c8a4ec7d4b58f0fdc0f837f7b5de40fd74f5142f2c5ed0e0d499736ff0bc22c"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/list_startup_items.toml",
+      "sha256": "d903995cf9d7e0d973d988f668f331c612471c896fa6fca4cec4a3052a3aaece"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/perform_process_action.toml",
+      "sha256": "2793630932a72f17eb880a0ba6dc0c5dc8d470d0053e77269be46ccb85b94f88"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/pick_path.toml",
+      "sha256": "38d9103ac0ffa63420ae8b11fd4b48563375f88ace698855d6285ed710c85d40"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/refresh_now.toml",
+      "sha256": "8e0fad87a0d1c0fe196dbfdb006c93dd41d729063f4e30242bbe21242c8c798e"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/reset_settings.toml",
+      "sha256": "8d524325a61cd7f41545b295aa87a8c6f77622885d50068f7cb330b641aa9035"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/reveal_executable.toml",
+      "sha256": "632c03ac5d7b1cc7f4d278b49145442625f1df10a6d16895df5d3f450f3f77a3"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/set_memory_detail.toml",
+      "sha256": "543eb54b22a871038ee2592376e26b888a8275c1af1766326e5912348f224fb4"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/set_monitoring_state.toml",
+      "sha256": "8c102f79893218241cdbacde364969022963b773e40f6e111037f49e74f45f50"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/set_startup_enabled.toml",
+      "sha256": "0ba0c35d101cb8b20913e620c309ed7ca43eb10b773ab79a3cdad50a70fa152f"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/start_benchmark.toml",
+      "sha256": "3b2fa8c92705a6bb76b55b217423029e8db4a361447a3bf00986b22438ae2d9a"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/subscribe_metrics.toml",
+      "sha256": "11578a423cd0afc0c92fb5f9f1c24f175c14f44b602cb021f4892cba2f674356"
+    },
+    {
+      "path": "src-tauri/permissions/autogenerated/update_settings.toml",
+      "sha256": "5a0372e0f9d258a262d26c9592dbd503fc228c46e1f47d98b2037fd3fef0718e"
+    },
+    {
+      "path": "src-tauri/permissions/main.toml",
+      "sha256": "73db7afd29ff7c70239674521cf5cb3acbd2c99f76f44423838b8d587fe33087"
+    },
+    {
+      "path": "src-tauri/src/commands/benchmarks.rs",
+      "sha256": "8153e4eb8e819e2567131211464813ae2365400e11b43374a6d4b7ee7ea5c387"
+    },
+    {
+      "path": "src-tauri/src/commands/blocking.rs",
+      "sha256": "12d053e9c918b7f9c8ab6d4d138f3b11b588bc18839e0109bedb06a2df4407d7"
+    },
+    {
+      "path": "src-tauri/src/commands/confirm.rs",
+      "sha256": "dd01e0b021359e81b4c0a2e6f0354f1a49d5d4632fe0f9e47a1b76bcbcf81f50"
+    },
+    {
+      "path": "src-tauri/src/commands/control.rs",
+      "sha256": "abb812ee91750305cccfda9db4eb5bc4e3dcc2192c0db2eaccf9038db20af05e"
+    },
+    {
+      "path": "src-tauri/src/commands/export.rs",
+      "sha256": "64b82582ece013c10b12361c2bd98bafadc777d1625a22aad97bdbb30865a647"
+    },
+    {
+      "path": "src-tauri/src/commands/inspect.rs",
+      "sha256": "8655718b94070df3e5766d4815d16cf3868e3e035269f04a16d5344b4b8c39a7"
+    },
+    {
+      "path": "src-tauri/src/commands/mod.rs",
+      "sha256": "0c620084d232d083a8cddc09395ee820ce27806c3cb22faf4d3912b47d7f0e04"
+    },
+    {
+      "path": "src-tauri/src/commands/monitoring.rs",
+      "sha256": "94c3c6cc6182ec4bff9c3a50ebfab359cdb7efca1a622d2518df3bcd9bd960ca"
+    },
+    {
+      "path": "src-tauri/src/commands/processes.rs",
+      "sha256": "a4efb18e38688a435480e71ef97813becd679997f9f23311e3cca426d91ac5ae"
+    },
+    {
+      "path": "src-tauri/src/commands/settings.rs",
+      "sha256": "ca7ef0087ce2e70e6954c46e4c238baf84c61507120953735d0cab6e0e5d78f4"
+    },
+    {
+      "path": "src-tauri/src/commands/validate.rs",
+      "sha256": "757c654e6951bdf2ebcbcb856d8da38e3fdf7db412383e747af6bd139fa67b6e"
+    },
+    {
+      "path": "src-tauri/src/desktop.rs",
+      "sha256": "584de6b14bcc48986fb2025507bdad02e49d61e5a0c2fa11d20faddda8205d9b"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "sha256": "3f53e6ed3d3e43ee4c18bfba4ae803b3c79c510720f43de11a329de8964ccc78"
+    },
+    {
+      "path": "src-tauri/src/logging.rs",
+      "sha256": "31120d306174771cd6d16444e53f9cc23381086a8b38de9833a125c3835ab452"
+    },
+    {
+      "path": "src-tauri/src/main.rs",
+      "sha256": "cec07f51f44ccc839adf786154f58a92f9d9d4ef4c29af22dfaa5e3be1b398c6"
+    },
+    {
+      "path": "src-tauri/src/security.rs",
+      "sha256": "e49b50306e67eea388682ae4ffb6e8e59317426d4746ba2bca55a200526ee9b4"
+    },
+    {
+      "path": "src-tauri/src/settings.rs",
+      "sha256": "82e2287936bf341ca0d4de037df04af91922686d3a9e40bf9aac15e80e3da1ae"
+    },
+    {
+      "path": "src-tauri/src/state.rs",
+      "sha256": "e30231710af9321c930228dea1226a1e46963e6975f87289eec8bcaba67ac026"
+    },
+    {
+      "path": "src-tauri/tauri.conf.json",
+      "sha256": "8f9c6a2167a5f962de6e5e4245abd6a74906d1c94a4f218181b7f6f311e80299"
+    },
+    {
+      "path": "src-tauri/tauri.linux.conf.json",
+      "sha256": "ed5fc14fbb66ac1ec81ac15be9ba05026f710cead6fda93317a327757ec3b252"
+    },
+    {
+      "path": "src/app/App.test.tsx",
+      "sha256": "a2ee72ead92c5601b3110cdbae08fd645a2fa4d2ef2046c74b5a67e97e6fec29"
+    },
+    {
+      "path": "src/app/App.tsx",
+      "sha256": "169fb97bbca28ba30ae5ad646c58f46612a4f234c81eb1373fa45387881bdc2e"
+    },
+    {
+      "path": "src/app/CommandPalette.tsx",
+      "sha256": "00d8c1fe8e1fcc7f72ba4ec8483b824000430c1f55d9f5b9a05831d04ed0a688"
+    },
+    {
+      "path": "src/app/Sidebar.tsx",
+      "sha256": "0590843c63723a6e75a62ebce3206873d3bf866815c1c980d348d803f7d23c71"
+    },
+    {
+      "path": "src/app/TopBar.tsx",
+      "sha256": "af607e2c340366061bb8148dc114921430281790b3c7a0e5b9ca85b00f23e46b"
+    },
+    {
+      "path": "src/app/routes.ts",
+      "sha256": "ea0fb55f7c3f09e1d55619019eacba4361b4c2e85cc2b2566ba8456b539504e0"
+    },
+    {
+      "path": "src/app/theme.test.ts",
+      "sha256": "14484e5d31ed7dfc9ade3685ce67e69d8853e55ffd499e25a63de0da91caf528"
+    },
+    {
+      "path": "src/app/theme.ts",
+      "sha256": "5ba04cdc2c308640bc14c64e3340d14be33d7dfdfa4be2e7f3ce0bd78ccc5076"
+    },
+    {
+      "path": "src/components/ConnectionNotice.tsx",
+      "sha256": "8547740095122128488531f02b2a6d3ac6f5787d7505eaf5d5a2452a2b659b41"
+    },
+    {
+      "path": "src/components/EmptyState.tsx",
+      "sha256": "f88c6fed25e2fb7ed1633cc4b18753ea287b5897c11878f4b24b9c58996b6a2b"
+    },
+    {
+      "path": "src/components/PageHeader.tsx",
+      "sha256": "3c40135fa7bc78fc1ed089951330843d315a86ddc2c15fcf15c760736334aaf1"
+    },
+    {
+      "path": "src/components/SearchBox.tsx",
+      "sha256": "1062d3e23f71d464b1dbed62e44e5342aaae39ea8a3da8d5fd381bed83be58e1"
+    },
+    {
+      "path": "src/components/Toaster.tsx",
+      "sha256": "cf95ec0b3bc495fe24ea540b9c50b434ced3464c4a05576e54b942d9ef4adad4"
+    },
+    {
+      "path": "src/components/charts/DeviceChart.tsx",
+      "sha256": "7c06d8d5e472e15b56ceaffa2ddc0e18a708c9810694ae1a2111f141d9ceadd6"
+    },
+    {
+      "path": "src/components/charts/LineChart.tsx",
+      "sha256": "ba58b90b9fee94afa1a5447b6a23e7683ea4e74297c429d25bd6c79b8febdde1"
+    },
+    {
+      "path": "src/components/charts/TimeSeriesChart.tsx",
+      "sha256": "7a5c49ee4f968cfca1a81ec7ca56ea4f9b5a011a396b45390246d821452cfca9"
+    },
+    {
+      "path": "src/components/charts/series.ts",
+      "sha256": "13945c9e0ce668e999244eec151a94d56c4034ed7986f11e098816fc2018f0bc"
+    },
+    {
+      "path": "src/components/ui/Card.tsx",
+      "sha256": "0761001df774b289f9babbc72bf4a123a6a27f7bfa21e42998d923fafcff6940"
+    },
+    {
+      "path": "src/components/ui/CoreStrip.tsx",
+      "sha256": "6eca0e4e90ed319cc63cf79bd93494de7f9638c2ae8f394546d752577cce8556"
+    },
+    {
+      "path": "src/components/ui/KeyValueList.tsx",
+      "sha256": "c869c61de8ad15b55d25f7dcbce92f0b1b3751a954d35010be54c760a4f0a804"
+    },
+    {
+      "path": "src/components/ui/Meter.tsx",
+      "sha256": "0f42b927ffffffead55965b4672acba64efc3d339f1a9004448da7b50184d596"
+    },
+    {
+      "path": "src/components/ui/Switch.tsx",
+      "sha256": "40b5ad194fb393432f52f9f2a263d29ec44072a323ba120e8069e0e54110c769"
+    },
+    {
+      "path": "src/dev/preview.ts",
+      "sha256": "5f2a1f9344f492ccd21186dcfb9fb5cc9cb01b12ff40cc498470659cb9ac82cc"
+    },
+    {
+      "path": "src/dev/previewBenchmarks.ts",
+      "sha256": "10a239d0301ab97331e09001afc86b2a69d1a90a6a28050d85cb4c03f1f3ef46"
+    },
+    {
+      "path": "src/dev/previewInspect.ts",
+      "sha256": "e73fd74105e4355d14bebadc4d234e11f24fb870ea2859bcf0c96803bb3e198b"
+    },
+    {
+      "path": "src/features/activity/ActivityPage.tsx",
+      "sha256": "1cec26ce45fdf6eca5b698c6c7b44622f8e604a6a5a420877a7a9217ed15d541"
+    },
+    {
+      "path": "src/features/activity/logic.test.ts",
+      "sha256": "b33d7da8a10f4e5525a13ef93381c2222563667ba266ca42c2c7e4cf8a7af0d3"
+    },
+    {
+      "path": "src/features/activity/logic.ts",
+      "sha256": "8b39e95ee1f4d67156e5285d652ad5930b3615c2142fcc3e0ffb16b15f4b2cd9"
+    },
+    {
+      "path": "src/features/alerts/AlertsPage.tsx",
+      "sha256": "189756c857732d57c17c320246343f23700b8b79f50010d9229a6747f2254a6c"
+    },
+    {
+      "path": "src/features/alerts/rules.test.ts",
+      "sha256": "a6f3c091d530b33c404b825e43077a9157912a5fed7319f25cb0b2f4403c99bb"
+    },
+    {
+      "path": "src/features/alerts/rules.ts",
+      "sha256": "457665edeab28463079adaeedcdab1eb63ceda23953153be230cddf28481ab03"
+    },
+    {
+      "path": "src/features/benchmarks/BenchmarksPage.test.tsx",
+      "sha256": "2e491a2898d01cc5b18828c05d9888caf1991d32e0af7e52e35c56452c27b3f5"
+    },
+    {
+      "path": "src/features/benchmarks/BenchmarksPage.tsx",
+      "sha256": "0cb642f6b7f40bbad71e13c480f77a72ebe1aeb838bb06af8b3cdcd082f877f8"
+    },
+    {
+      "path": "src/features/benchmarks/compare.test.ts",
+      "sha256": "e3a1251ceb6394f2bc469b99ee25e31f868f222d4960660cdad7fa02ac58deb4"
+    },
+    {
+      "path": "src/features/benchmarks/compare.ts",
+      "sha256": "53195c4c6eb8964b82ec89528b5bebf39d0b8e56ca59af1528caf3f349ec0b2d"
+    },
+    {
+      "path": "src/features/benchmarks/format.ts",
+      "sha256": "47715564275422e2143def97b7ffef78253189bee712b1af519cc85a1efd0418"
+    },
+    {
+      "path": "src/features/cpu/CpuPage.tsx",
+      "sha256": "75948b4fec67efb1ce2df94cfea5b37ec1d23549be75e3972f7a68300c8fadbd"
+    },
+    {
+      "path": "src/features/file-finder/FileFinderPage.tsx",
+      "sha256": "87116c4c5d3a7c19db52a0f4cdadb47137c0993904a31c18089d49bf4cefcc95"
+    },
+    {
+      "path": "src/features/file-finder/logic.test.ts",
+      "sha256": "e7ddd56439e06c8b464832e30465cebcd33e4628bde5d1973e456971d33d69be"
+    },
+    {
+      "path": "src/features/file-finder/logic.ts",
+      "sha256": "6bde3d87c972dcf55b62153734f0131c8eabc86453e0d2b25c8966cce28aa90d"
+    },
+    {
+      "path": "src/features/memory/MemoryPage.tsx",
+      "sha256": "bbcad5f466b5227d21187abe34d28e106ad65ab4fd290cd1e43797432cc719d5"
+    },
+    {
+      "path": "src/features/memory/TopMemoryCard.tsx",
+      "sha256": "101f4e2416c1456d41611f236a8fc9463214276ac4c5d9e0054f2d90b87fb376"
+    },
+    {
+      "path": "src/features/memory/groups.test.ts",
+      "sha256": "811c8be5e8abc3cdc5a9877c8b1a61db7d12a8dd84b9fa8e117942f545cdd173"
+    },
+    {
+      "path": "src/features/memory/groups.ts",
+      "sha256": "a1b1bdf0bb6900040f25fb58ce1121f60c872cbf0de741bb89ba79d4108858b2"
+    },
+    {
+      "path": "src/features/network/NetworkPage.tsx",
+      "sha256": "455355a3da74518e341b7a32048029fd5dfc00328f323b6794025ac1e48a6178"
+    },
+    {
+      "path": "src/features/overview/OverviewPage.tsx",
+      "sha256": "f47b709b1a7a65c8bfd9bb15616252f207db11ab7c9f4899f369e85f145c4fd4"
+    },
+    {
+      "path": "src/features/performance/PerformancePage.tsx",
+      "sha256": "b70b2997844d8755c67d99a465db8ee109304ac3439de6ee3ed844c5c205552d"
+    },
+    {
+      "path": "src/features/ports/PortsPage.tsx",
+      "sha256": "d9d5719ee6e0cf7c7122d08ea87ecf3893ff1a689226a5d2899eb5626817b935"
+    },
+    {
+      "path": "src/features/ports/logic.test.ts",
+      "sha256": "21976c20e77882576374c2c6f13b15233e50baf9bdb1d506c208eb0ba3932f72"
+    },
+    {
+      "path": "src/features/ports/logic.ts",
+      "sha256": "fbcf539b07dcda0b64e42dd4bdf5394172d098a390e2c749b9b1b2151f78ecae"
+    },
+    {
+      "path": "src/features/process-details/DiagnoseTab.tsx",
+      "sha256": "466328f23d1529a962afc1d9b508ebef28e19a9e7ac724dba906295edcea3445"
+    },
+    {
+      "path": "src/features/process-details/ProcessDetailsPage.tsx",
+      "sha256": "6b80a37770534864c7697aa7000d17d6d587e6b7d215e593934b9064b4420052"
+    },
+    {
+      "path": "src/features/process-details/diagnose.test.ts",
+      "sha256": "0ff663271a02aba56801696500348ec3100b9bd9717151fa1b1ef3ab6b8b2d0c"
+    },
+    {
+      "path": "src/features/process-details/diagnose.ts",
+      "sha256": "06b26cc70547c9c3c507aab58418b93aa187b2fcb5d91b174320049abf0b7177"
+    },
+    {
+      "path": "src/features/process-details/history.test.ts",
+      "sha256": "45f2ddc2381b2716343bcb82e945c3358f9993aac282dec6c3233e3055d1de63"
+    },
+    {
+      "path": "src/features/process-details/history.ts",
+      "sha256": "a54dba86a882e672460a0f549aa06375e417b33e2aa53305fbc2c0ffcdf12c2f"
+    },
+    {
+      "path": "src/features/process-details/inspect/InspectBody.tsx",
+      "sha256": "83b8ca10e92cc213cf8cc7624eb2d14e58a6725dcddbac322e99bea4af188a47"
+    },
+    {
+      "path": "src/features/process-details/inspect/MemoryMapTab.tsx",
+      "sha256": "bec78f38b2f3e54fa7dc52ccc9511954a9bfc12827602f391a9bd309426dc28f"
+    },
+    {
+      "path": "src/features/process-details/inspect/ModulesTab.tsx",
+      "sha256": "2344d9193250c9d44aee4c85eb36c73aeea2128db58491bf4336ee244f3223d4"
+    },
+    {
+      "path": "src/features/process-details/inspect/OpenFilesTab.tsx",
+      "sha256": "1382de45b793e0086cc08a2f987ada3672237f929e11b74958a8eead269c8783"
+    },
+    {
+      "path": "src/features/process-details/inspect/ThreadsTab.tsx",
+      "sha256": "c4dfb386388481a633ca9f78d96e84048aa35b7f4bead1838de946b25742ec18"
+    },
+    {
+      "path": "src/features/process-details/inspect/logic.test.ts",
+      "sha256": "1361a2128af8802abf9da874739326ae2aa3aecf41706535326a85c39be727ee"
+    },
+    {
+      "path": "src/features/process-details/inspect/logic.ts",
+      "sha256": "2406874c5f81e6594b86ebc42a95e28c4a33573779ccfa3b6e3e81c624af3df8"
+    },
+    {
+      "path": "src/features/process-details/useProcessDetails.ts",
+      "sha256": "06c370dbffad3488503bd1063ade11c15b47c01e832a2202d896be441caa3623"
+    },
+    {
+      "path": "src/features/processes/ConfirmActionDialog.tsx",
+      "sha256": "ab44bdc59848da7784950acbf9107a4c5a8ace787f8de28941dcc9e298f02c1e"
+    },
+    {
+      "path": "src/features/processes/ExportMenu.tsx",
+      "sha256": "9b53a635fcb6cc6e33cf4b42eb822b0b9597b067d45bf486777caa7d9455fccf"
+    },
+    {
+      "path": "src/features/processes/ProcessContextMenu.tsx",
+      "sha256": "22207425f37cf0a7db9c4a695d2dd637ea5acce9dccad071c09e60352a293b6a"
+    },
+    {
+      "path": "src/features/processes/ProcessTable.tsx",
+      "sha256": "5300787cd383ab22eb54544643b95efaee2034333611626fd4c4d04602cd1937"
+    },
+    {
+      "path": "src/features/processes/ProcessToolbar.tsx",
+      "sha256": "06fdf8f0fe0a1dd55a73782810f10bb4224f756b7a5f983b47f4d2cb2d23a5ab"
+    },
+    {
+      "path": "src/features/processes/ProcessesPage.test.tsx",
+      "sha256": "d266f91e3c51284e0c26b7bb88550f5d410e279d12c2f9e3e6e5af0102353bb3"
+    },
+    {
+      "path": "src/features/processes/ProcessesPage.tsx",
+      "sha256": "378cbc41b2b667bf63df5c2238ab9eaf9bbba626e3de2d483bd526b9a9cdd5e0"
+    },
+    {
+      "path": "src/features/processes/actions.test.tsx",
+      "sha256": "2f2e11de9fef7832b955782a59e26f6256a3c8cd2add6c28de7699533276870f"
+    },
+    {
+      "path": "src/features/processes/actions.ts",
+      "sha256": "6b364565244e6486988eb0e735a386fa38f7e5f0e7bddff107c9ed6db4412af1"
+    },
+    {
+      "path": "src/features/processes/apps.test.ts",
+      "sha256": "3086392b226f6d8dc5b8ba175479994028449bbee68f311b7c25a3e1a21da6a3"
+    },
+    {
+      "path": "src/features/processes/apps.ts",
+      "sha256": "00b630b85109f98f6778fef6d481c8ba49d912638726c2d453b88e8b931fc7f8"
+    },
+    {
+      "path": "src/features/processes/cells.tsx",
+      "sha256": "72e18821073cf8aa873f894f5b7d2b9285cdee9aab4f7006cb54d3737cbd0f65"
+    },
+    {
+      "path": "src/features/processes/logic.test.ts",
+      "sha256": "bc39ae4a80bfb4f885407e0aa1052ecdfc6a68c567e944fa39644f524e1c152f"
+    },
+    {
+      "path": "src/features/processes/logic.ts",
+      "sha256": "136438d5eef1336495213d7ce964d57dbc60938e61a9091b5e567ab7fec0c5bd"
+    },
+    {
+      "path": "src/features/processes/mock.ts",
+      "sha256": "0906c864e107c6ecfbd5df193ca12d4410e267f31e1c9db75da6e6e8ff158720"
+    },
+    {
+      "path": "src/features/processes/tree.test.ts",
+      "sha256": "6d7310de4769287229858d3777076d4738d561d363ef5daae1b740fec29816fd"
+    },
+    {
+      "path": "src/features/processes/tree.ts",
+      "sha256": "b43ff3eefdacff185eaae94116f90dfa360df8d476874c87e9335312a3234824"
+    },
+    {
+      "path": "src/features/processes/useProcessView.ts",
+      "sha256": "c5d8354cc59d64d46d321fd566827ec790bbd88cc3c2bac7cd682b51d1a3e2b2"
+    },
+    {
+      "path": "src/features/settings/SettingsPage.tsx",
+      "sha256": "53f49e95267070bc91e3b6004edf3cd89b37977000d9e319c5bb585a351f2c29"
+    },
+    {
+      "path": "src/features/startup/StartupPage.tsx",
+      "sha256": "d34ebc6adb60ee90ec8015561bf9cd27745aafc0c25811ccdd521e97e85cd9d1"
+    },
+    {
+      "path": "src/features/startup/logic.test.ts",
+      "sha256": "dcfa36bcb34828e99c90d667a13cb4a107ae9df79d709ba29404819cf97134e7"
+    },
+    {
+      "path": "src/features/startup/logic.ts",
+      "sha256": "caf5c86dd8108edb6ad43a3b55a3a70ad75fdf22217222e130bf57cb30356df2"
+    },
+    {
+      "path": "src/features/storage/StoragePage.tsx",
+      "sha256": "2e8ffa1782054a019e4232d63ec2af4dd4e1a05e58a8650ab0cb3f8740b69e6b"
+    },
+    {
+      "path": "src/features/system-info/DetailRows.tsx",
+      "sha256": "e2e327ad3eb7f7715b70298da510a3d9778a815a8f65abe71bd7eb44c99b0646"
+    },
+    {
+      "path": "src/features/system-info/SystemInfoPage.tsx",
+      "sha256": "64c86087daa0c3140ed8ec375c93a1aea2246777f499719d1de96e12abfcafdb"
+    },
+    {
+      "path": "src/features/system-info/format.test.ts",
+      "sha256": "f16268d6549ed6d8b5dcfd85454be5af4354790e13e5309936017398169ec437"
+    },
+    {
+      "path": "src/features/system-info/format.ts",
+      "sha256": "b0f9c64c408ce660c235e013aae04047777b9cb95a5dd299fae7ffe5e4cd7670"
+    },
+    {
+      "path": "src/features/system-info/sections.tsx",
+      "sha256": "9ec157a61bd1c00e317324244972de6b0be01ad9b779d997ec7674f2c894ffe7"
+    },
+    {
+      "path": "src/features/system-info/summaries.test.ts",
+      "sha256": "6825a9816bc8e2d688dda4a5380a67474e062d8805a13d2cfbce5946c4675408"
+    },
+    {
+      "path": "src/features/system-info/summaries.ts",
+      "sha256": "68ebd3bc9f6f0047cba363d7b8400ab71a4051290d023d3365698f3a44519bbf"
+    },
+    {
+      "path": "src/hooks/useGlobalShortcuts.ts",
+      "sha256": "2304a9048e96c1f3cd50c35b4805db2c57d16b3f761ab07d87a4e3f62835cedf"
+    },
+    {
+      "path": "src/hooks/useRemoteData.ts",
+      "sha256": "9241328f17da5795faf8090a11a477bbe6427a410a175d1f94b0e030424c9636"
+    },
+    {
+      "path": "src/lib/cn.ts",
+      "sha256": "53f3d3d070f0a9082934da25b875f9499855c2b0693868dd28be8c23d8730f68"
+    },
+    {
+      "path": "src/main.tsx",
+      "sha256": "73c506066f1def5f12372b30fc307aec884f8f6f11b2974740c81bfa7160c1e5"
+    },
+    {
+      "path": "src/services/benchmarks.ts",
+      "sha256": "5df26c3f330d7bd99bc278fed4ba19f15b46b085c1d1acf02a2f403c73f8abda"
+    },
+    {
+      "path": "src/services/ipc.ts",
+      "sha256": "c7a2c4ab1313e21c6a587018b294aef70af50a7d7d7227561603ab07aef62a33"
+    },
+    {
+      "path": "src/services/monitoring.ts",
+      "sha256": "06135ba7d06188d0d6ffcfb578c444389f80f8505b73c34682b2d24c48cb3a90"
+    },
+    {
+      "path": "src/services/settings.test.ts",
+      "sha256": "8db8d5abafa3c8b86ed4fcaec0f4d1a972abc828242c5682811031c43c323856"
+    },
+    {
+      "path": "src/services/settings.ts",
+      "sha256": "a9073e532b6a70d1e49c40283654794bb26728210d54c0e5695aabde57f4f145"
+    },
+    {
+      "path": "src/stores/activityStore.test.ts",
+      "sha256": "f2359140c9ebf8b5739861dffe08b55921e609d575ddbfa299a4b1e6ac165172"
+    },
+    {
+      "path": "src/stores/activityStore.ts",
+      "sha256": "131d37d900630ea4cdb3c31541fbf1c856b0ec0c141c38711a112ee18431fe3e"
+    },
+    {
+      "path": "src/stores/alertStore.ts",
+      "sha256": "9ac5350a4aa2dfa5bb10cf0ae684ab1fe84f37999f3757ab2a601ecf5be48876"
+    },
+    {
+      "path": "src/stores/benchmarkStore.ts",
+      "sha256": "9a22a55cc835f31ddd8a000c447f32ff1ae8ab943bc33a9b09509c13195e6657"
+    },
+    {
+      "path": "src/stores/deviceHistory.test.ts",
+      "sha256": "5f6cec0ccd8f232ae4839278ffa6c0b9e835b1e119ca9b7d1681f3e010c0930c"
+    },
+    {
+      "path": "src/stores/deviceHistory.ts",
+      "sha256": "65abf0d5cf86190155109091d60fc9dea3cd54cb05281491a432307a341c5915"
+    },
+    {
+      "path": "src/stores/historyBuffer.test.ts",
+      "sha256": "ce77f063cdea2104a23f8f9624616681f04a996189b2a4acd17ad29b4cb5c25f"
+    },
+    {
+      "path": "src/stores/historyBuffer.ts",
+      "sha256": "b297da41a9beb4aad2ba8e9189fca46c5f704e508aa4041bea90d535d6de5b79"
+    },
+    {
+      "path": "src/stores/metricsStore.ts",
+      "sha256": "45695db9ec68699b5d539eed8d4d49d64343ec1c4cc943687f37d04afd794330"
+    },
+    {
+      "path": "src/stores/perfStore.ts",
+      "sha256": "4b192ccaa77e1c59396dbcf39a516fffd6d9a2f1a522b54630dca6267cc0eadc"
+    },
+    {
+      "path": "src/stores/processStore.ts",
+      "sha256": "e1206099314a4bf427b596839f426812f3be7b8b0691d709939662ef9cb70a2e"
+    },
+    {
+      "path": "src/stores/settingsStore.ts",
+      "sha256": "86eafdc2cc1ce333e15bde5ffbe4aca823c9bd75006671ade182ee8a0d8c0f5d"
+    },
+    {
+      "path": "src/stores/toastStore.ts",
+      "sha256": "833e2aea387487d2995bb3510a98d9de4e88c316153c78591a29c89a3f4dd929"
+    },
+    {
+      "path": "src/stores/uiStore.ts",
+      "sha256": "c08eef7436fb30246487ec06602d3f66a57c58a286cfdb0a3cea254b88b0fdff"
+    },
+    {
+      "path": "src/styles/contrast.test.ts",
+      "sha256": "6bb4af5af7041ec0c567b0e399a08e266111bb52ccb2568e4a57fd15d92ad86d"
+    },
+    {
+      "path": "src/styles/index.css",
+      "sha256": "b1f253a84f037c459b1da84630d943099033bae7c7dc23f0f3dd00589aa7342f"
+    },
+    {
+      "path": "src/test/fixtures.ts",
+      "sha256": "41f15b966c10b2de2e6a7f71aea4c5ccfa707aeefeadd49e5433b3b70885cce0"
+    },
+    {
+      "path": "src/test/security-boundaries.test.ts",
+      "sha256": "1c764b9da0da9a9244466ee8e59e81d0aec0141112248342e12c07cfc3c12785"
+    },
+    {
+      "path": "src/test/setup.ts",
+      "sha256": "008edcce34b79513d9f54b241b5cd38c99a9da2cc6cfc34f72f0683fbe7ed458"
+    },
+    {
+      "path": "src/types/generated/ActionOutcome.ts",
+      "sha256": "e54a8abe40e84ba2614196e4ccf385b3dd9e46b0ce29a18e2c491c0be1a915b7"
+    },
+    {
+      "path": "src/types/generated/ActivityEvent.ts",
+      "sha256": "181912eac99d88e792ba0228dceff22d08d1dec9ccb9f63d30cad46b23afdc11"
+    },
+    {
+      "path": "src/types/generated/ActivityKind.ts",
+      "sha256": "90c84d47771e865a192fc66271e757132c0895f259389465fa2d1d6f9f203b6e"
+    },
+    {
+      "path": "src/types/generated/AlertEvent.ts",
+      "sha256": "5ad7c617c227fd8d0929fb378f3e68c743d60c08f5dd865b22ef21349605b663"
+    },
+    {
+      "path": "src/types/generated/AlertMetric.ts",
+      "sha256": "45d1946c54c6988e196a9354ecbf8b02c61147a083589f9b580c44736f08b536"
+    },
+    {
+      "path": "src/types/generated/AlertRule.ts",
+      "sha256": "ee2b22866c5505214a04fcfb90f4af01718bb0c3dcd5c06cef9d047fb8542996"
+    },
+    {
+      "path": "src/types/generated/AppError.ts",
+      "sha256": "abc73aa321419ebc2d4cc2faa35801a365dfbc954562cca406fa15a048eda15f"
+    },
+    {
+      "path": "src/types/generated/BatteryInfo.ts",
+      "sha256": "204c85504d5777d9bc4b36ef943512f13c9bcabd457a2dfbf9fc413869f819b5"
+    },
+    {
+      "path": "src/types/generated/BenchmarkKind.ts",
+      "sha256": "cdf02ca86f16661571b50ef06c1a02cfb1e1e8b14935d82fe6d43e060d392e79"
+    },
+    {
+      "path": "src/types/generated/BenchmarkProfile.ts",
+      "sha256": "c663d2cf4e3c86df68959e5bb562a0d5e707fd6dc6d7889e76391ee52a2787d8"
+    },
+    {
+      "path": "src/types/generated/BenchmarkResult.ts",
+      "sha256": "946561aa3f1686b42954bfea564a9906ddd31575153a2f2fed8bc6afe8882bba"
+    },
+    {
+      "path": "src/types/generated/BenchmarkState.ts",
+      "sha256": "c56faf4195c752b94c1d75655f9e3619588225b80c32d76dd32e1051f7d40258"
+    },
+    {
+      "path": "src/types/generated/BenchmarkStatus.ts",
+      "sha256": "2e90bacfcfc80befbbbbc60d71af743f9b556e50c733bd0673e921c8afb2ff7c"
+    },
+    {
+      "path": "src/types/generated/CacheInfo.ts",
+      "sha256": "3fdbd6b363a21295fbaeb3b8cad72dc6d3f238bc52b904865c641f180317da1b"
+    },
+    {
+      "path": "src/types/generated/Comparability.ts",
+      "sha256": "fb9a6cbcb65b7015b66a8ee0944083f7a7dabcb354e15f57199b3625dc134262"
+    },
+    {
+      "path": "src/types/generated/Connection.ts",
+      "sha256": "9d03c1ae3b650877b2f05a57cbd88e3c1fb9aeae3dae916bcdb95feb98fa270c"
+    },
+    {
+      "path": "src/types/generated/CpuDetails.ts",
+      "sha256": "3dd98d5e86ac5834cbee09f4f13e411209bd951daa5c3c459384503b4796dfc3"
+    },
+    {
+      "path": "src/types/generated/CpuMode.ts",
+      "sha256": "b2328656e3ecd37d77800ea9498539e074bf1718af643f9ae5573ecada8a7e7c"
+    },
+    {
+      "path": "src/types/generated/CpuScores.ts",
+      "sha256": "5fc7be607e1b267ce25f4736223736be88e4721ea8b7787de33874d3ff48f2ed"
+    },
+    {
+      "path": "src/types/generated/CpuSnapshot.ts",
+      "sha256": "7833e8f0400fb863d63d2f15e6c02b3283368cf8b88e3fc83bce5d306c046dc8"
+    },
+    {
+      "path": "src/types/generated/DiskDeviceInfo.ts",
+      "sha256": "79973329c989cbe9de2c188ce22507730f84d08988875dbad05adcf27ed3969e"
+    },
+    {
+      "path": "src/types/generated/DiskKind.ts",
+      "sha256": "8bb1a9839279640ea87325957f95c572cd70f06c5f4209a1ce40356baf88fdb1"
+    },
+    {
+      "path": "src/types/generated/DiskPhaseKind.ts",
+      "sha256": "427f5a696b48bbda0b80228f112a4cb5cc14d91de1029acbf6af8c25bcfbbe34"
+    },
+    {
+      "path": "src/types/generated/DiskPhaseResult.ts",
+      "sha256": "e2d52e1fa7b5d2ea878839696abbd69546cfc1a67e06de0a10a57adc276d95ae"
+    },
+    {
+      "path": "src/types/generated/DiskPlan.ts",
+      "sha256": "497188b06e02062986c6985d426d9bfc94342152359c55c65878a119c941932e"
+    },
+    {
+      "path": "src/types/generated/DiskResult.ts",
+      "sha256": "b2f94736308a534ffaf825ff3d116713aff87d5c5d6ec4cff4ddaa873a33e59d"
+    },
+    {
+      "path": "src/types/generated/DiskSnapshot.ts",
+      "sha256": "329904074abfc7c3f08c722fdcb6f1e9074e9bf09957e587785a9b5c1a6aaaa0"
+    },
+    {
+      "path": "src/types/generated/DiskTargetInfo.ts",
+      "sha256": "0fe9446a00c51d43ad781860c7d2d87ebb4b58fd3dd52826f890a08be85ee32f"
+    },
+    {
+      "path": "src/types/generated/EngineStats.ts",
+      "sha256": "d9083ecb36101077a75ef3cba115e8a7671eca73a1fe6241a6e282481c709d31"
+    },
+    {
+      "path": "src/types/generated/Environment.ts",
+      "sha256": "05af50d55be124b0a6e552c29feb68a2f7f8e59a53915c0be1ad393b15b7b084"
+    },
+    {
+      "path": "src/types/generated/ErrorKind.ts",
+      "sha256": "2aa4dd8fad97ccb546e84836b295bd8cb7d83eec305141b52221d17ae2cf7138"
+    },
+    {
+      "path": "src/types/generated/FileAccess.ts",
+      "sha256": "b19f1e3de22a7056a59163c0459059f0a4c8f13f0c14973c65bf01cd48f0f8a0"
+    },
+    {
+      "path": "src/types/generated/FileUsage.ts",
+      "sha256": "4911e1256bb79cab9031a8b9b3e12fee20b198d6dc676897f734cb929409f88a"
+    },
+    {
+      "path": "src/types/generated/FileUse.ts",
+      "sha256": "03f0b13e4a7104e2ac59143f1f333a5357a9fb02551561387a68b85d6489b043"
+    },
+    {
+      "path": "src/types/generated/FileUserList.ts",
+      "sha256": "fd1155ee284fa13be8169dcf0a7456fec682b0f3c64d33d860d54f4c5b19f65e"
+    },
+    {
+      "path": "src/types/generated/GpuAdapterInfo.ts",
+      "sha256": "0da6ce203b27d013a76a888676081b9da1be9604d49dd2994059758dbd4f3bdb"
+    },
+    {
+      "path": "src/types/generated/GpuDeviceType.ts",
+      "sha256": "3516ce0b0cff29de6f038faf1caec52094e0f591eceba0d6dcc25f0efe3f153f"
+    },
+    {
+      "path": "src/types/generated/GpuResult.ts",
+      "sha256": "a9fcbc0aa21309ae3cd69c996aa43c78822a0571fcc99eddded554bfb9702e62"
+    },
+    {
+      "path": "src/types/generated/GpuSnapshot.ts",
+      "sha256": "a3f812c038dcf6647bb5db463cb5112dac33be6411b51858181cc6f1b3ad93a3"
+    },
+    {
+      "path": "src/types/generated/GpuWorkloadId.ts",
+      "sha256": "9a323c9b147094c542e8b6301a3c23132aa1b7d0572a43410126ea5bbb93e7d7"
+    },
+    {
+      "path": "src/types/generated/GpuWorkloadResult.ts",
+      "sha256": "17e2fcf7360556fda9bbbf286c05055d7e0fe7e52f27c063ab528f72876e6b6f"
+    },
+    {
+      "path": "src/types/generated/HardwareInfo.ts",
+      "sha256": "605e03ac965227762e23ac05204d769557dad6587c9d920a8dc8466d214cba26"
+    },
+    {
+      "path": "src/types/generated/HistoryPoint.ts",
+      "sha256": "d996def974309e28e58a752b6000c559884fdf88fb81c5641a3184d7f242b03c"
+    },
+    {
+      "path": "src/types/generated/InterfaceKind.ts",
+      "sha256": "d5ffa248d2b3a0a710078fb562b805a32cae7c89788cb9265fd51ee2a2c078a5"
+    },
+    {
+      "path": "src/types/generated/InternetPlan.ts",
+      "sha256": "b121b5b71aff734e91bf3c922a37bb68561343d16f87631456ff0e06dbc2349d"
+    },
+    {
+      "path": "src/types/generated/InternetResult.ts",
+      "sha256": "ba54bdfd8dbd1afba5ed15045e4bbec9ee0f7b78403eac66577b7eab8781ceab"
+    },
+    {
+      "path": "src/types/generated/IoMode.ts",
+      "sha256": "5f8232ca2ce8daded750b5dab40d60a71a99e1d2bbd976f567f3c4a6cea339de"
+    },
+    {
+      "path": "src/types/generated/LatencyBucket.ts",
+      "sha256": "727a191dad475c517c7153d94d0d7fefefaad02da0b7ce2e15d56aea53e1d081"
+    },
+    {
+      "path": "src/types/generated/LatencyStats.ts",
+      "sha256": "6240bd3586ec9aaffbe2c257b460935a453b3a78e756ea4f51ce4552d823acd0"
+    },
+    {
+      "path": "src/types/generated/LatencySummary.ts",
+      "sha256": "875251ac893960cb43092d81e4a001598572e90c09dc766cd50a6033aadbb6ef"
+    },
+    {
+      "path": "src/types/generated/LiveReading.ts",
+      "sha256": "9cee5c3597733ffe476317319b8b7662ceb30a93bf1999c1ca806e7ba7345839"
+    },
+    {
+      "path": "src/types/generated/LoadAverage.ts",
+      "sha256": "33d4cacebd7ae64a34480af36b40f713770b3a43650ebb6680a420607dc99612"
+    },
+    {
+      "path": "src/types/generated/MachineInfo.ts",
+      "sha256": "26de898d4dc9523142fe793aae2b01dfd54be947c3e50d3b67542c8c69334e27"
+    },
+    {
+      "path": "src/types/generated/MemoryKindTotal.ts",
+      "sha256": "3d1d8b07efb52137ef38a32204bae6c9bbe8a67fcb62e86d1c45174c68249cf2"
+    },
+    {
+      "path": "src/types/generated/MemoryMap.ts",
+      "sha256": "fd06b9125a32400ba496b108e5f84122a61191c6ff15a93c2e87a67d7e7d3123"
+    },
+    {
+      "path": "src/types/generated/MemoryRegion.ts",
+      "sha256": "20f07cffd44ffb54711ae61eb11f1c5c467034ddc28482b950805bf6d8fd0416"
+    },
+    {
+      "path": "src/types/generated/MemoryRegionKind.ts",
+      "sha256": "994f2543c7585cea3ac46ec57479f59700ee95b40e1c0a61c619024a5346272a"
+    },
+    {
+      "path": "src/types/generated/MemorySnapshot.ts",
+      "sha256": "859f4271256735c47d9cafba2049c0650b2fea43f573a8d528c628fecbc138ca"
+    },
+    {
+      "path": "src/types/generated/MethodInfo.ts",
+      "sha256": "6152c9e0d0a132bd7b76c7b1d29d0bf2a4b54c1aea693f3e22a410de37899d04"
+    },
+    {
+      "path": "src/types/generated/MetricsTick.ts",
+      "sha256": "cc402540739c9b1f4084d4ed794758e661e2b0622ab11b06cebc5bcef2dd0070"
+    },
+    {
+      "path": "src/types/generated/ModuleInfo.ts",
+      "sha256": "a78886fe9624002e0b311b237d95e8a854ecd39572e723cd1a736eeb3e0f8b1b"
+    },
+    {
+      "path": "src/types/generated/MonitoringState.ts",
+      "sha256": "5b278328cdfc59abd9214bf0d0b770627d7f7faf750fe118e50485f40f19eb61"
+    },
+    {
+      "path": "src/types/generated/NetworkInterfaceSnapshot.ts",
+      "sha256": "44291a96e8b88e5f02c405616f0c1411cefbd0515653a90d54f4891ca384df3a"
+    },
+    {
+      "path": "src/types/generated/NetworkPath.ts",
+      "sha256": "47231d543f8efcbfeb2703211068c3a18735a3376676d239df7e629864e47be1"
+    },
+    {
+      "path": "src/types/generated/OpenFile.ts",
+      "sha256": "bafa83de1f2db91f1cfadf5845ea8b6c1305f9e76fe3d36b14a794a23cbd98a7"
+    },
+    {
+      "path": "src/types/generated/OpenFileKind.ts",
+      "sha256": "398852da56555f09a6c49ad98a53e5160100e5b196611a50e2f56163bccf3cff"
+    },
+    {
+      "path": "src/types/generated/OpenFileList.ts",
+      "sha256": "2f4c8da69056d3c66fa1811a9c00a34d3212ff040d0e6827b97d3b6d2eed40cd"
+    },
+    {
+      "path": "src/types/generated/Platform.ts",
+      "sha256": "b73809baed1bcf8b7d3551f51d83b78837eb429d7f797098be6b7476f3697df6"
+    },
+    {
+      "path": "src/types/generated/PowerSource.ts",
+      "sha256": "4333eb01c669fbf1d1dc51b8241ff31a9d72bd4d24772aa82312bc3cd605ee8b"
+    },
+    {
+      "path": "src/types/generated/PriorityLevel.ts",
+      "sha256": "961879e8051fd6c231ab0b27ece01684f72b2038174b00579ac3f9bb35715385"
+    },
+    {
+      "path": "src/types/generated/ProcessAction.ts",
+      "sha256": "754f8ee19c2e970ba2e228e5cb50b2ed8b4f52de03ee6c5dfed5669b8557ec74"
+    },
+    {
+      "path": "src/types/generated/ProcessDetails.ts",
+      "sha256": "6486b32d37037d580eb7cfbbd4610d4a717dd972710b7c7aca0071d60a1a0cdf"
+    },
+    {
+      "path": "src/types/generated/ProcessPoint.ts",
+      "sha256": "2842bfdb9e646e673d24ba3ea6909ce17cabecc3238f72009e893d6f02e33168"
+    },
+    {
+      "path": "src/types/generated/ProcessRow.ts",
+      "sha256": "b592ce252ffdf118ac39ea0ecd28fad5b3b4fb430e46408c1e1bbb393f92e01f"
+    },
+    {
+      "path": "src/types/generated/ProcessState.ts",
+      "sha256": "bd611ab2c38f0c2018b3b70f4a6f555f084573a500866ffa61326f9ef9b73b65"
+    },
+    {
+      "path": "src/types/generated/ProtectionAssessment.ts",
+      "sha256": "02c6a82bae5c66b2383a53e4520753fcc0062f439462ce0775fe330a9f6e036f"
+    },
+    {
+      "path": "src/types/generated/ProtectionLevel.ts",
+      "sha256": "6b7e8614768ca2aeabb5eeea417adbf85bd07bfe3c1e5cf2dc9bdbe1c2630e1c"
+    },
+    {
+      "path": "src/types/generated/Protocol.ts",
+      "sha256": "dc2c4f6d7ad679aefd4e7e09b5f4fa2462d7d0f659060a01c0ac814cfab2069b"
+    },
+    {
+      "path": "src/types/generated/Settings.ts",
+      "sha256": "1682569e28a30bf501e0f5412bc9a203d81d9dcf32b2eafc5751a43fbade4fcf"
+    },
+    {
+      "path": "src/types/generated/SocketEntry.ts",
+      "sha256": "e159d14e77ff3e00efbfb30c7cf9bbb1ca46e5d6a5be12c294a497e2acedaecf"
+    },
+    {
+      "path": "src/types/generated/SocketList.ts",
+      "sha256": "14f36ccca541c02bfc005642035b279ffef70b6be1b7ca717de4d3d76ca2e7f8"
+    },
+    {
+      "path": "src/types/generated/Stability.ts",
+      "sha256": "92c9c3a53d4b822b8e7547985a7e9c394e34a1427418a73d0af1e65cedc19131"
+    },
+    {
+      "path": "src/types/generated/StartupItem.ts",
+      "sha256": "d6199003648a238098a1d864ff22ffdc16563f408cad05abedbf22b23daab23b"
+    },
+    {
+      "path": "src/types/generated/StartupScope.ts",
+      "sha256": "c71e2aa10c197090edcb1ecf973b91cc859af3735bca90f7ef9feb5f73640f81"
+    },
+    {
+      "path": "src/types/generated/StaticSystemInfo.ts",
+      "sha256": "178ffa2c3e71d8da52ead64a20717da0348b4150ed5e73ddf2a70b0ea6360c59"
+    },
+    {
+      "path": "src/types/generated/SustainedResult.ts",
+      "sha256": "4f97f3dcc7f408f90c32e0c802bd4106bef87599aeadc79606afdd5711af894c"
+    },
+    {
+      "path": "src/types/generated/SustainedWindow.ts",
+      "sha256": "ffc0787fef55ec08981b64a60305e197d49a864d8ad74969e2ac8ee5c337e361"
+    },
+    {
+      "path": "src/types/generated/TcpState.ts",
+      "sha256": "8ce48e8edf78e27761ad142fdf5c0eab90f309e20013bf6807f6a090fb3dd5e5"
+    },
+    {
+      "path": "src/types/generated/TemperatureReading.ts",
+      "sha256": "d1bc2cdee577efdcb1223808f34a16a8d171d7145ea9ab50bf84274c55206c40"
+    },
+    {
+      "path": "src/types/generated/ThemePreference.ts",
+      "sha256": "d05b467bd77ecea226001194674e6594366b75de4f333b916f1b801b33fdbba9"
+    },
+    {
+      "path": "src/types/generated/ThreadInfo.ts",
+      "sha256": "f90fa78c74943f6d4f57f000ed5caebaafa6a4f74f2eab0598d46008f97f5394"
+    },
+    {
+      "path": "src/types/generated/ThreadList.ts",
+      "sha256": "282c59d25ba2f03f603118b522bcb52c26ddc8316e14e481998955c2414f6cc4"
+    },
+    {
+      "path": "src/types/generated/TimingMethod.ts",
+      "sha256": "50ba50cfaf532f70c4976609fc3657a1022958a60b6f953308eab896d778db9d"
+    },
+    {
+      "path": "src/types/generated/TransferResult.ts",
+      "sha256": "9a0c65a105c627a1b9b4d21aebf67332d6f24bd9aa35d5d2286073aeda7f3e08"
+    },
+    {
+      "path": "src/types/generated/WorkloadId.ts",
+      "sha256": "dbbacd09df68225c936ccde706e9ff51f59d46bd4e134a79c9699cc4d5c078f8"
+    },
+    {
+      "path": "src/types/generated/WorkloadResult.ts",
+      "sha256": "ac6fa1aeaad29577e1d320e0abd5c17293d3e4030d61bdf81aa58edb01eb0eb5"
+    },
+    {
+      "path": "src/types/index.ts",
+      "sha256": "1312e4e483a89c9770c6198ae992ddcc0e307fcd9a4ed07dd2f01d692c927186"
+    },
+    {
+      "path": "src/utils/format.test.ts",
+      "sha256": "2577de5b37a0afdc0d0c7a547f1bf5aa5358498da8267d8a1635b3a2f0865df1"
+    },
+    {
+      "path": "src/utils/format.ts",
+      "sha256": "6a31e9f9d91c406309e6dbf907b79d975c1acd737bcb1d754f5ddfc172caae81"
+    },
+    {
+      "path": "src/utils/levels.test.ts",
+      "sha256": "91c72f193cdcd2b870d27cfa3fc73c0ad7ed1f617c97d54bab8c43224ce64976"
+    },
+    {
+      "path": "src/utils/levels.ts",
+      "sha256": "0414026f564d52ee6e3bd9c1d15d353780178826c4e57d763eb43f6e3f3d06dc"
+    },
+    {
+      "path": "src/utils/system.ts",
+      "sha256": "054b60855311a6438d4fd3c1e4180c3f2b568c2571d2b2d66556018907df8366"
+    },
+    {
+      "path": "src/vite-env.d.ts",
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "d617d7243ea30e7c048ec55caa271c4f0fd350f68e311d48d25d0740f5d4f338"
+    },
+    {
+      "path": "tsconfig.node.json",
+      "sha256": "93e542ddb3fd79bf4d46d19e348783e49787d1e9afcb9b9d2b39a3df07613acf"
+    },
+    {
+      "path": "vite.config.ts",
+      "sha256": "34f32457da7971138a22b8cbf5cbdfda766762694fbc688da60754890bda2b5a"
+    }
+  ],
+  "post_validation": {
+    "changed_paths": [
+      "deny.toml",
+      "src-tauri/core/src/filesystem.rs",
+      "src-tauri/src/commands/export.rs",
+      "src-tauri/tauri.conf.json"
+    ],
+    "checks": [
+      "367 core and 11 application tests pass after export-consent/denied-access additions",
+      "Strict all-target/all-feature Linux Clippy passes after octal test literal fix",
+      "Denied-access regression rerun passes",
+      "Two configuration boundary tests pass after license-resource addition",
+      "Final Linux release/deb rebuild passes",
+      "Three isolated loopback provider security tests pass",
+      "Final npm audit zero; Cargo advisories/bans/licenses/sources pass with reviewed exceptions"
+    ],
+    "final_source_sha256": [
+      {
+        "path": "deny.toml",
+        "sha256": "2ded7831635d1381f122534a27af04ab086915bd04025ceaefd64ddba4a162d5"
+      },
+      {
+        "path": "src-tauri/core/src/filesystem.rs",
+        "sha256": "544ebf97cf18ab5477baa6fef4de15187afa90361e2f75c393e80bba255e858a"
+      },
+      {
+        "path": "src-tauri/src/commands/export.rs",
+        "sha256": "89cabb325e7e3582a7a63c8f86736960dec9a4c5471aed687b2d9259ececdd0b"
+      },
+      {
+        "path": "src-tauri/tauri.conf.json",
+        "sha256": "45979e06927d130577341d9f43a4dcca1055efbfd3e01d6fe0b8e92e64219332"
+      }
+    ],
+    "bundled_license": {
+      "path": "src-tauri/licenses/webpki-roots-CDLA-2.0.txt",
+      "sha256": "e271993808fec50ab29350b39539cdec611a9103f827e0aa26d61da70e2d33f8"
+    }
+  },
+  "final_secrets_scan": {
+    "source_files": 440,
+    "source_findings": 0,
+    "history_commits": 19,
+    "history_findings": 0
+  }
+}

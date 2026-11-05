@@ -2,6 +2,7 @@
  * Monitoring lifecycle and controls. Keeps backend coordination out of React
  * components: components call these functions and read the stores.
  */
+import { useActivityStore } from "@/stores/activityStore";
 import { useAlertStore } from "@/stores/alertStore";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { mockProcesses } from "@/features/processes/mock";
@@ -42,6 +43,7 @@ export async function startMonitoring(): Promise<void> {
     // Backfill after subscribing so no tick falls into a gap.
     store.backfillHistory(await backend.getHistory(BACKFILL_SECONDS));
     useAlertStore.getState().replace(await backend.getRecentAlerts());
+    backfillActivity();
     watchVisibility();
   } catch (error) {
     started = false;
@@ -61,6 +63,15 @@ function onTick(incoming: MetricsTick): void {
     useAlertStore.getState().add(tick.alerts);
     for (const alert of tick.alerts) toast.info(`${alert.ruleName}: ${alert.message}`);
   }
+  if (tick.activity.length > 0) useActivityStore.getState().add(tick.activity);
+}
+
+/** Fetches timeline events missed while the window was hidden (or before subscribing). */
+function backfillActivity(): void {
+  void backend
+    .getActivity(useActivityStore.getState().lastSeq)
+    .then((events) => useActivityStore.getState().add(events))
+    .catch(() => {});
 }
 
 /** Development-only stress test: swap in N deterministic mock processes. */
@@ -87,6 +98,7 @@ function watchVisibility(): void {
       .getRecentAlerts()
       .then((events) => useAlertStore.getState().replace(events))
       .catch(() => {});
+    backfillActivity();
   });
 }
 

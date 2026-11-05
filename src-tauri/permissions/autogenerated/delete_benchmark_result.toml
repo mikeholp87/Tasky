@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-benchmark-result"
+description = "Enables the delete_benchmark_result command without any pre-configured scope."
+commands.allow = ["delete_benchmark_result"]
+
+[[permission]]
+identifier = "deny-delete-benchmark-result"
+description = "Denies the delete_benchmark_result command without any pre-configured scope."
+commands.deny = ["delete_benchmark_result"]

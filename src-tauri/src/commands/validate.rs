@@ -13,9 +13,32 @@ pub fn pid(raw: i64) -> AppResult<u32> {
     }
 }
 
+/// A path typed or picked in the file finder. Only checks shape; whether it
+/// exists is the platform code's business.
+pub fn search_path(raw: &str) -> AppResult<&str> {
+    let path = raw.trim();
+    if path.is_empty() {
+        return Err(AppError::InvalidArgument("Enter or pick a path.".into()));
+    }
+    if path.len() > 4096 || path.contains('\0') {
+        return Err(AppError::InvalidArgument(
+            "That is not a valid path.".into(),
+        ));
+    }
+    Ok(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checks_search_path_shape() {
+        assert_eq!(search_path("  /tmp/a b  ").unwrap(), "/tmp/a b");
+        for bad in ["", "   ", "a\0b", &"x".repeat(5000)] {
+            assert!(search_path(bad).is_err());
+        }
+    }
 
     #[test]
     fn accepts_positive_u32() {

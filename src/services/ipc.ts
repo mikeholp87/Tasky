@@ -4,18 +4,35 @@
  */
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import type {
+  ActivityEvent,
   AppError,
+  BenchmarkKind,
+  DiskPlan,
+  DiskTargetInfo,
+  InternetPlan,
+  GpuAdapterInfo,
+  BenchmarkProfile,
+  BenchmarkResult,
+  BenchmarkStatus,
   ErrorKind,
+  FileUserList,
+  HardwareInfo,
   HistoryPoint,
+  MemoryMap,
   MetricsTick,
+  ModuleInfo,
   MonitoringState,
   ActionOutcome,
+  OpenFileList,
   ProcessAction,
   ProcessDetails,
   ProtectionAssessment,
   AlertEvent,
   Settings,
+  SocketList,
+  StartupItem,
   StaticSystemInfo,
+  ThreadList,
 } from "@/types";
 
 export const isBackendAvailable = (): boolean => isTauri();
@@ -30,7 +47,11 @@ const ERROR_KINDS: Record<ErrorKind, true> = {
   invalidArgument: true,
   processProtected: true,
   actionUnavailable: true,
+  operationCancelled: true,
+  operationBusy: true,
   engineUnavailable: true,
+  benchmarkAlreadyRunning: true,
+  benchmarkFailed: true,
 };
 
 function isAppError(value: unknown): value is AppError {
@@ -78,6 +99,31 @@ export const backend = {
 
   refreshNow: () => call<void>("refresh_now"),
 
+  startBenchmark: (
+    kind: BenchmarkKind,
+    profile: BenchmarkProfile,
+    adapter?: string,
+    diskTarget?: string,
+  ) =>
+    call<BenchmarkStatus>("start_benchmark", {
+      kind,
+      profile,
+      adapter: adapter ?? null,
+      diskTarget: diskTarget ?? null,
+    }),
+  listGpuAdapters: () => call<GpuAdapterInfo[]>("list_gpu_adapters"),
+  listDiskTargets: () => call<DiskTargetInfo[]>("list_disk_targets"),
+  diskPlan: (target: string, profile: BenchmarkProfile) =>
+    call<DiskPlan>("disk_plan", { target, profile }),
+  internetPlan: (profile: BenchmarkProfile) => call<InternetPlan>("internet_plan", { profile }),
+  cancelBenchmark: () => call<void>("cancel_benchmark"),
+  getBenchmarkStatus: () => call<BenchmarkStatus>("get_benchmark_status"),
+  getBenchmarkHistory: () => call<BenchmarkResult[]>("get_benchmark_history"),
+  deleteBenchmarkResult: (id: string) => call<void>("delete_benchmark_result", { id }),
+
+  /** Per-process shared-memory accounting; extra reads, so only while it is shown. */
+  setMemoryDetail: (enabled: boolean) => call<void>("set_memory_detail", { enabled }),
+
   getProcessDetails: (pid: number) => call<ProcessDetails>("get_process_details", { pid }),
 
   assessProcessAction: (pid: number, action: ProcessAction) =>
@@ -90,6 +136,21 @@ export const backend = {
     acknowledgeWarnings: boolean,
   ) =>
     call<ActionOutcome>("perform_process_action", { pid, startTime, action, acknowledgeWarnings }),
+
+  /** On-demand inspection; each call walks OS tables, so call only while its view is open. */
+  listSockets: () => call<SocketList>("list_sockets"),
+  listStartupItems: () => call<StartupItem[]>("list_startup_items"),
+  setStartupEnabled: (id: string, enabled: boolean) =>
+    call<void>("set_startup_enabled", { id, enabled }),
+  getOpenFiles: (pid: number) => call<OpenFileList>("get_open_files", { pid }),
+  findFileUsers: (path: string) => call<FileUserList>("find_file_users", { path }),
+  getMemoryMap: (pid: number) => call<MemoryMap>("get_memory_map", { pid }),
+  getModules: (pid: number) => call<ModuleInfo[]>("get_modules", { pid }),
+  getThreads: (pid: number) => call<ThreadList>("get_threads", { pid }),
+  /** Native file/folder picker; resolves to the chosen path or null if cancelled. */
+  pickPath: (directory: boolean) => call<string | null>("pick_path", { directory }),
+  getHardwareInfo: () => call<HardwareInfo>("get_hardware_info"),
+  getActivity: (after: number) => call<ActivityEvent[]>("get_activity", { after }),
 
   revealExecutable: (pid: number) => call<void>("reveal_executable", { pid }),
 
