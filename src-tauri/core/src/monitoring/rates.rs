@@ -54,7 +54,7 @@ pub fn active_percent(
             if clock <= 0.0 {
                 return None;
             }
-            1.0 - ci.saturating_sub(pi) as f64 / clock
+            1.0 - ci.checked_sub(pi)? as f64 / clock
         }
         _ => {
             let busy = cur.busy_ns?.checked_sub(prev.busy_ns?)? as f64;
@@ -153,6 +153,17 @@ mod disk_tests {
         };
         let reset = DiskIoCounters {
             busy_ns: Some(10),
+            ..Default::default()
+        };
+        assert_eq!(active_percent(&prev, &reset, Duration::from_secs(1)), None);
+        let prev = DiskIoCounters {
+            idle_ns: Some(100),
+            clock_ns: Some(100),
+            ..Default::default()
+        };
+        let reset = DiskIoCounters {
+            idle_ns: Some(1),
+            clock_ns: Some(200),
             ..Default::default()
         };
         assert_eq!(active_percent(&prev, &reset, Duration::from_secs(1)), None);

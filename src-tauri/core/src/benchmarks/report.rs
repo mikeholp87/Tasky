@@ -465,7 +465,8 @@ mod tests {
 
     #[test]
     fn refuses_cross_version_comparison() {
-        let a = with_metric("m", &[1.0; 5], "X");
+        let mut a = with_metric("m", &[1.0; 5], "X");
+        a.method_version = "1.0.0".into();
         let mut b = a.clone();
         b.method_version = "2.0.0".into();
         assert!(!compare(&a, &b).compatible_method);
@@ -499,7 +500,7 @@ mod tests {
         let s = summary_text(&r);
         assert!(s.starts_with("System Benchmark"));
         assert!(s.contains("Multi-core integer: 100 Mops/s"));
-        assert!(s.contains("Task Manager Benchmark v1.0.0"));
+        assert!(s.contains(&format!("Task Manager Benchmark v{}", r.method_version)));
         assert!(!s.contains("Internet"), "untested categories are omitted");
     }
 }

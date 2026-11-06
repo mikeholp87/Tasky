@@ -1,63 +1,89 @@
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * Design tokens. Neutral surfaces, one accent, and semantic status colors that
- * are reserved for genuine warnings. Every pair here keeps ≥4.5:1 text contrast
- * in both themes.
+ * Design tokens. Two ideas keep the interface legible at a glance:
+ *   1. Chrome is quiet. The accent (ultramarine) means "selected" or "focused"
+ *      and nothing else.
+ *   2. Data carries the colour. Each resource has one fixed hue (CPU blue,
+ *      memory violet, disk green, network cyan) used for its charts and
+ *      meters, while amber and red are reserved for genuine pressure.
+ * Text pairs keep >= 4.5:1 contrast in both themes (checked in
+ * src/styles/contrast.test.ts).
  */
 :root {
-  --bg: #f6f7f9;
+  --bg: #edeff5;
   --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #e2e5ea;
-  --border-strong: #cdd2da;
-  --fg: #151a21;
-  --fg-muted: #5b6574;
-  --fg-subtle: #7d8796;
-  --accent: #0e7c86;
+  --surface-2: #f3f4f9;
+  --border: #e0e3ec;
+  --border-strong: #c9cedb;
+  --fg: #14161f;
+  --fg-muted: #4b5167;
+  --fg-subtle: #626880;
+  --accent: #4350e0;
   --accent-fg: #ffffff;
-  --accent-soft: #e0f2f3;
-  --chart-1: #0e7c86;
-  --chart-2: #6a5acd;
-  --chart-grid: #e6e9ee;
+  --accent-soft: #e6e8fd;
+  --res-cpu: #3558d6;
+  --res-mem: #7442d1;
+  --res-disk: #0b8a63;
+  --res-disk-2: #6fb9a1;
+  --res-net: #0a7c94;
+  --res-net-2: #7cb7c4;
+  --chart-1: var(--res-net);
+  --chart-2: var(--res-net-2);
+  --chart-grid: #e4e7ef;
   --ok: #1f7a4d;
-  --warn: #9a6200;
-  --warn-soft: #fdf1d8;
+  --warn: #8f5b00;
+  /* Brighter amber for bars and fills (graphics need 3:1, not 4.5:1). */
+  --warn-bar: #c27800;
+  --warn-soft: #fcefd2;
   --crit: #b42318;
+  --ok-soft: #dcf2e5;
   --crit-soft: #fde4e1;
   --danger: #b42318;
-  --heat-1: rgba(14, 124, 134, 0.08);
+  --heat-1: rgba(53, 88, 214, 0.08);
   --heat-2: rgba(212, 140, 0, 0.16);
   --heat-3: rgba(196, 50, 36, 0.18);
+  --shadow-overlay: 0 12px 32px -8px rgba(20, 22, 31, 0.22), 0 2px 6px rgba(20, 22, 31, 0.08);
   color-scheme: light;
 }
 
 .dark {
-  --bg: #0f1216;
-  --surface: #161a20;
-  --surface-2: #1d222a;
-  --border: #272d36;
-  --border-strong: #353d48;
-  --fg: #e6e9ee;
-  --fg-muted: #9aa4b2;
-  --fg-subtle: #7b8594;
-  --accent: #3cb8c2;
-  --accent-fg: #071416;
-  --accent-soft: #12333a;
-  --chart-1: #3cb8c2;
-  --chart-2: #9d8cff;
-  --chart-grid: #232932;
+  --bg: #12131a;
+  --surface: #191b24;
+  --surface-2: #222532;
+  --border: #2c2f3e;
+  --border-strong: #3b3f52;
+  --fg: #eceef7;
+  --fg-muted: #a2a8bf;
+  --fg-subtle: #858ca6;
+  --accent: #8a97ff;
+  --accent-fg: #0c0e1f;
+  --accent-soft: #232750;
+  --res-cpu: #7a9bff;
+  --res-mem: #b794ff;
+  --res-disk: #4fd1a5;
+  --res-disk-2: #2a7a63;
+  --res-net: #4ccbe0;
+  --res-net-2: #28707c;
+  --chart-grid: #262938;
   --ok: #4cc38a;
-  --warn: #f0b44c;
-  --warn-soft: #3a2c10;
-  --crit: #ff7a6b;
-  --crit-soft: #3d1a17;
+  --warn: #f2b94b;
+  --warn-bar: #f2b94b;
+  --warn-soft: #3a2d12;
+  --crit: #ff7f72;
+  --ok-soft: #14301f;
+  --crit-soft: #411c19;
   --danger: #c93a28;
-  --heat-1: rgba(60, 184, 194, 0.1);
-  --heat-2: rgba(240, 180, 76, 0.16);
-  --heat-3: rgba(255, 122, 107, 0.2);
+  --heat-1: rgba(122, 155, 255, 0.1);
+  --heat-2: rgba(242, 185, 75, 0.16);
+  --heat-3: rgba(255, 127, 114, 0.2);
+  --shadow-overlay: 0 16px 40px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
   color-scheme: dark;
 }
 
@@ -75,18 +101,32 @@
   --color-accent-soft: var(--accent-soft);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
+  --color-warn-bar: var(--warn-bar);
   --color-warn-soft: var(--warn-soft);
   --color-crit: var(--crit);
   --color-crit-soft: var(--crit-soft);
   --color-danger: var(--danger);
+  --color-res-cpu: var(--res-cpu);
+  --color-res-mem: var(--res-mem);
+  --color-res-disk: var(--res-disk);
+  --color-res-net: var(--res-net);
+  --shadow-overlay: var(--shadow-overlay);
   --font-sans:
-    "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Ubuntu", "Cantarell",
+    "IBM Plex Sans", "Segoe UI Variable Text", "Segoe UI", system-ui, "Ubuntu", "Cantarell",
     "Noto Sans", sans-serif;
   --font-mono:
-    "Cascadia Mono", "JetBrains Mono", "Ubuntu Mono", "SF Mono", Consolas, ui-monospace, monospace;
+    "IBM Plex Mono", "Cascadia Mono", "JetBrains Mono", "Ubuntu Mono", Consolas, ui-monospace,
+    monospace;
 }
 
 @layer base {
+  /*
+   * Fluid type scale. Everything is in rem, so layout and text grow together:
+   * 16px up to ~1200px wide, rising to 20px by ~2000px (clamped at both ends).
+   */
+  html {
+    font-size: clamp(16px, 11.5px + 0.375vw, 20px);
+  }
   html,
   body,
   #root {
@@ -96,7 +136,8 @@
     background: var(--bg);
     color: var(--fg);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: 0.875rem;
+    line-height: 1.45;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
     user-select: none;
@@ -111,6 +152,24 @@
   }
   .num {
     font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--fg);
+  }
+  /* Paths, command lines and other code-like data. */
+  .data {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  /* Motion is only used to show a value changing; honour the OS setting. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
   }
   ::-webkit-scrollbar {
     width: 10px;

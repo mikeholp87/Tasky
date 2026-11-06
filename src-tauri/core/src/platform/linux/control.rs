@@ -1,22 +1,41 @@
 //! Process control with signals and setpriority(2). No shell commands.
 
 use crate::errors::{AppError, AppResult};
-use crate::models::PriorityLevel;
+use crate::models::{PriorityLevel, ProcessAction};
+use rustix::process::{Pid, PidfdFlags, Signal, pidfd_open, pidfd_send_signal};
 
-pub fn terminate(pid: u32) -> AppResult<()> {
-    signal(pid, libc::SIGTERM)
+pub struct ProcessPin {
+    pid: u32,
+    fd: std::os::fd::OwnedFd,
 }
 
-pub fn force_kill(pid: u32) -> AppResult<()> {
-    signal(pid, libc::SIGKILL)
+pub fn pin_process(pid: u32) -> AppResult<ProcessPin> {
+    let raw = i32::try_from(pid).map_err(|_| AppError::InvalidPid(i64::from(pid)))?;
+    let target = Pid::from_raw(raw).ok_or(AppError::InvalidPid(i64::from(pid)))?;
+    let fd = pidfd_open(target, PidfdFlags::empty()).map_err(|e| {
+        if e == rustix::io::Errno::NOSYS {
+            AppError::UnsupportedOperation(
+                "Safe process actions require Linux kernel 5.3 or newer (pidfd support).".into(),
+            )
+        } else {
+            native_error(pid, "open", std::io::Error::from(e))
+        }
+    })?;
+    Ok(ProcessPin { pid, fd })
 }
 
-pub fn suspend(pid: u32) -> AppResult<()> {
-    signal(pid, libc::SIGSTOP)
-}
-
-pub fn resume(pid: u32) -> AppResult<()> {
-    signal(pid, libc::SIGCONT)
+impl ProcessPin {
+    pub fn perform(&self, action: ProcessAction) -> AppResult<()> {
+        let signal = match action {
+            ProcessAction::Terminate => Signal::TERM,
+            ProcessAction::ForceKill => Signal::KILL,
+            ProcessAction::Suspend => Signal::STOP,
+            ProcessAction::Resume => Signal::CONT,
+            ProcessAction::SetPriority { priority } => return set_priority(self.pid, priority),
+        };
+        pidfd_send_signal(&self.fd, signal)
+            .map_err(|e| native_error(self.pid, "signal", std::io::Error::from(e)))
+    }
 }
 
 /// Raising priority (negative nice) requires CAP_SYS_NICE; the kernel's
@@ -46,20 +65,11 @@ pub fn system_root() -> Option<String> {
     None
 }
 
-fn signal(pid: u32, sig: libc::c_int) -> AppResult<()> {
-    let target = libc::pid_t::try_from(pid).map_err(|_| AppError::InvalidPid(i64::from(pid)))?;
-    // SAFETY: kill has no memory-safety preconditions. PIDs are validated as
-    // positive, so this never signals a process group or every process.
-    let rc = unsafe { libc::kill(target, sig) };
-    if rc == 0 {
-        Ok(())
-    } else {
-        Err(errno_error(pid, "signal"))
-    }
+fn errno_error(pid: u32, action: &str) -> AppError {
+    native_error(pid, action, std::io::Error::last_os_error())
 }
 
-fn errno_error(pid: u32, action: &str) -> AppError {
-    let err = std::io::Error::last_os_error();
+fn native_error(pid: u32, action: &str, err: std::io::Error) -> AppError {
     match err.raw_os_error() {
         Some(libc::ESRCH) => AppError::ProcessNotFound(pid),
         Some(libc::EPERM | libc::EACCES) => AppError::PermissionDenied(format!(

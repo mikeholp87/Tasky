@@ -49,6 +49,10 @@ export function SettingsPage() {
   const monitoring = useMetricsStore((m) => m.monitoring);
   const setMonitoring = useMetricsStore((m) => m.setMonitoring);
   const navigate = useUiStore((u) => u.navigate);
+  const platform = useMetricsStore((m) => m.staticInfo?.platform);
+  const desktop = useMetricsStore((m) => m.staticInfo?.desktopEnvironment);
+  // Stock GNOME has no tray: a hidden window would have no icon to come back from.
+  const noTrayHost = platform === "linux" && /gnome/i.test(desktop ?? "");
   const backendReady = isBackendAvailable();
 
   const onInterval = (value: string) => {
@@ -74,7 +78,12 @@ export function SettingsPage() {
           />
           <Toggle
             label="Minimize to tray"
-            description="Closing the window keeps Task Manager running in the system tray, so alerts still work."
+            description={
+              "Closing the window keeps Task Manager running in the system tray, so alerts still work." +
+              (noTrayHost
+                ? " GNOME shows no tray by default; without the AppIndicator extension, closing the window quits Task Manager."
+                : "")
+            }
             checked={s.minimizeToTray}
             onChange={(v) => s.update({ minimizeToTray: v })}
           />
@@ -126,6 +135,76 @@ export function SettingsPage() {
               ))}
             </select>
           </Field>
+          <Field
+            label="Highlight new processes"
+            htmlFor="new-process"
+            description="Marks processes that started within this time in the process table."
+          >
+            <select
+              id="new-process"
+              value={s.newProcessSeconds}
+              onChange={(e) => s.update({ newProcessSeconds: Number(e.target.value) })}
+              className={selectCls}
+            >
+              {withCurrent([0, 5, 10, 30, 60], s.newProcessSeconds).map((v) => (
+                <option key={v} value={v}>
+                  {v === 0 ? "Off" : `${v} seconds`}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label="CPU spike threshold"
+            htmlFor="cpu-spike"
+            description="Activity logs a process that stays above this share of the whole machine's CPU for a few seconds."
+          >
+            <select
+              id="cpu-spike"
+              value={s.cpuSpikePercent}
+              onChange={(e) => s.update({ cpuSpikePercent: Number(e.target.value) })}
+              className={selectCls}
+            >
+              {withCurrent([25, 50, 70, 80, 90], s.cpuSpikePercent).map((v) => (
+                <option key={v} value={v}>
+                  {v}%
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label="Memory jump threshold"
+            htmlFor="memory-jump"
+            description="Activity logs a process whose memory grows by this much within half a minute."
+          >
+            <select
+              id="memory-jump"
+              value={s.memoryJumpMb}
+              onChange={(e) => s.update({ memoryJumpMb: Number(e.target.value) })}
+              className={selectCls}
+            >
+              {withCurrent([128, 256, 512, 1024, 2048], s.memoryJumpMb).map((v) => (
+                <option key={v} value={v}>
+                  {v >= 1024 ? `${v / 1024} GB` : `${v} MB`}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {platform === "linux" && (
+            <>
+              <Toggle
+                label="Show kernel threads"
+                description="List kernel workers (kworker, ksoftirqd, …). They cannot be ended and usually outnumber normal processes."
+                checked={s.showKernelThreads}
+                onChange={(v) => s.update({ showKernelThreads: v })}
+              />
+              <Toggle
+                label="Show virtual network adapters"
+                description="Bridges, veth pairs and container networks. They are never included in network totals."
+                checked={s.showVirtualAdapters}
+                onChange={(v) => s.update({ showVirtualAdapters: v })}
+              />
+            </>
+          )}
         </Section>
 
         <Section title="Appearance">
@@ -147,7 +226,7 @@ export function SettingsPage() {
                     s.theme === id && "bg-surface text-fg shadow-sm",
                   )}
                 >
-                  <Icon size={14} aria-hidden />
+                  <Icon size="0.875rem" aria-hidden />
                   {label}
                 </button>
               ))}
@@ -203,7 +282,7 @@ export function SettingsPage() {
               }}
               className="flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-crit hover:bg-surface-2"
             >
-              <RotateCcw size={14} aria-hidden /> Reset
+              <RotateCcw size="0.875rem" aria-hidden /> Reset
             </button>
           </Field>
         </Section>
@@ -412,7 +491,7 @@ function DiagnosticsExport({ disabled }: { disabled: boolean }) {
         <div>
           <div className="font-medium">Export diagnostics</div>
           <div className="text-fg-muted">
-            App version, system details, settings, performance and recent errors.
+            App version, system details, preferences and performance. Review before sharing.
           </div>
         </div>
         <button
@@ -421,7 +500,7 @@ function DiagnosticsExport({ disabled }: { disabled: boolean }) {
           onClick={() => void run()}
           className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 hover:bg-surface-2 disabled:opacity-50"
         >
-          <Download size={14} aria-hidden /> Export…
+          <Download size="0.875rem" aria-hidden /> Export…
         </button>
       </div>
       <label className="flex items-center gap-2 text-fg-muted">
@@ -430,7 +509,7 @@ function DiagnosticsExport({ disabled }: { disabled: boolean }) {
           checked={processes}
           onChange={(e) => setProcesses(e.target.checked)}
         />
-        Include the process list
+        Include process list, hostname, alert rules and recent errors (may be sensitive)
       </label>
       <label className={cn("flex items-center gap-2 text-fg-muted", !processes && "opacity-50")}>
         <input
@@ -443,6 +522,11 @@ function DiagnosticsExport({ disabled }: { disabled: boolean }) {
       </label>
     </div>
   );
+}
+
+/** The preset choices plus the stored value, if a hand-edited file set something else. */
+function withCurrent(options: number[], current: number): number[] {
+  return options.includes(current) ? options : [...options, current].sort((a, b) => a - b);
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

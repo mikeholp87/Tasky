@@ -18,7 +18,31 @@ use ::windows::core::BOOL;
 
 use super::handle::{map_error, open};
 use crate::errors::{AppError, AppResult};
-use crate::models::PriorityLevel;
+use crate::models::{PriorityLevel, ProcessAction};
+
+pub struct ProcessPin {
+    pid: u32,
+    _handle: super::handle::ProcessHandle,
+}
+
+pub fn pin_process(pid: u32) -> AppResult<ProcessPin> {
+    Ok(ProcessPin {
+        pid,
+        _handle: open(pid, PROCESS_QUERY_LIMITED_INFORMATION)?,
+    })
+}
+
+impl ProcessPin {
+    pub fn perform(&self, action: ProcessAction) -> AppResult<()> {
+        match action {
+            ProcessAction::Terminate => terminate(self.pid),
+            ProcessAction::ForceKill => force_kill(self.pid),
+            ProcessAction::Suspend => suspend(self.pid),
+            ProcessAction::Resume => resume(self.pid),
+            ProcessAction::SetPriority { priority } => set_priority(self.pid, priority),
+        }
+    }
+}
 
 /// Graceful end: ask the process's visible top-level windows to close, as
 /// clicking their X button would. The application may prompt to save.

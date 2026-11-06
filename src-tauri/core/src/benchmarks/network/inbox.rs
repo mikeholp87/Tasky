@@ -5,7 +5,7 @@
 //! accepted, and only while the run is waiting, so stale or forged
 //! submissions are rejected.
 
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::benchmarks::models::{NetworkProgress, NetworkSubmission};
@@ -18,18 +18,20 @@ pub enum InboxMessage {
 
 #[derive(Default)]
 pub struct NetworkInbox {
-    slot: Mutex<Option<(String, Sender<InboxMessage>)>>,
+    slot: Mutex<Option<(String, SyncSender<InboxMessage>)>>,
 }
 
 impl NetworkInbox {
-    fn slot(&self) -> MutexGuard<'_, Option<(String, Sender<InboxMessage>)>> {
+    fn slot(&self) -> MutexGuard<'_, Option<(String, SyncSender<InboxMessage>)>> {
         self.slot.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Starts waiting for a provider; replaces any previous wait.
     pub fn open(&self) -> (String, Receiver<InboxMessage>) {
         let token = uuid::Uuid::new_v4().to_string();
-        let (tx, rx) = mpsc::channel();
+        // Progress is expendable. Bound queued updates even if a WebView sends
+        // faster than the runner can consume them.
+        let (tx, rx) = mpsc::sync_channel(8);
         *self.slot() = Some((token.clone(), tx));
         (token, rx)
     }
@@ -39,25 +41,49 @@ impl NetworkInbox {
     }
 
     fn send(&self, token: &str, msg: InboxMessage, last: bool) -> AppResult<()> {
-        let mut slot = self.slot();
-        match slot.as_ref() {
-            Some((expected, tx)) if expected == token => {
-                let _ = tx.send(msg);
-                if last {
-                    *slot = None;
-                }
-                Ok(())
+        let tx = {
+            let mut slot = self.slot();
+            let Some((_, tx)) = slot.as_ref().filter(|(expected, _)| expected == token) else {
+                return Err(AppError::InvalidArgument(
+                    "No internet test is waiting for these results.".into(),
+                ));
+            };
+            let tx = tx.clone();
+            if last {
+                *slot = None;
             }
-            _ => Err(AppError::InvalidArgument(
-                "No internet test is waiting for these results.".into(),
-            )),
+            tx
+        };
+        // Never hold the inbox lock while waiting for space: close/cancellation
+        // must be able to drop the receiver and wake a final submission.
+        if last {
+            tx.send(msg).map_err(|_| {
+                AppError::ProviderUnavailable(
+                    "The internet test is no longer receiving results.".into(),
+                )
+            })
+        } else {
+            match tx.try_send(msg) {
+                Ok(()) | Err(TrySendError::Full(_)) => Ok(()),
+                Err(TrySendError::Disconnected(_)) => Err(AppError::ProviderUnavailable(
+                    "The internet test is no longer receiving progress.".into(),
+                )),
+            }
         }
     }
 
     pub fn progress(&self, token: &str, progress: NetworkProgress) -> AppResult<()> {
         let mut progress = progress;
-        progress.fraction = progress.fraction.clamp(0.0, 1.0);
-        progress.label.truncate(100);
+        progress.fraction = if progress.fraction.is_finite() {
+            progress.fraction.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let mut end = progress.label.len().min(100);
+        while !progress.label.is_char_boundary(end) {
+            end -= 1;
+        }
+        progress.label.truncate(end);
         progress.live.truncate(64);
         progress
             .live
@@ -73,6 +99,27 @@ impl NetworkInbox {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unicode_progress_is_bounded_without_panicking() {
+        let inbox = NetworkInbox::default();
+        let (token, rx) = inbox.open();
+        inbox
+            .progress(
+                &token,
+                NetworkProgress {
+                    fraction: 0.5,
+                    label: "界".repeat(40),
+                    live: Vec::new(),
+                },
+            )
+            .unwrap();
+        let InboxMessage::Progress(progress) = rx.recv().unwrap() else {
+            panic!("expected progress");
+        };
+        assert!(progress.label.len() <= 100);
+        assert!(progress.label.chars().all(|c| c == '界'));
+    }
 
     #[test]
     fn accepts_only_the_current_token_once() {
@@ -115,5 +162,32 @@ mod tests {
         let (token, _rx) = inbox.open();
         inbox.close();
         assert!(inbox.submit(&token, NetworkSubmission::default()).is_err());
+    }
+
+    #[test]
+    fn progress_flood_is_bounded_and_final_submission_survives() {
+        let inbox = NetworkInbox::default();
+        let (token, rx) = inbox.open();
+        for _ in 0..10_000 {
+            inbox
+                .progress(
+                    &token,
+                    NetworkProgress {
+                        fraction: f32::NAN,
+                        label: String::new(),
+                        live: Vec::new(),
+                    },
+                )
+                .unwrap();
+        }
+        let queued: Vec<_> = rx.try_iter().collect();
+        assert_eq!(queued.len(), 8);
+        assert!(
+            queued
+                .iter()
+                .all(|m| matches!(m, InboxMessage::Progress(p) if p.fraction == 0.0))
+        );
+        inbox.submit(&token, NetworkSubmission::default()).unwrap();
+        assert!(matches!(rx.recv().unwrap(), InboxMessage::Done(_)));
     }
 }

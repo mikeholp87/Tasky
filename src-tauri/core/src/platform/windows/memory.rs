@@ -22,5 +22,21 @@ pub fn memory_extras() -> MemoryExtras {
         buffers_bytes: None,
         commit_used_bytes: bytes(info.CommitTotal),
         commit_limit_bytes: bytes(info.CommitLimit),
+        kernel_paged_bytes: bytes(info.KernelPaged),
+        kernel_nonpaged_bytes: bytes(info.KernelNonpaged),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_live_kernel_pools_and_commit_counters() {
+        let extras = memory_extras();
+        assert!(extras.kernel_paged_bytes.is_some_and(|bytes| bytes > 0));
+        assert!(extras.kernel_nonpaged_bytes.is_some_and(|bytes| bytes > 0));
+        assert!(extras.commit_limit_bytes.is_some_and(|bytes| bytes > 0));
+        assert!(extras.commit_used_bytes.is_some());
     }
 }

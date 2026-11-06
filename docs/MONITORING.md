@@ -58,6 +58,38 @@ The app never reports an invented number:
   without elevation. Windows withholds the owner SID even from
   `WTSEnumerateProcessesEx`, which was tried and removed.
 
+## Memory diagnostics
+
+Open Memory or select **Explain usage** on Overview. The view ranks groups
+by summed resident memory / working set, using executable paths when known
+and process names otherwise (case insensitive on Windows). Expand a group
+to inspect individual PIDs using the existing process details view.
+
+Recent growth compares each current group's total with its total in the
+oldest available sample within the last minute. Group totals are sampled
+every five seconds while the window receives monitoring ticks, regardless
+of the selected page. At most 13 grouped samples are retained; no command
+lines or full process rows are retained by this history. New groups use a
+zero baseline, exited processes reduce a group's total, and growth is not
+evidence of a leak. After a gap longer than a minute or an engine restart,
+a new baseline is collected. No process history is backfilled for this view.
+
+Working sets can count shared pages multiple times and exclude some system
+allocations. Their sum is not an exact partition of RAM; subtraction from
+system usage cannot identify hidden memory. Cache overlaps other figures,
+and available memory already includes reclaimable pages. Windows cache is
+the standby list plus the system working set. Commit measures promised
+memory, not physical RAM usage.
+
+Windows kernel paged and nonpaged pools come from the existing
+`GetPerformanceInfo` call. Nonpaged pool stays in RAM; paged pool can include
+pages on disk. Pool counters are unavailable on other platforms. The view
+highlights nonpaged pool at 10% or more of usable RAM as an investigation
+hint, and commit charge at 90% or more of its limit. Neither identifies a
+specific leaking driver. See Microsoft's
+[performance counter definitions](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information)
+and [working set explanation](https://learn.microsoft.com/en-us/windows/win32/memory/working-set).
+
 ## History
 
 - System history: a ring buffer in the engine sized from the "History length"

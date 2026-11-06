@@ -18,9 +18,10 @@ use std::time::{Duration, Instant};
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    AlertEvent, AlertRule, HistoryPoint, MetricsTick, MonitoringState, ProcessPoint, ProcessRow,
-    ProcessState, StaticSystemInfo,
+    ActivityEvent, ActivityKind, AlertEvent, AlertRule, HistoryPoint, MetricsTick, MonitoringState,
+    ProcessPoint, ProcessRow, ProcessState, StaticSystemInfo,
 };
+use crate::monitoring::activity::{ActivityConfig, ActivityDetector, ActivityLog, Pending};
 use crate::monitoring::alerts::AlertEvaluator;
 use crate::monitoring::collector::{Collector, unix_millis};
 use crate::monitoring::history::RingBuffer;
@@ -64,7 +65,14 @@ struct Shared {
     /// engine reports the state it caused.
     suspended: Mutex<HashSet<(u32, u64)>>,
     alert_rules: RwLock<Vec<AlertRule>>,
+    /// Linux kernel threads are dropped from ticks unless enabled: they are
+    /// often over half of all rows and cannot be acted on.
+    include_kernel_threads: AtomicBool,
+    /// The UI is showing per-process shared-memory accounting (extra reads).
+    memory_detail: AtomicBool,
     alert_log: Mutex<RingBuffer<AlertEvent>>,
+    activity_log: Mutex<ActivityLog>,
+    activity_config: RwLock<ActivityConfig>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
     /// Set while a benchmark runs; see [`Engine::set_benchmark_mode`].
     benchmark_mode: AtomicBool,
@@ -81,39 +89,73 @@ fn write<T>(l: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
 }
 
 pub struct Engine {
-    control: mpsc::Sender<Control>,
+    control: mpsc::SyncSender<Control>,
+    refresh_requested: Mutex<Option<Instant>>,
     shared: Arc<Shared>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Engine {
     pub fn start(initial: MonitoringState) -> AppResult<Self> {
-        let collector = Collector::new()?;
+        let (tx, rx) = mpsc::sync_channel(16);
+        let (ready_tx, ready_rx) = mpsc::sync_channel::<AppResult<StaticSystemInfo>>(1);
+        let (shared_tx, shared_rx) = mpsc::sync_channel::<Arc<Shared>>(1);
+        let handle = thread::Builder::new()
+            .name("monitoring-engine".into())
+            .spawn(move || {
+                // sysinfo's GPU handles (Vulkan/NVML) are not `Send`, so the
+                // collector is created, used and dropped on this thread only.
+                let collector = match Collector::new() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(e));
+                        return;
+                    }
+                };
+                if ready_tx.send(Ok(collector.static_info())).is_err() {
+                    return;
+                }
+                let Ok(shared) = shared_rx.recv() else {
+                    return;
+                };
+                let worker = Worker {
+                    collector,
+                    alerts: AlertEvaluator::default(),
+                    detector: ActivityDetector::default(),
+                    kernel_threads_shown: false,
+                    emitted_activity: 0,
+                    shared,
+                    last_payload: 0,
+                };
+                worker.run(rx, initial);
+            })
+            .map_err(|e| AppError::SystemQueryFailed(format!("cannot start engine: {e}")))?;
+        let static_info = ready_rx.recv().map_err(|_| AppError::EngineUnavailable)??;
         let shared = Arc::new(Shared {
-            static_info: collector.static_info(),
+            static_info,
             state: RwLock::new(initial),
             latest: RwLock::new(None),
             history: RwLock::new(RingBuffer::new(MAX_HISTORY_POINTS)),
             process_history: RwLock::new(ProcessHistory::default()),
             suspended: Mutex::new(HashSet::new()),
             alert_rules: RwLock::new(Vec::new()),
+            include_kernel_threads: AtomicBool::new(false),
+            memory_detail: AtomicBool::new(false),
             alert_log: Mutex::new(RingBuffer::new(ALERT_LOG_LEN)),
+            activity_log: Mutex::new(ActivityLog::default()),
+            activity_config: RwLock::new(ActivityConfig {
+                cpu_spike_percent: 80.0,
+                memory_jump_bytes: 512 * 1024 * 1024,
+            }),
             sinks: Mutex::new(HashMap::new()),
             benchmark_mode: AtomicBool::new(false),
         });
-        let (tx, rx) = mpsc::channel();
-        let worker = Worker {
-            collector,
-            alerts: AlertEvaluator::default(),
-            shared: Arc::clone(&shared),
-            last_payload: 0,
-        };
-        let handle = thread::Builder::new()
-            .name("monitoring-engine".into())
-            .spawn(move || worker.run(rx, initial))
-            .map_err(|e| AppError::SystemQueryFailed(format!("cannot start engine: {e}")))?;
+        shared_tx
+            .send(Arc::clone(&shared))
+            .map_err(|_| AppError::EngineUnavailable)?;
         Ok(Self {
             control: tx,
+            refresh_requested: Mutex::new(None),
             shared,
             thread: Mutex::new(Some(handle)),
         })
@@ -128,13 +170,25 @@ impl Engine {
     }
 
     pub fn set_state(&self, state: MonitoringState) -> AppResult<MonitoringState> {
-        *write(&self.shared.state) = state;
+        crate::models::validate_interval(state.interval_ms)?;
+        let mut current = write(&self.shared.state);
         self.send(Control::SetState(state))?;
+        *current = state;
         Ok(state)
     }
 
     pub fn refresh_now(&self) -> AppResult<()> {
-        self.send(Control::RefreshNow)
+        self.refresh_at(Instant::now())
+    }
+
+    fn refresh_at(&self, now: Instant) -> AppResult<()> {
+        let mut last = lock(&self.refresh_requested);
+        if last.is_some_and(|t| now.saturating_duration_since(t) < Duration::from_millis(500)) {
+            return Ok(());
+        }
+        self.send(Control::RefreshNow)?;
+        *last = Some(now);
+        Ok(())
     }
 
     /// Benchmark Mode: while active, polling runs no faster than
@@ -172,6 +226,18 @@ impl Engine {
         write(&self.shared.history).set_capacity(points.clamp(60, MAX_HISTORY_POINTS));
     }
 
+    /// Turns per-process proportional memory (PSS) sampling on or off.
+    pub fn set_memory_detail(&self, enabled: bool) {
+        self.shared.memory_detail.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Whether kernel threads appear in process lists (takes effect next tick).
+    pub fn set_include_kernel_threads(&self, include: bool) {
+        self.shared
+            .include_kernel_threads
+            .store(include, Ordering::Relaxed);
+    }
+
     /// The latest row for `pid`, if it is still running.
     pub fn process(&self, pid: u32) -> Option<ProcessRow> {
         self.latest()?
@@ -206,6 +272,25 @@ impl Engine {
         lock(&self.shared.alert_log).iter().cloned().collect()
     }
 
+    /// Sets the thresholds for CPU spike and memory jump events.
+    pub fn set_activity_config(&self, cpu_spike_percent: u32, memory_jump_mb: u32) {
+        *write(&self.shared.activity_config) = ActivityConfig {
+            cpu_spike_percent: cpu_spike_percent as f32,
+            memory_jump_bytes: u64::from(memory_jump_mb) * 1024 * 1024,
+        };
+    }
+
+    /// Adds an event from outside the engine (a process action, a benchmark).
+    /// It reaches the UI with the next tick.
+    pub fn record_activity(&self, event: Pending) {
+        lock(&self.shared.activity_log).record(unix_millis(), event);
+    }
+
+    /// Timeline events with a sequence number above `after`, oldest first.
+    pub fn activity_since(&self, after: u64) -> Vec<ActivityEvent> {
+        lock(&self.shared.activity_log).since(after)
+    }
+
     /// Registers (or replaces) the sink with the given key. Re-subscribing
     /// after a webview reload replaces the stale channel instead of leaking it.
     pub fn subscribe(&self, key: String, sink: Arc<dyn TickSink>) {
@@ -220,9 +305,10 @@ impl Engine {
     }
 
     fn send(&self, msg: Control) -> AppResult<()> {
-        self.control
-            .send(msg)
-            .map_err(|_| AppError::EngineUnavailable)
+        self.control.try_send(msg).map_err(|e| match e {
+            mpsc::TrySendError::Full(_) => AppError::OperationBusy,
+            mpsc::TrySendError::Disconnected(_) => AppError::EngineUnavailable,
+        })
     }
 }
 
@@ -230,6 +316,12 @@ impl Engine {
 struct Worker {
     collector: Collector,
     alerts: AlertEvaluator,
+    detector: ActivityDetector,
+    /// Whether the previous tick included kernel threads; a change makes
+    /// rows appear or vanish without any process starting or exiting.
+    kernel_threads_shown: bool,
+    /// Highest activity sequence already delivered in a tick.
+    emitted_activity: u64,
     shared: Arc<Shared>,
     last_payload: u32,
 }
@@ -278,9 +370,24 @@ impl Worker {
         let shared = &*self.shared;
         let benchmark_active = shared.benchmark_mode.load(Ordering::SeqCst);
         let interval_ms = effective_interval_ms(state, benchmark_active);
-        let mut sample = self.collector.sample(interval_ms, self.last_payload);
+        let mut sample = self.collector.sample(
+            interval_ms,
+            self.last_payload,
+            shared.memory_detail.load(Ordering::Relaxed),
+        );
         sample.engine.benchmark_active = benchmark_active;
+        let kernel_threads = shared.include_kernel_threads.load(Ordering::Relaxed);
+        if !kernel_threads {
+            sample.processes.retain(|p| !p.kernel_thread);
+            sample.engine.process_count = u32::try_from(sample.processes.len()).unwrap_or(u32::MAX);
+        }
         apply_suspended(shared, &mut sample.processes);
+
+        // A paused engine or a large sampling gap cannot establish that an
+        // alert condition held continuously (sleep/resume, stalled OS query).
+        if state.paused || sample.elapsed_ms > f64::from(interval_ms) * 3.0 {
+            self.alerts = AlertEvaluator::default();
+        }
 
         let rules = read(&shared.alert_rules).clone();
         sample.alerts = self.alerts.evaluate(&rules, &sample);
@@ -290,6 +397,32 @@ impl Worker {
                 tracing::info!(rule = %event.rule_id, "alert fired");
                 log.push(event.clone());
             }
+        }
+
+        // Timeline: diff against the previous snapshot, add alerts, then
+        // deliver everything recorded since the last tick (including events
+        // other threads recorded in between).
+        if kernel_threads != self.kernel_threads_shown {
+            self.kernel_threads_shown = kernel_threads;
+            self.detector.reset();
+        }
+        let cfg = *read(&shared.activity_config);
+        let found = self
+            .detector
+            .observe(sample.timestamp_ms, &sample.processes, &cfg);
+        {
+            let mut log = lock(&shared.activity_log);
+            for event in found {
+                log.record(sample.timestamp_ms, event);
+            }
+            for alert in &sample.alerts {
+                let mut e = Pending::new(ActivityKind::AlertFired).detail(alert.message.clone());
+                e.pid = alert.pid;
+                e.name = Some(alert.rule_name.clone());
+                log.record(alert.timestamp_ms, e);
+            }
+            sample.activity = log.since(self.emitted_activity);
+            self.emitted_activity = log.last_seq();
         }
 
         write(&shared.history).push(sample.point.clone());
@@ -316,7 +449,7 @@ impl Worker {
         } else {
             None
         };
-        let dead: Vec<String> = sinks
+        let dead: Vec<(String, Arc<dyn TickSink>)> = sinks
             .into_iter()
             .filter(|(_, sink)| {
                 let payload = if sink.wants_json() {
@@ -326,13 +459,19 @@ impl Worker {
                 };
                 !sink.deliver(&sample, payload)
             })
-            .map(|(k, _)| k)
             .collect();
         if !dead.is_empty() {
             let mut map = lock(&shared.sinks);
-            for key in dead {
+            for (key, disconnected) in dead {
                 tracing::debug!("dropping disconnected metrics subscriber {key}");
-                map.remove(&key);
+                // A reload may have replaced the channel during delivery.
+                // Remove only the disconnected instance, never its successor.
+                if map
+                    .get(&key)
+                    .is_some_and(|current| Arc::ptr_eq(current, &disconnected))
+                {
+                    map.remove(&key);
+                }
             }
         }
     }
@@ -469,12 +608,13 @@ mod tests {
     #[test]
     fn benchmark_mode_slows_polling_and_restores_it() {
         let engine = engine(true);
+        let refresh_time = Instant::now();
         let sink = CountingSink::new(false);
         engine.subscribe("bench".into(), sink.clone());
 
         engine.set_benchmark_mode(true);
         assert!(engine.benchmark_mode());
-        engine.refresh_now().unwrap();
+        engine.refresh_at(refresh_time).unwrap();
         assert!(wait_for(|| sink.count.load(Ordering::SeqCst) >= 1));
         let tick = engine.latest().unwrap();
         assert!(tick.engine.benchmark_active);
@@ -484,12 +624,28 @@ mod tests {
 
         engine.set_benchmark_mode(false);
         let before = sink.count.load(Ordering::SeqCst);
-        engine.refresh_now().unwrap();
+        engine
+            .refresh_at(refresh_time + Duration::from_secs(1))
+            .unwrap();
         assert!(wait_for(|| sink.count.load(Ordering::SeqCst) > before));
         let tick = engine.latest().unwrap();
         assert!(!tick.engine.benchmark_active);
         assert_eq!(tick.engine.interval_ms, 500);
         engine.shutdown();
+    }
+
+    #[test]
+    fn repeated_refresh_requests_are_coalesced_at_the_backend() {
+        let engine = engine(true);
+        let sink = CountingSink::new(false);
+        engine.subscribe("refresh-limit".into(), sink.clone());
+        let now = Instant::now();
+        for _ in 0..10_000 {
+            engine.refresh_at(now).unwrap();
+        }
+        assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
+        engine.shutdown();
+        assert_eq!(sink.count.load(Ordering::SeqCst), 1);
     }
 
     #[test]
@@ -500,6 +656,40 @@ mod tests {
         engine.refresh_now().unwrap();
         assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
         assert!(sink.last_json.lock().unwrap().is_none());
+        engine.shutdown();
+    }
+
+    #[test]
+    fn disconnected_sink_cannot_remove_a_replacement_subscription() {
+        struct ReplacingSink {
+            shared: Arc<Shared>,
+            replacement: Arc<dyn TickSink>,
+        }
+        impl TickSink for ReplacingSink {
+            fn wants_json(&self) -> bool {
+                false
+            }
+            fn deliver(&self, _: &MetricsTick, _: Option<&str>) -> bool {
+                lock(&self.shared.sinks).insert("webview".into(), self.replacement.clone());
+                false
+            }
+        }
+        let engine = engine(true);
+        let refresh_time = Instant::now();
+        let replacement = CountingSink::new(false);
+        engine.subscribe(
+            "webview".into(),
+            Arc::new(ReplacingSink {
+                shared: engine.shared.clone(),
+                replacement: replacement.clone(),
+            }),
+        );
+        engine.refresh_at(refresh_time).unwrap();
+        assert!(wait_for(|| engine.latest().is_some()));
+        engine
+            .refresh_at(refresh_time + Duration::from_secs(1))
+            .unwrap();
+        assert!(wait_for(|| replacement.count.load(Ordering::SeqCst) > 0));
         engine.shutdown();
     }
 

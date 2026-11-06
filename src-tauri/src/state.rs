@@ -1,8 +1,9 @@
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 use tm_core::benchmarks::BenchmarkCoordinator;
 use tm_core::benchmarks::network::inbox::NetworkInbox;
+use tm_core::inspect::ThreadSampler;
 use tm_core::monitoring::Engine;
 
 use crate::desktop::WindowVisibility;
@@ -16,6 +17,7 @@ pub struct AppState {
     pub benchmarks: Arc<BenchmarkCoordinator>,
     /// Receives internet-test results from the WebView provider.
     pub network_inbox: Arc<NetworkInbox>,
+    pub threads: Arc<Mutex<ThreadSampler>>,
     pub settings: SettingsStore,
     pub logging: Logging,
     pub visibility: Arc<WindowVisibility>,

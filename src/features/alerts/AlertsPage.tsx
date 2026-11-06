@@ -45,7 +45,7 @@ export function AlertsPage() {
             onClick={() => setEditing(newRule())}
             className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 font-medium text-accent-fg"
           >
-            <Plus size={14} aria-hidden /> New alert
+            <Plus size="0.875rem" aria-hidden /> New alert
           </button>
         }
       />
@@ -87,7 +87,7 @@ export function AlertsPage() {
                     onClick={() => setEditing(rule)}
                     className="grid size-8 place-items-center rounded text-fg-muted hover:bg-surface-2 hover:text-fg"
                   >
-                    <Pencil size={14} />
+                    <Pencil size="0.875rem" />
                   </button>
                   <button
                     type="button"
@@ -95,7 +95,7 @@ export function AlertsPage() {
                     onClick={() => update({ alertRules: rules.filter((r) => r.id !== rule.id) })}
                     className="grid size-8 place-items-center rounded text-fg-muted hover:bg-surface-2 hover:text-crit"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size="0.875rem" />
                   </button>
                 </li>
               ),
@@ -109,12 +109,12 @@ export function AlertsPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Recent alerts" icon={<BellRing size={14} aria-hidden />} />
+          <CardHeader title="Recent alerts" icon={<BellRing size="0.875rem" aria-hidden />} />
           <ol className="max-h-[60vh] space-y-2 overflow-auto px-4 pb-4 pt-3">
             {events.length === 0 && <li className="text-fg-muted">No alerts have fired.</li>}
             {events.map((e, i) => (
               <li key={`${e.timestampMs}-${e.ruleId}-${i}`} className="rounded-md bg-surface-2 p-2">
-                <div className="flex justify-between gap-2 text-[12px] text-fg-muted">
+                <div className="flex justify-between gap-2 text-[0.8125rem] text-fg-muted">
                   <span className="truncate">{e.ruleName}</span>
                   <time className="num shrink-0">{formatTimestamp(e.timestampMs)}</time>
                 </div>

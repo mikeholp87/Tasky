@@ -38,6 +38,8 @@ fn build(
         swap_used_bytes: swap_used.min(swap_total),
         commit_used_bytes: extras.commit_used_bytes,
         commit_limit_bytes: extras.commit_limit_bytes,
+        kernel_paged_bytes: extras.kernel_paged_bytes,
+        kernel_nonpaged_bytes: extras.kernel_nonpaged_bytes,
     }
 }
 
@@ -57,5 +59,24 @@ mod tests {
     fn zero_total_does_not_divide_by_zero() {
         let m = build(0, 0, 0, 0, 0, MemoryExtras::default());
         assert_eq!(m.used_percent, 0.0);
+    }
+
+    #[test]
+    fn preserves_pool_figures_without_treating_them_as_extra_ram_usage() {
+        let m = build(
+            1000,
+            920,
+            80,
+            500,
+            100,
+            MemoryExtras {
+                kernel_paged_bytes: Some(200),
+                kernel_nonpaged_bytes: Some(100),
+                ..MemoryExtras::default()
+            },
+        );
+        assert_eq!(m.used_bytes, 920);
+        assert_eq!(m.kernel_paged_bytes, Some(200));
+        assert_eq!(m.kernel_nonpaged_bytes, Some(100));
     }
 }

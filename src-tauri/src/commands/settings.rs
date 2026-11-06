@@ -31,6 +31,7 @@ pub fn update_settings<R: Runtime>(
     }
     let saved = state.settings.save(settings)?;
     apply_runtime(&state, &saved);
+    crate::desktop::update_pause_label(&app, state.engine.state().paused);
     Ok(saved)
 }
 
@@ -45,6 +46,7 @@ pub fn reset_settings<R: Runtime>(
     }
     let saved = state.settings.save(defaults)?;
     apply_runtime(&state, &saved);
+    crate::desktop::update_pause_label(&app, state.engine.state().paused);
     Ok(saved)
 }
 
@@ -65,6 +67,8 @@ pub fn apply_runtime(state: &AppState, s: &Settings) {
     }
     engine.set_history_capacity(history_points(s));
     engine.set_alert_rules(s.alert_rules.clone());
+    engine.set_include_kernel_threads(s.show_kernel_threads);
+    engine.set_activity_config(s.cpu_spike_percent, s.memory_jump_mb);
     state
         .notifications_enabled
         .store(s.notifications_enabled, Ordering::Relaxed);

@@ -4,14 +4,17 @@ use std::time::Duration;
 
 use sysinfo::Networks;
 
-use crate::models::NetworkInterfaceSnapshot;
+use crate::models::{InterfaceKind, NetworkInterfaceSnapshot};
 use crate::monitoring::rates::counter_rate;
+use crate::platform;
 
 pub struct NetworkTracker {
     /// `None` when the platform cannot enumerate interfaces at all.
     networks: Option<Networks>,
     /// Previous (rx, tx) totals per interface name.
     previous: HashMap<String, (u64, u64)>,
+    /// Classified once per name; an interface's kind does not change.
+    kinds: HashMap<String, InterfaceKind>,
 }
 
 impl NetworkTracker {
@@ -27,7 +30,11 @@ impl NetworkTracker {
                 (name, (d.total_received(), d.total_transmitted()))
             })
             .collect();
-        Self { networks, previous }
+        Self {
+            networks,
+            previous,
+            kinds: HashMap::new(),
+        }
     }
 
     pub fn sample(&mut self, elapsed: Duration) -> Vec<NetworkInterfaceSnapshot> {
@@ -56,6 +63,13 @@ impl NetworkTracker {
                 None => (0.0, 0.0),
             };
             let mac = data.mac_address();
+            let kind = *self
+                .kinds
+                .entry(name.clone())
+                .or_insert_with(|| platform::interface_kind(&name));
+            if kind == InterfaceKind::Loopback {
+                continue;
+            }
             out.push(NetworkInterfaceSnapshot {
                 name,
                 rx_bytes_per_sec: rx_rate,
@@ -74,9 +88,14 @@ impl NetworkTracker {
                     .collect(),
                 mac_address: (!mac.is_unspecified()).then(|| mac.to_string()),
                 is_primary: false,
+                kind,
             });
         }
         self.previous = seen;
+        // Forget interfaces that went away (names can be reused by a
+        // different kind of device, e.g. a new VPN).
+        self.kinds
+            .retain(|name, _| self.previous.contains_key(name));
 
         mark_primary(&mut out);
         out.sort_by(|a, b| b.is_primary.cmp(&a.is_primary).then(a.name.cmp(&b.name)));
@@ -109,16 +128,21 @@ pub fn is_relevant(name: &str, ips: &[IpAddr], total_bytes: u64) -> bool {
     !ips.is_empty() || total_bytes > 0
 }
 
-/// The primary interface is the one with a routable IPv4 address and the
-/// most lifetime traffic.
+/// Prefer IPv4 as before, but also recognize IPv6-only connections. Link-local
+/// and loopback addresses alone do not identify a primary connection.
 fn mark_primary(interfaces: &mut [NetworkInterfaceSnapshot]) {
     let best = interfaces
         .iter()
         .enumerate()
         .filter(|(_, i)| {
-            i.ipv4
-                .iter()
-                .any(|ip| !ip.starts_with("169.254.") && !ip.starts_with("127."))
+            i.kind.counts_in_totals()
+                && (i.ipv4.iter().any(|ip| {
+                    !ip.starts_with("169.254.") && !ip.starts_with("127.") && ip != "0.0.0.0"
+                }) || i.ipv6.iter().any(|ip| {
+                    ip.parse::<std::net::Ipv6Addr>().is_ok_and(|ip| {
+                        !ip.is_loopback() && !ip.is_unspecified() && !ip.is_unicast_link_local()
+                    })
+                }))
         })
         .max_by_key(|(_, i)| i.total_rx_bytes.saturating_add(i.total_tx_bytes))
         .map(|(idx, _)| idx);
@@ -142,6 +166,7 @@ mod tests {
             ipv6: vec![],
             mac_address: None,
             is_primary: false,
+            kind: InterfaceKind::Unknown,
         }
     }
 
@@ -171,5 +196,15 @@ mod tests {
         mark_primary(&mut list);
         assert!(list[1].is_primary);
         assert!(!list[0].is_primary && !list[2].is_primary);
+    }
+
+    #[test]
+    fn ipv6_only_connection_can_be_primary() {
+        let mut list = vec![iface("eth0", &[], 100), iface("wlan0", &[], 10_000)];
+        list[0].ipv6 = vec!["2001:db8::1".into()];
+        list[1].ipv6 = vec!["fe80::1".into(), "::1".into()];
+        mark_primary(&mut list);
+        assert!(list[0].is_primary);
+        assert!(!list[1].is_primary);
     }
 }

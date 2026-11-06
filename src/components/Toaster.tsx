@@ -22,7 +22,7 @@ export function Toaster() {
             className="pointer-events-auto flex items-start gap-3 rounded-lg border border-border bg-surface p-3 shadow-lg"
           >
             <Icon
-              size={16}
+              size="1rem"
               aria-hidden
               className={cn(
                 "mt-0.5 shrink-0",
@@ -52,7 +52,7 @@ export function Toaster() {
               onClick={() => dismiss(t.id)}
               className="shrink-0 rounded text-fg-subtle hover:text-fg"
             >
-              <X size={14} />
+              <X size="0.875rem" />
             </button>
           </div>
         );

@@ -9,9 +9,11 @@ pub mod protection;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    ActionOutcome, Platform, ProcessAction, ProcessRow, ProtectionAssessment, ProtectionLevel,
+    ActionOutcome, ActivityKind, Platform, ProcessAction, ProcessRow, ProtectionAssessment,
+    ProtectionLevel,
 };
 use crate::monitoring::Engine;
+use crate::monitoring::activity::Pending;
 use crate::platform;
 use protection::ProcessFacts;
 
@@ -45,6 +47,8 @@ fn assess_row(engine: &Engine, row: &ProcessRow, action: ProcessAction) -> Prote
             .then(|| platform::is_critical(row.pid))
             .flatten(),
         system_root: system_root.as_deref(),
+        kernel_thread: row.kernel_thread,
+        zombie: row.status == crate::models::ProcessState::Zombie,
     };
     protection::assess(Platform::current(), &facts, action)
 }
@@ -72,9 +76,9 @@ pub fn perform(engine: &Engine, req: ActionRequest) -> AppResult<ActionOutcome> 
 
     let pid = req.pid;
     let name = &row.name;
+    platform::perform_action(pid, req.start_time, req.action)?;
     let message = match req.action {
         ProcessAction::Terminate => {
-            platform::terminate(pid)?;
             if cfg!(windows) {
                 format!("Asked {name} (PID {pid}) to close. It may prompt to save first.")
             } else {
@@ -82,26 +86,33 @@ pub fn perform(engine: &Engine, req: ActionRequest) -> AppResult<ActionOutcome> 
             }
         }
         ProcessAction::ForceKill => {
-            platform::force_kill(pid)?;
             format!("Ended {name} (PID {pid}).")
         }
         ProcessAction::Suspend => {
-            platform::suspend(pid)?;
             engine.set_suspended(pid, row.start_time, true);
             format!("Suspended {name} (PID {pid}).")
         }
         ProcessAction::Resume => {
-            platform::resume(pid)?;
             engine.set_suspended(pid, row.start_time, false);
             format!("Resumed {name} (PID {pid}).")
         }
-        ProcessAction::SetPriority { priority } => {
-            platform::set_priority(pid, priority)?;
+        ProcessAction::SetPriority { .. } => {
             format!("Changed the priority of {name} (PID {pid}).")
         }
     };
     // Process names are not sensitive; command lines are never logged.
     tracing::info!(pid, name = %name, action = ?req.action, "process action performed");
+    let what = match req.action {
+        ProcessAction::Terminate => "Asked to close",
+        ProcessAction::ForceKill => "Force ended",
+        ProcessAction::Suspend => "Suspended",
+        ProcessAction::Resume => "Resumed",
+        ProcessAction::SetPriority { .. } => "Priority changed",
+    };
+    engine.record_activity(
+        Pending::process(ActivityKind::ProcessAction, pid, name)
+            .detail(format!("{what} from this app")),
+    );
     // Show the effect promptly rather than at the next scheduled tick.
     let _ = engine.refresh_now();
     Ok(ActionOutcome { message })
@@ -164,6 +175,16 @@ mod tests {
         // A stale start time (PID reuse) is refused.
         let stale = perform(&engine, req(ProcessAction::ForceKill, row.start_time + 1));
         assert!(matches!(stale, Err(AppError::ProcessNotFound(_))));
+        // Unlike the cached engine check, this guard inspects the live OS.
+        assert!(platform::verify_process_identity(pid, row.start_time).is_ok());
+        assert!(matches!(
+            platform::perform_action(pid, row.start_time + 1, ProcessAction::ForceKill),
+            Err(AppError::ProcessNotFound(_))
+        ));
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "stale native guard did not kill child"
+        );
 
         perform(&engine, req(ProcessAction::Suspend, row.start_time)).unwrap();
         wait_for_row(&engine, pid, |r| r.status == ProcessState::Stopped);

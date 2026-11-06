@@ -151,8 +151,10 @@ pub fn run(
                 release(&stop);
                 return Err(e);
             }
-            start.wait();
             let t0 = Instant::now();
+            // Start before releasing workers; otherwise a descheduled
+            // coordinator can omit work already completed by fast workers.
+            start.wait();
             end.wait();
             let elapsed = t0.elapsed();
             let mut total = 0u64;

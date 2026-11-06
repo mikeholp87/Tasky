@@ -2,6 +2,7 @@
  * Monitoring lifecycle and controls. Keeps backend coordination out of React
  * components: components call these functions and read the stores.
  */
+import { useActivityStore } from "@/stores/activityStore";
 import { useAlertStore } from "@/stores/alertStore";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { mockProcesses } from "@/features/processes/mock";
@@ -15,6 +16,8 @@ import { loadSettings } from "./settings";
 const BACKFILL_SECONDS = 3_600;
 
 let started = false;
+let stopStateListener: (() => void) | undefined;
+let stopVisibilityListener: (() => void) | undefined;
 
 /** Connects to the engine once per page load. Safe to call repeatedly. */
 export async function startMonitoring(): Promise<void> {
@@ -29,6 +32,10 @@ export async function startMonitoring(): Promise<void> {
 
   try {
     await loadSettings();
+    stopStateListener?.();
+    stopStateListener = await backend.watchMonitoringState((state) =>
+      useMetricsStore.getState().setMonitoring(state),
+    );
     const [info, state] = await Promise.all([
       backend.getStaticInfo(),
       backend.getMonitoringState(),
@@ -36,20 +43,27 @@ export async function startMonitoring(): Promise<void> {
     store.setStaticInfo(info);
     store.setMonitoring(state);
 
+    const activityAfter = useActivityStore.getState().lastSeq;
     const latest = await backend.subscribeMetrics(onTick);
     if (latest) store.ingestTick(latest);
+    if (latest?.activity.length) useActivityStore.getState().add(latest.activity);
 
     // Backfill after subscribing so no tick falls into a gap.
     store.backfillHistory(await backend.getHistory(BACKFILL_SECONDS));
     useAlertStore.getState().replace(await backend.getRecentAlerts());
+    backfillActivity(activityAfter);
     watchVisibility();
   } catch (error) {
+    stopStateListener?.();
+    stopStateListener = undefined;
     started = false;
     store.setStatus("error", toAppError(error));
   }
 }
 
 function onTick(incoming: MetricsTick): void {
+  const current = useMetricsStore.getState().tick;
+  if (current && incoming.seq <= current.seq) return;
   const start = performance.now();
   const tick = withMockProcesses(incoming);
   useMetricsStore.getState().ingestTick(tick);
@@ -61,6 +75,15 @@ function onTick(incoming: MetricsTick): void {
     useAlertStore.getState().add(tick.alerts);
     for (const alert of tick.alerts) toast.info(`${alert.ruleName}: ${alert.message}`);
   }
+  if (tick.activity.length > 0) useActivityStore.getState().add(tick.activity);
+}
+
+/** Fetches timeline events missed while the window was hidden (or before subscribing). */
+function backfillActivity(after = useActivityStore.getState().lastSeq): void {
+  void backend
+    .getActivity(after)
+    .then((events) => useActivityStore.getState().add(events))
+    .catch(() => {});
 }
 
 /** Development-only stress test: swap in N deterministic mock processes. */
@@ -77,7 +100,8 @@ function withMockProcesses(tick: MetricsTick): MetricsTick {
  * becomes visible again, fill the gap from the backend's history.
  */
 function watchVisibility(): void {
-  document.addEventListener("visibilitychange", () => {
+  stopVisibilityListener?.();
+  const onVisible = () => {
     if (document.visibilityState !== "visible") return;
     void backend
       .getHistory(BACKFILL_SECONDS)
@@ -87,6 +111,16 @@ function watchVisibility(): void {
       .getRecentAlerts()
       .then((events) => useAlertStore.getState().replace(events))
       .catch(() => {});
+    backfillActivity();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  stopVisibilityListener = () => document.removeEventListener("visibilitychange", onVisible);
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    stopStateListener?.();
+    stopVisibilityListener?.();
   });
 }
 

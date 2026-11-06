@@ -118,12 +118,13 @@ pub fn report_network_progress(
 /// Final raw samples from the WebView provider; validated and analyzed in
 /// `tm-core` (nothing is trusted from the WebView).
 #[tauri::command]
-pub fn submit_network_samples(
+pub async fn submit_network_samples(
     state: State<'_, AppState>,
     token: String,
     samples: NetworkSubmission,
 ) -> AppResult<()> {
-    state.network_inbox.submit(&token, samples)
+    let inbox = Arc::clone(&state.network_inbox);
+    blocking(move || inbox.submit(&token, samples)).await
 }
 
 #[tauri::command]

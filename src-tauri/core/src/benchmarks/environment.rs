@@ -30,12 +30,17 @@ pub trait SystemProbe: Send + Sync {
     fn latest(&self) -> Option<Arc<MetricsTick>>;
     fn recent(&self, seconds: u32) -> Vec<HistoryPoint>;
     fn set_benchmark_mode(&self, active: bool);
+    /// Timeline events emitted by the runner, independent of UI subscriptions.
+    fn record_activity(&self, _event: crate::monitoring::activity::Pending) {}
     fn power(&self) -> PowerState {
         PowerState::default()
     }
 }
 
 impl SystemProbe for Engine {
+    fn record_activity(&self, event: crate::monitoring::activity::Pending) {
+        Engine::record_activity(self, event);
+    }
     fn static_info(&self) -> StaticSystemInfo {
         Engine::static_info(self).clone()
     }
@@ -299,6 +304,7 @@ pub mod tests {
 
     /// Deterministic probe for coordinator and environment tests.
     pub struct FakeProbe {
+        pub activity: Mutex<Vec<crate::monitoring::activity::Pending>>,
         pub cpu: Mutex<f32>,
         pub own_cpu: f32,
         pub power: PowerState,
@@ -309,6 +315,7 @@ pub mod tests {
     impl FakeProbe {
         pub fn new(cpu: f32) -> Arc<Self> {
             Arc::new(Self {
+                activity: Mutex::new(Vec::new()),
                 cpu: Mutex::new(cpu),
                 own_cpu: 1.0,
                 power: PowerState::default(),
@@ -321,6 +328,9 @@ pub mod tests {
     pub const SELF_PID: u32 = 4242;
 
     impl SystemProbe for FakeProbe {
+        fn record_activity(&self, event: crate::monitoring::activity::Pending) {
+            self.activity.lock().unwrap().push(event);
+        }
         fn static_info(&self) -> StaticSystemInfo {
             StaticSystemInfo {
                 platform: Platform::current(),
@@ -338,6 +348,11 @@ pub mod tests {
                 boot_time_secs: None,
                 app_version: "0.1.0".into(),
                 self_pid: SELF_PID,
+                distribution: None,
+                desktop_environment: None,
+                display_server: None,
+                container: None,
+                init_system: None,
             }
         }
         fn latest(&self) -> Option<Arc<MetricsTick>> {
@@ -378,6 +393,8 @@ pub mod tests {
                 swap_used_bytes: 0,
                 commit_used_bytes: None,
                 commit_limit_bytes: None,
+                kernel_paged_bytes: None,
+                kernel_nonpaged_bytes: None,
             },
             disks: Vec::new(),
             networks: Vec::new(),
@@ -399,8 +416,13 @@ pub mod tests {
                 cmd: None,
                 session_id: None,
                 restricted: false,
+                kernel_thread: false,
+                pss_bytes: None,
             }],
             alerts: Vec::new(),
+            activity: Vec::new(),
+            gpus: Vec::new(),
+            temperatures: Vec::new(),
             point: HistoryPoint {
                 t: 0,
                 cpu,

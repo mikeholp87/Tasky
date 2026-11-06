@@ -16,10 +16,11 @@ use tm_core::monitoring::details;
 pub async fn get_process_details(
     state: State<'_, AppState>,
     pid: i64,
+    start_time: u64,
 ) -> AppResult<ProcessDetails> {
     let pid = validate::pid(pid)?;
     let engine = Arc::clone(&state.engine);
-    tauri::async_runtime::spawn_blocking(move || details::process_details(&engine, pid))
+    tauri::async_runtime::spawn_blocking(move || details::process_details(&engine, pid, start_time))
         .await
         .map_err(|e| AppError::SystemQueryFailed(format!("details task failed: {e}")))?
 }

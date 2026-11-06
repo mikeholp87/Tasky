@@ -107,3 +107,8 @@ pub fn set_monitoring_state<R: Runtime>(
 pub fn refresh_now(state: State<'_, AppState>) -> AppResult<()> {
     state.engine.refresh_now()
 }
+
+#[tauri::command]
+pub fn set_memory_detail(state: State<'_, AppState>, enabled: bool) {
+    state.engine.set_memory_detail(enabled);
+}

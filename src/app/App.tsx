@@ -1,26 +1,33 @@
-import { useEffect, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, type ComponentType } from "react";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { startMonitoring } from "@/services/monitoring";
 import { Toaster } from "@/components/Toaster";
 import { ConfirmActionDialog } from "@/features/processes/ConfirmActionDialog";
 import { CommandPalette } from "./CommandPalette";
 import { useUiStore } from "@/stores/uiStore";
+import { ActivityPage } from "@/features/activity/ActivityPage";
 import { AlertsPage } from "@/features/alerts/AlertsPage";
-import { BenchmarksPage } from "@/features/benchmarks/BenchmarksPage";
 import { CpuPage } from "@/features/cpu/CpuPage";
+import { FileFinderPage } from "@/features/file-finder/FileFinderPage";
 import { MemoryPage } from "@/features/memory/MemoryPage";
 import { NetworkPage } from "@/features/network/NetworkPage";
 import { OverviewPage } from "@/features/overview/OverviewPage";
 import { PerformancePage } from "@/features/performance/PerformancePage";
+import { PortsPage } from "@/features/ports/PortsPage";
 import { ProcessDetailsPage } from "@/features/process-details/ProcessDetailsPage";
 import { ProcessesPage } from "@/features/processes/ProcessesPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { StartupPage } from "@/features/startup/StartupPage";
 import { StoragePage } from "@/features/storage/StoragePage";
 import { SystemInfoPage } from "@/features/system-info/SystemInfoPage";
 import type { RouteId } from "./routes";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { useApplyTheme } from "./theme";
+
+const BenchmarksPage = lazy(() =>
+  import("@/features/benchmarks/BenchmarksPage").then((m) => ({ default: m.BenchmarksPage })),
+);
 
 const PAGES: Record<RouteId, ComponentType> = {
   overview: OverviewPage,
@@ -31,6 +38,10 @@ const PAGES: Record<RouteId, ComponentType> = {
   storage: StoragePage,
   network: NetworkPage,
   "process-details": ProcessDetailsPage,
+  ports: PortsPage,
+  startup: StartupPage,
+  "file-finder": FileFinderPage,
+  activity: ActivityPage,
   system: SystemInfoPage,
   alerts: AlertsPage,
   benchmarks: BenchmarksPage,
@@ -52,7 +63,9 @@ export function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main className="min-h-0 flex-1 overflow-auto p-5">
-          <Page />
+          <Suspense fallback={<div role="status">Loading page…</div>}>
+            <Page />
+          </Suspense>
         </main>
       </div>
       <ConfirmActionDialog />

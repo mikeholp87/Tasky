@@ -26,19 +26,32 @@ interface FetchResult {
  * regular metrics ticks (no extra polling). Callers key the consuming
  * component by PID so state never leaks between processes.
  */
-export function useProcessDetails(pid: number): ProcessDetailsState {
+export function useProcessDetails(pid: number, startTime: number | null): ProcessDetailsState {
   const [nonce, setNonce] = useState(0);
   const [result, setResult] = useState<FetchResult | null>(null);
   const [livePoints, setLivePoints] = useState<ProcessPoint[]>([]);
-  const requestKey = `${pid}:${nonce}`;
+  const requestKey = `${pid}:${startTime}:${nonce}`;
 
-  const live = useMetricsStore((s) => s.tick?.processes.find((p) => p.pid === pid) ?? null);
+  const live = useMetricsStore(
+    (s) => s.tick?.processes.find((p) => p.pid === pid && p.startTime === startTime) ?? null,
+  );
 
   useEffect(() => {
-    if (!isBackendAvailable()) return;
+    if (!isBackendAvailable() || startTime == null) return;
     let cancelled = false;
-    backend.getProcessDetails(pid).then(
-      (details) => !cancelled && setResult({ key: requestKey, details, error: null }),
+    backend.getProcessDetails(pid, startTime).then(
+      (details) => {
+        if (cancelled) return;
+        if (details.row.pid !== pid || details.row.startTime !== startTime) {
+          setResult({
+            key: requestKey,
+            details: null,
+            error: { kind: "processNotFound", message: "This process has exited." },
+          });
+        } else {
+          setResult({ key: requestKey, details, error: null });
+        }
+      },
       (e: unknown) =>
         !cancelled &&
         setResult((prev) => ({
@@ -50,7 +63,7 @@ export function useProcessDetails(pid: number): ProcessDetailsState {
     return () => {
       cancelled = true;
     };
-  }, [pid, requestKey]);
+  }, [pid, startTime, requestKey]);
 
   // Accumulate points from live ticks via a store subscription.
   useEffect(
@@ -58,12 +71,12 @@ export function useProcessDetails(pid: number): ProcessDetailsState {
       useMetricsStore.subscribe((state, prev) => {
         const tick = state.tick;
         if (!tick || tick === prev.tick) return;
-        const row = tick.processes.find((p) => p.pid === pid);
+        const row = tick.processes.find((p) => p.pid === pid && p.startTime === startTime);
         if (row) {
           setLivePoints((points) => appendPoint(points, toPoint(row, tick.timestampMs)));
         }
       }),
-    [pid],
+    [pid, startTime],
   );
 
   const details = result?.details ?? null;
@@ -77,7 +90,7 @@ export function useProcessDetails(pid: number): ProcessDetailsState {
     live,
     details,
     history,
-    loading: isBackendAvailable() && result?.key !== requestKey,
+    loading: isBackendAvailable() && startTime != null && result?.key !== requestKey,
     error: result?.error ?? null,
     refresh,
   };

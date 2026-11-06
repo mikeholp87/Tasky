@@ -1,5 +1,6 @@
-//! Alert evaluation. A pure state machine driven by tick timestamps, so it is
-//! deterministic and unit-testable. Runs on the engine thread, which keeps
+//! Alert evaluation. A pure state machine with an injectable clock, so it is
+//! deterministic and unit-testable. Episode durations use a monotonic clock;
+//! tick timestamps are used only for display. Runs on the engine thread, keeping
 //! alerts working while the window is hidden.
 //!
 //! A rule fires once per *episode*: when its condition has held for
@@ -7,20 +8,23 @@
 //! sustained spike produces one notification, not one per tick.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use crate::models::{AlertEvent, AlertMetric, AlertRule, MetricsTick};
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug)]
 struct RuleState {
-    /// When the condition first became true in the current episode.
-    since_ms: Option<u64>,
+    rule: AlertRule,
+    subject: Option<(u32, u64)>,
+    detail: Option<String>,
+    since: Instant,
     fired: bool,
 }
 
 /// The value that crossed a threshold and, for process rules, which process.
 struct Observation {
     value: f64,
-    subject: Option<(u32, String)>,
+    subject: Option<(u32, u64, String)>,
     detail: Option<String>,
 }
 
@@ -31,30 +35,49 @@ pub struct AlertEvaluator {
 
 impl AlertEvaluator {
     pub fn evaluate(&mut self, rules: &[AlertRule], tick: &MetricsTick) -> Vec<AlertEvent> {
-        let now = tick.timestamp_ms;
+        self.evaluate_at(rules, tick, Instant::now())
+    }
+
+    fn evaluate_at(
+        &mut self,
+        rules: &[AlertRule],
+        tick: &MetricsTick,
+        now: Instant,
+    ) -> Vec<AlertEvent> {
         let mut events = Vec::new();
         let mut next = HashMap::with_capacity(rules.len());
 
         for rule in rules.iter().filter(|r| r.enabled) {
-            let mut st = self.state.get(&rule.id).copied().unwrap_or_default();
-            match observe(rule, tick).filter(|o| o.value > rule.threshold) {
-                None => st = RuleState::default(),
-                Some(obs) => {
-                    let since = *st.since_ms.get_or_insert(now);
-                    let held_ms = now.saturating_sub(since);
-                    if !st.fired && held_ms >= u64::from(rule.duration_secs) * 1_000 {
-                        st.fired = true;
-                        events.push(AlertEvent {
-                            rule_id: rule.id.clone(),
-                            rule_name: rule.name.clone(),
-                            timestamp_ms: now,
-                            message: message(rule, &obs),
-                            pid: obs.subject.as_ref().map(|s| s.0),
-                        });
-                    }
+            if let Some(obs) = observe(rule, tick).filter(|o| o.value > rule.threshold) {
+                let subject = obs.subject.as_ref().map(|s| (s.0, s.1));
+                let mut st = self
+                    .state
+                    .remove(&rule.id)
+                    .filter(|st| {
+                        st.rule == *rule && st.subject == subject && st.detail == obs.detail
+                    })
+                    .unwrap_or_else(|| RuleState {
+                        rule: rule.clone(),
+                        subject,
+                        detail: obs.detail.clone(),
+                        since: now,
+                        fired: false,
+                    });
+                if !st.fired
+                    && now.saturating_duration_since(st.since)
+                        >= Duration::from_secs(u64::from(rule.duration_secs))
+                {
+                    st.fired = true;
+                    events.push(AlertEvent {
+                        rule_id: rule.id.clone(),
+                        rule_name: rule.name.clone(),
+                        timestamp_ms: tick.timestamp_ms,
+                        message: message(rule, &obs),
+                        pid: obs.subject.as_ref().map(|s| s.0),
+                    });
                 }
+                next.insert(rule.id.clone(), st);
             }
-            next.insert(rule.id.clone(), st);
         }
         // Rules that were removed or disabled forget their state.
         self.state = next;
@@ -101,7 +124,7 @@ fn observe(rule: &AlertRule, tick: &MetricsTick) -> Option<Observation> {
                     } else {
                         p.memory_bytes as f64
                     },
-                    subject: Some((p.pid, p.name.clone())),
+                    subject: Some((p.pid, p.start_time, p.name.clone())),
                     detail: None,
                 })
                 .max_by(|a, b| a.value.total_cmp(&b.value))
@@ -123,10 +146,10 @@ fn message(rule: &AlertRule, obs: &Observation) -> String {
             obs.detail.as_deref().unwrap_or("?"),
             obs.value
         ),
-        (AlertMetric::ProcessCpu, Some((pid, name))) => {
+        (AlertMetric::ProcessCpu, Some((pid, _, name))) => {
             format!("{name} (PID {pid}) is using {:.0}% CPU{held}.", obs.value)
         }
-        (AlertMetric::ProcessMemory, Some((pid, name))) => format!(
+        (AlertMetric::ProcessMemory, Some((pid, _, name))) => format!(
             "{name} (PID {pid}) is using {} of memory{held}.",
             format_bytes(obs.value)
         ),
@@ -155,6 +178,108 @@ mod tests {
     use super::*;
     use crate::models::*;
 
+    struct ClockedEvaluator {
+        inner: AlertEvaluator,
+        origin: Instant,
+    }
+
+    impl Default for ClockedEvaluator {
+        fn default() -> Self {
+            Self {
+                inner: AlertEvaluator::default(),
+                origin: Instant::now(),
+            }
+        }
+    }
+
+    impl ClockedEvaluator {
+        fn evaluate(&mut self, rules: &[AlertRule], tick: &MetricsTick) -> Vec<AlertEvent> {
+            self.inner.evaluate_at(
+                rules,
+                tick,
+                self.origin + Duration::from_millis(tick.timestamp_ms),
+            )
+        }
+    }
+
+    #[test]
+    fn wall_clock_changes_do_not_change_held_duration() {
+        let rules = [rule(AlertMetric::SystemCpu, 80.0, 10, None)];
+        let mut evaluator = AlertEvaluator::default();
+        let now = Instant::now();
+        assert!(
+            evaluator
+                .evaluate_at(&rules, &tick(100, 90.0, vec![]), now)
+                .is_empty()
+        );
+        assert!(
+            evaluator
+                .evaluate_at(
+                    &rules,
+                    &tick(10_000, 90.0, vec![]),
+                    now + Duration::from_secs(1)
+                )
+                .is_empty()
+        );
+        assert_eq!(
+            evaluator
+                .evaluate_at(
+                    &rules,
+                    &tick(0, 90.0, vec![]),
+                    now + Duration::from_secs(10)
+                )
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn reused_pid_and_changed_rules_restart_episodes() {
+        let mut rules = [rule(AlertMetric::ProcessCpu, 80.0, 10, Some("worker"))];
+        let mut evaluator = ClockedEvaluator::default();
+        let old = proc(7, "worker", 90.0, false);
+        evaluator.evaluate(&rules, &tick(0, 0.0, vec![old.clone()]));
+        let mut replacement = old;
+        replacement.start_time += 1;
+        assert!(
+            evaluator
+                .evaluate(&rules, &tick(10, 0.0, vec![replacement.clone()]))
+                .is_empty()
+        );
+        assert_eq!(
+            evaluator
+                .evaluate(&rules, &tick(20, 0.0, vec![replacement.clone()]))
+                .len(),
+            1
+        );
+        rules[0].threshold = 85.0;
+        assert!(
+            evaluator
+                .evaluate(&rules, &tick(21, 0.0, vec![replacement.clone()]))
+                .is_empty()
+        );
+        assert_eq!(
+            evaluator
+                .evaluate(&rules, &tick(31, 0.0, vec![replacement]))
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn disabled_and_removed_rules_release_episode_state() {
+        let rules = [rule(AlertMetric::SystemCpu, 80.0, 10, None)];
+        let mut evaluator = ClockedEvaluator::default();
+        evaluator.evaluate(&rules, &tick(0, 90.0, vec![]));
+        evaluator.evaluate(&[], &tick(10, 90.0, vec![]));
+        assert!(evaluator.inner.state.is_empty());
+        assert!(
+            evaluator
+                .evaluate(&rules, &tick(11, 90.0, vec![]))
+                .is_empty()
+        );
+    }
+
     fn tick(t_secs: u64, cpu: f32, procs: Vec<ProcessRow>) -> MetricsTick {
         MetricsTick {
             seq: t_secs,
@@ -177,11 +302,16 @@ mod tests {
                 swap_used_bytes: 0,
                 commit_used_bytes: None,
                 commit_limit_bytes: None,
+                kernel_paged_bytes: None,
+                kernel_nonpaged_bytes: None,
             },
             disks: vec![],
             networks: vec![],
             processes: procs,
+            gpus: vec![],
+            temperatures: vec![],
             alerts: vec![],
+            activity: vec![],
             point: HistoryPoint {
                 t: 0,
                 cpu,
@@ -239,6 +369,8 @@ mod tests {
             exe: None,
             cmd: None,
             session_id: None,
+            kernel_thread: false,
+            pss_bytes: None,
             restricted,
         }
     }
@@ -246,7 +378,7 @@ mod tests {
     #[test]
     fn fires_only_after_the_condition_holds_for_the_duration() {
         let rules = [rule(AlertMetric::SystemCpu, 90.0, 30, None)];
-        let mut ev = AlertEvaluator::default();
+        let mut ev = ClockedEvaluator::default();
         assert!(ev.evaluate(&rules, &tick(0, 95.0, vec![])).is_empty());
         assert!(ev.evaluate(&rules, &tick(29, 95.0, vec![])).is_empty());
         let fired = ev.evaluate(&rules, &tick(30, 97.0, vec![]));
@@ -257,7 +389,7 @@ mod tests {
     #[test]
     fn fires_once_per_episode_and_rearms_after_clearing() {
         let rules = [rule(AlertMetric::SystemCpu, 90.0, 0, None)];
-        let mut ev = AlertEvaluator::default();
+        let mut ev = ClockedEvaluator::default();
         assert_eq!(ev.evaluate(&rules, &tick(0, 95.0, vec![])).len(), 1);
         assert!(
             ev.evaluate(&rules, &tick(1, 95.0, vec![])).is_empty(),
@@ -274,7 +406,7 @@ mod tests {
     #[test]
     fn a_dip_restarts_the_duration() {
         let rules = [rule(AlertMetric::SystemCpu, 90.0, 10, None)];
-        let mut ev = AlertEvaluator::default();
+        let mut ev = ClockedEvaluator::default();
         ev.evaluate(&rules, &tick(0, 95.0, vec![]));
         ev.evaluate(&rules, &tick(5, 50.0, vec![]));
         assert!(ev.evaluate(&rules, &tick(12, 95.0, vec![])).is_empty());
@@ -284,7 +416,7 @@ mod tests {
     #[test]
     fn process_rules_match_names_across_platforms() {
         let rules = [rule(AlertMetric::ProcessCpu, 80.0, 0, Some("Node"))];
-        let mut ev = AlertEvaluator::default();
+        let mut ev = ClockedEvaluator::default();
         let fired = ev.evaluate(
             &rules,
             &tick(0, 10.0, vec![proc(7, "node.exe", 85.0, false)]),
@@ -301,7 +433,7 @@ mod tests {
     #[test]
     fn restricted_processes_never_trigger_cpu_rules() {
         let rules = [rule(AlertMetric::ProcessCpu, 0.0, 0, Some("svchost"))];
-        let mut ev = AlertEvaluator::default();
+        let mut ev = ClockedEvaluator::default();
         assert!(
             ev.evaluate(
                 &rules,
@@ -319,7 +451,7 @@ mod tests {
             0,
             Some("java"),
         )];
-        let mut ev = AlertEvaluator::default();
+        let mut ev = ClockedEvaluator::default();
         let fired = ev.evaluate(&rules, &tick(0, 0.0, vec![proc(9, "java", 0.0, false)]));
         assert_eq!(fired[0].message, "java (PID 9) is using 5.0 GB of memory.");
     }

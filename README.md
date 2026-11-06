@@ -17,6 +17,16 @@ Information → Monitoring diagnostics) and place them in `docs/screenshots/`.
 
 ## Features
 
+Windows feature parity with the `linux-port` branch, including platform limits
+and validation, is documented in [docs/WINDOWS_FEATURE_PARITY.md](docs/WINDOWS_FEATURE_PARITY.md).
+
+- **Inspection tools:** global ports and port-owner search, file-user lookup,
+  modules, memory maps, threads and a Diagnose Process tab.
+- **Applications and activity:** expandable application groups, new-process
+  highlights, a bounded event timeline and potential memory/thread growth hints.
+- **Startup and system details:** reversible Windows Run/Startup-folder controls,
+  richer hardware sections, optional live GPU/sensor readings and saved view choices.
+
 - **Overview:** CPU, memory, storage, network and system cards with live
   60-second graphs.
 - **Processes:** virtualized table that stays fast with thousands of
@@ -38,6 +48,9 @@ Information → Monitoring diagnostics) and place them in `docs/screenshots/`.
     itself.
 - **Performance:** large CPU, memory, disk and network graphs over
   60 s / 5 min / 15 min / 1 h.
+- **Memory diagnostics:** use **Explain usage** on Overview or open Memory to
+  rank app/executable groups by RAM or recent growth, inspect individual
+  processes, and understand cache, commit pressure and Windows kernel pools.
 - **CPU, Memory, Storage, Network pages:**
   - per-core graphs;
   - cache and commit charge;

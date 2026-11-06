@@ -2,7 +2,7 @@
 
 export type MemorySnapshot = { totalBytes: number, usedBytes: number, availableBytes: number, usedPercent: number, 
 /**
- * Linux: page cache. Windows: system file cache.
+ * Linux: page cache plus reclaimable slab. Windows: standby list plus system working set.
  */
 cachedBytes: number | null, 
 /**
@@ -12,4 +12,12 @@ buffersBytes: number | null, swapTotalBytes: number, swapUsedBytes: number,
 /**
  * Windows commit charge (RAM + page file in use).
  */
-commitUsedBytes: number | null, commitLimitBytes: number | null, };
+commitUsedBytes: number | null, commitLimitBytes: number | null, 
+/**
+ * Windows kernel paged pool (includes pages that may be on disk).
+ */
+kernelPagedBytes: number | null, 
+/**
+ * Windows kernel nonpaged pool (must remain in physical RAM).
+ */
+kernelNonpagedBytes: number | null, };

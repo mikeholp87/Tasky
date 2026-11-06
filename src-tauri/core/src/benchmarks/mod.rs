@@ -38,7 +38,7 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// Measurement methodology version. Bump whenever a workload, its sizing,
 /// timing or statistics change; results of different versions are never
 /// compared silently.
-pub const METHOD_VERSION: &str = "1.0.0";
+pub const METHOD_VERSION: &str = "2.0.0";
 
 /// Hard cap on CPU worker threads, whatever the machine reports.
 pub const MAX_CPU_WORKERS: u32 = 256;

@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_notification::NotificationExt;
 use tm_core::models::MetricsTick;
 use tm_core::monitoring::TickSink;
@@ -123,6 +123,9 @@ fn toggle_pause<R: Runtime>(app: &AppHandle<R>) {
 }
 
 pub fn update_pause_label<R: Runtime>(app: &AppHandle<R>, paused: bool) {
+    if let Some(state) = app.try_state::<AppState>() {
+        let _ = app.emit("monitoring-state-changed", state.engine.state());
+    }
     if let Some(items) = app.try_state::<TrayItems<R>>() {
         let _ = items.pause.set_text(if paused {
             "Resume monitoring"

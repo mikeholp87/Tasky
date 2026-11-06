@@ -8,8 +8,11 @@ use crate::models::ProcessDetails;
 use crate::monitoring::Engine;
 use crate::platform;
 
-pub fn process_details(engine: &Engine, pid: u32) -> AppResult<ProcessDetails> {
-    let row = engine.process(pid).ok_or(AppError::ProcessNotFound(pid))?;
+pub fn process_details(engine: &Engine, pid: u32, start_time: u64) -> AppResult<ProcessDetails> {
+    let row = engine
+        .process(pid)
+        .filter(|p| p.start_time == start_time)
+        .ok_or(AppError::ProcessNotFound(pid))?;
     let parent_name = row
         .parent_pid
         .and_then(|ppid| engine.process(ppid))
@@ -28,7 +31,7 @@ pub fn process_details(engine: &Engine, pid: u32) -> AppResult<ProcessDetails> {
                     .with_disk_usage(),
             );
             match sys.process(Pid::from_u32(pid)) {
-                Some(p) => {
+                Some(p) if p.start_time() == start_time => {
                     let usage = p.disk_usage();
                     (
                         p.cwd()
@@ -39,21 +42,25 @@ pub fn process_details(engine: &Engine, pid: u32) -> AppResult<ProcessDetails> {
                     )
                 }
                 // Exited between the engine tick and this query.
-                None => return Err(AppError::ProcessNotFound(pid)),
+                _ => return Err(AppError::ProcessNotFound(pid)),
             }
         }
         Err(_) => (None, None, None),
     };
 
+    let architecture = platform::process_architecture(pid);
+    let connections = platform::connections(pid);
+    // Drop a result if the process exited/reused its PID during OS queries.
+    platform::verify_process_identity(pid, start_time)?;
     Ok(ProcessDetails {
         history: engine.process_history(pid, row.start_time),
         parent_name,
         cwd,
-        architecture: platform::process_architecture(pid),
+        architecture,
         // Zero lifetime I/O usually means "not readable", not "no I/O".
         total_read_bytes: total_read.filter(|&b| b > 0),
         total_written_bytes: total_written.filter(|&b| b > 0),
-        connections: platform::connections(pid),
+        connections,
         row,
     })
 }

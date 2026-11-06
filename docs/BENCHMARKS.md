@@ -5,7 +5,13 @@ internet connection. This document describes how it works, what each number
 means, and its limits. The design history is in
 [BENCHMARK_IMPLEMENTATION_PLAN.md](BENCHMARK_IMPLEMENTATION_PLAN.md).
 
-Versions: methodology **1.0.0**, score version **1**, record schema **1**.
+Versions: methodology **2.0.0**, score version **1**, record schema **1**.
+
+Methodology 2 starts the CPU iteration clock before releasing the worker
+barrier. Version 1 could omit initial worker execution if the coordinating
+thread was descheduled immediately after release, inflating throughput.
+The workload and score references are unchanged. Version 1 and version 2
+results remain readable but are not directly compared or mixed in trends.
 
 > These are Task Manager's own measurements. They are not equivalent to, and
 > must not be compared with, Cinebench, Geekbench, 3DMark, CrystalDiskMark,

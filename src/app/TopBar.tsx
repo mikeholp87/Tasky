@@ -1,6 +1,7 @@
 import { Pause, Play, RefreshCw } from "lucide-react";
 import { memo } from "react";
 import { cn } from "@/lib/cn";
+import { CoreStrip } from "@/components/ui/CoreStrip";
 import { refreshNow, togglePaused } from "@/services/monitoring";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { formatBytesPerSecond, formatPercent, NOT_AVAILABLE } from "@/utils/format";
@@ -10,17 +11,18 @@ import { usageLevel } from "@/utils/levels";
 export const TopBar = memo(function TopBar() {
   const cpu = useMetricsStore((s) => s.tick?.cpu.usagePercent);
   const mem = useMetricsStore((s) => s.tick?.memory.usedPercent);
+  const perCore = useMetricsStore((s) => s.tick?.cpu.perCore);
   const rx = useMetricsStore((s) => s.tick?.point.netRx);
   const tx = useMetricsStore((s) => s.tick?.point.netTx);
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-6 border-b border-border bg-surface px-5">
-      <SummaryItem label="CPU" value={cpu} />
+      <SummaryItem label="CPU" value={cpu}>
+        {perCore && <CoreStrip perCore={perCore} height={18} className="self-center" />}
+      </SummaryItem>
       <SummaryItem label="Memory" value={mem} />
       <div className="flex items-baseline gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-          Network
-        </span>
+        <span className="text-fg-subtle">Network</span>
         <span className="num font-semibold">
           {rx == null || tx == null
             ? NOT_AVAILABLE
@@ -34,13 +36,19 @@ export const TopBar = memo(function TopBar() {
   );
 });
 
-function SummaryItem({ label, value }: { label: string; value: number | undefined }) {
+function SummaryItem({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value: number | undefined;
+  children?: React.ReactNode;
+}) {
   const level = usageLevel(value);
   return (
     <div className="flex items-baseline gap-2">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-        {label}
-      </span>
+      <span className="text-fg-subtle">{label}</span>
       <span
         className={cn(
           "num w-14 font-semibold",
@@ -50,6 +58,7 @@ function SummaryItem({ label, value }: { label: string; value: number | undefine
       >
         {formatPercent(value)}
       </span>
+      {children}
     </div>
   );
 }
@@ -86,10 +95,10 @@ function MonitoringStatus() {
         disabled={!live}
         onClick={() => void togglePaused()}
       >
-        {paused ? <Play size={15} /> : <Pause size={15} />}
+        {paused ? <Play size="0.9375rem" /> : <Pause size="0.9375rem" />}
       </IconButton>
       <IconButton label="Refresh now" disabled={!live} onClick={() => void refreshNow()}>
-        <RefreshCw size={15} />
+        <RefreshCw size="0.9375rem" />
       </IconButton>
     </>
   );

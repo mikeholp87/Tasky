@@ -3,7 +3,9 @@
  * these typed wrappers; they never use `invoke` directly.
  */
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type {
+  ActivityEvent,
   AppError,
   BenchmarkCapabilities,
   BenchmarkComparison,
@@ -15,16 +17,24 @@ import type {
   NetworkSubmission,
   PreflightReport,
   ErrorKind,
+  FileUserList,
+  HardwareInfo,
   HistoryPoint,
+  MemoryMap,
   MetricsTick,
+  ModuleInfo,
   MonitoringState,
   ActionOutcome,
+  OpenFileList,
   ProcessAction,
   ProcessDetails,
   ProtectionAssessment,
   AlertEvent,
   Settings,
+  SocketList,
+  StartupItem,
   StaticSystemInfo,
+  ThreadList,
 } from "@/types";
 
 export const isBackendAvailable = (): boolean => isTauri();
@@ -39,6 +49,8 @@ const ERROR_KINDS: Record<ErrorKind, true> = {
   invalidArgument: true,
   processProtected: true,
   actionUnavailable: true,
+  operationCancelled: true,
+  operationBusy: true,
   engineUnavailable: true,
   benchmarkAlreadyRunning: true,
   benchmarkCancelled: true,
@@ -91,6 +103,8 @@ export const backend = {
   getHistory: (seconds: number) => call<HistoryPoint[]>("get_history", { seconds }),
 
   getMonitoringState: () => call<MonitoringState>("get_monitoring_state"),
+  watchMonitoringState: (onState: (state: MonitoringState) => void) =>
+    listen<MonitoringState>("monitoring-state-changed", (event) => onState(event.payload)),
 
   setMonitoringState: (state: MonitoringState) =>
     call<MonitoringState>("set_monitoring_state", {
@@ -100,7 +114,10 @@ export const backend = {
 
   refreshNow: () => call<void>("refresh_now"),
 
-  getProcessDetails: (pid: number) => call<ProcessDetails>("get_process_details", { pid }),
+  setMemoryDetail: (enabled: boolean) => call<void>("set_memory_detail", { enabled }),
+
+  getProcessDetails: (pid: number, startTime: number) =>
+    call<ProcessDetails>("get_process_details", { pid, startTime }),
 
   assessProcessAction: (pid: number, action: ProcessAction) =>
     call<ProtectionAssessment>("assess_process_action", { pid, action }),
@@ -112,6 +129,25 @@ export const backend = {
     acknowledgeWarnings: boolean,
   ) =>
     call<ActionOutcome>("perform_process_action", { pid, startTime, action, acknowledgeWarnings }),
+
+  /** On-demand inspection; each call walks OS tables, so call only while its view is open. */
+  listSockets: () => call<SocketList>("list_sockets"),
+  listStartupItems: () => call<StartupItem[]>("list_startup_items"),
+  setStartupEnabled: (id: string, enabled: boolean) =>
+    call<void>("set_startup_enabled", { id, enabled }),
+  getOpenFiles: (pid: number, startTime: number) =>
+    call<OpenFileList>("get_open_files", { pid, startTime }),
+  findFileUsers: (path: string) => call<FileUserList>("find_file_users", { path }),
+  getMemoryMap: (pid: number, startTime: number) =>
+    call<MemoryMap>("get_memory_map", { pid, startTime }),
+  getModules: (pid: number, startTime: number) =>
+    call<ModuleInfo[]>("get_modules", { pid, startTime }),
+  getThreads: (pid: number, startTime: number) =>
+    call<ThreadList>("get_threads", { pid, startTime }),
+  /** Native file/folder picker; resolves to the chosen path or null if cancelled. */
+  pickPath: (directory: boolean) => call<string | null>("pick_path", { directory }),
+  getHardwareInfo: () => call<HardwareInfo>("get_hardware_info"),
+  getActivity: (after: number) => call<ActivityEvent[]>("get_activity", { after }),
 
   revealExecutable: (pid: number) => call<void>("reveal_executable", { pid }),
 

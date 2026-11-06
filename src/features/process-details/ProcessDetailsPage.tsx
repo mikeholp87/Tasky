@@ -1,6 +1,6 @@
 import { ArrowLeft, FolderOpen, OctagonX, Pause, Play, RefreshCw, Square } from "lucide-react";
 import { requestAction, revealExecutable } from "@/features/processes/actions";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type uPlot from "uplot";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,6 +10,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList, Unavailable } from "@/components/ui/KeyValueList";
 import { childrenOf } from "@/features/processes/tree";
 import { STATUS_LABEL } from "@/features/processes/cells";
+import { useActivityStore } from "@/stores/activityStore";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useUiStore } from "@/stores/uiStore";
 import type { Connection, ProcessPoint, ProcessRow } from "@/types";
@@ -21,19 +22,39 @@ import {
   formatPercent,
   formatTimestamp,
 } from "@/utils/format";
+import { cn } from "@/lib/cn";
+import { DiagnoseTab } from "./DiagnoseTab";
+import { MemoryMapTab } from "./inspect/MemoryMapTab";
+import { ModulesTab } from "./inspect/ModulesTab";
+import { OpenFilesTab } from "./inspect/OpenFilesTab";
+import { ThreadsTab } from "./inspect/ThreadsTab";
+import { memoryOf } from "@/features/processes/logic";
+import { useMemoryDetail } from "@/features/memory/useMemoryDetail";
 import { useProcessDetails } from "./useProcessDetails";
 
+type Tab = "overview" | "network" | "files" | "modules" | "maps" | "threads" | "diagnose";
+const TABS: readonly { id: Tab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "network", label: "Network" },
+  { id: "files", label: "Open Files" },
+  { id: "modules", label: "Modules" },
+  { id: "maps", label: "Memory Map" },
+  { id: "threads", label: "Threads" },
+  { id: "diagnose", label: "Diagnose" },
+];
+
 const HISTORY_SECONDS = 300;
-const CPU_SERIES: readonly LineSeries[] = [{ label: "CPU", colorVar: "--chart-1" }];
-const MEM_SERIES: readonly LineSeries[] = [{ label: "Memory", colorVar: "--chart-2" }];
+const CPU_SERIES: readonly LineSeries[] = [{ label: "CPU", colorVar: "--res-cpu" }];
+const MEM_SERIES: readonly LineSeries[] = [{ label: "Memory", colorVar: "--res-mem" }];
 const IO_SERIES: readonly LineSeries[] = [
-  { label: "Read", colorVar: "--chart-1" },
-  { label: "Write", colorVar: "--chart-2", fill: false },
+  { label: "Read", colorVar: "--res-disk" },
+  { label: "Write", colorVar: "--res-disk-2", fill: false },
 ];
 const bytesAxis = (v: number) => formatBytes(v);
 
 export function ProcessDetailsPage() {
   const pid = useUiStore((s) => s.selectedPid);
+  const startTime = useUiStore((s) => s.selectedStartTime);
   const navigate = useUiStore((s) => s.navigate);
 
   if (pid == null) {
@@ -55,20 +76,35 @@ export function ProcessDetailsPage() {
     );
   }
   // Keyed so all local state resets when switching processes.
-  return <ProcessDetailsView key={pid} pid={pid} />;
+  return <ProcessDetailsView key={`${pid}:${startTime}`} pid={pid} startTime={startTime} />;
 }
 
-function ProcessDetailsView({ pid }: { pid: number }) {
-  const { live, details, history, loading, error, refresh } = useProcessDetails(pid);
+function ProcessDetailsView({ pid, startTime }: { pid: number; startTime: number | null }) {
+  const { live, details, history, loading, error, refresh } = useProcessDetails(pid, startTime);
   const navigate = useUiStore((s) => s.navigate);
   const openProcess = useUiStore((s) => s.openProcess);
   const rows = useMetricsStore((s) => s.tick?.processes);
+  useMemoryDetail();
   const totalMemory = useMetricsStore((s) => s.tick?.memory.totalBytes ?? 0);
   const nowMs = useMetricsStore((s) => s.tick?.timestampMs ?? 0);
+  const platform = useMetricsStore((s) => s.staticInfo?.platform);
+  const [tab, setTab] = useState<Tab>("overview");
 
   const row: ProcessRow | null = live ?? details?.row ?? null;
   const exited = live == null && details != null;
   const children = useMemo(() => (rows && live ? childrenOf(rows, pid) : []), [rows, live, pid]);
+  const allEvents = useActivityStore((s) => s.events);
+  // Growth hints recorded for this process (not for a later one with the same PID).
+  const hints = useMemo(
+    () =>
+      allEvents.filter(
+        (e) =>
+          e.pid === pid &&
+          (e.kind === "memoryGrowth" || e.kind === "threadGrowth") &&
+          (live == null || e.timestampMs >= live.startTime * 1000),
+      ),
+    [allEvents, pid, live],
+  );
 
   if (!row) {
     return (
@@ -85,7 +121,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
     );
   }
 
-  const memPct = totalMemory > 0 ? (row.memoryBytes / totalMemory) * 100 : null;
+  const memPct = totalMemory > 0 ? (memoryOf(row) / totalMemory) * 100 : null;
   const runtime = row.startTime > 0 && nowMs > 0 ? nowMs / 1000 - row.startTime : null;
 
   return (
@@ -100,7 +136,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
               onClick={() => navigate("processes")}
               className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg"
             >
-              <ArrowLeft size={14} aria-hidden /> Processes
+              <ArrowLeft size="0.875rem" aria-hidden /> Processes
             </button>
             <button
               type="button"
@@ -108,7 +144,7 @@ function ProcessDetailsView({ pid }: { pid: number }) {
               disabled={loading}
               className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50"
             >
-              <RefreshCw size={14} aria-hidden /> Refresh details
+              <RefreshCw size="0.875rem" aria-hidden /> Refresh details
             </button>
             {live && <ActionButtons row={live} />}
           </>
@@ -138,119 +174,189 @@ function ProcessDetailsView({ pid }: { pid: number }) {
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card className="xl:col-span-2">
-          <CardHeader title="General" />
-          <div className="grid gap-x-10 px-4 pb-4 pt-3 md:grid-cols-2">
-            <KeyValueList
-              items={[
-                { label: "Name", value: row.name },
-                { label: "PID", value: row.pid },
-                {
-                  label: "Parent",
-                  value:
-                    row.parentPid == null ? (
-                      NOT_AVAILABLE
-                    ) : (
-                      <button
-                        type="button"
-                        className="text-accent hover:underline"
-                        onClick={() => row.parentPid != null && openProcess(row.parentPid)}
-                      >
-                        {details?.parentName ?? "PID"} ({row.parentPid})
-                      </button>
-                    ),
-                },
-                {
-                  label: "User",
-                  value: row.user ?? <Unavailable />,
-                  hint: "Owner information for other accounts' processes may require administrator/root rights.",
-                },
-                { label: "Status", value: STATUS_LABEL[row.status] },
-                { label: "Architecture", value: details?.architecture ?? NOT_AVAILABLE },
-              ]}
+      <div
+        role="tablist"
+        aria-label="Process information"
+        className="mb-4 flex flex-wrap gap-1 border-b border-border"
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls="process-tabpanel"
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-2 text-fg-muted hover:text-fg",
+              tab === t.id ? "border-accent text-fg" : "border-transparent",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id="process-tabpanel" aria-labelledby={`tab-${tab}`}>
+        {tab === "network" && (
+          <ConnectionsCard connections={details?.connections} loading={loading} />
+        )}
+        {/* Inspection tabs mount only when opened, so nothing is read until then. */}
+        {tab === "files" && (
+          <Card>
+            <OpenFilesTab pid={pid} startTime={row.startTime} />
+          </Card>
+        )}
+        {tab === "modules" && (
+          <Card>
+            <ModulesTab pid={pid} startTime={row.startTime} windows={platform === "windows"} />
+          </Card>
+        )}
+        {tab === "maps" && (
+          <Card>
+            <MemoryMapTab pid={pid} startTime={row.startTime} />
+          </Card>
+        )}
+        {tab === "diagnose" && (
+          <Card>
+            <DiagnoseTab
+              row={row}
+              history={history}
+              connections={details?.connections}
+              childCount={children.length}
+              events={hints}
             />
-            <KeyValueList
-              items={[
-                {
-                  label: "Started",
-                  value: row.startTime > 0 ? formatTimestamp(row.startTime * 1000) : NOT_AVAILABLE,
-                },
-                { label: "Runtime", value: formatDuration(runtime) },
-                { label: "Threads", value: row.threads ?? <Unavailable /> },
-                { label: "Priority", value: row.priority ?? <Unavailable /> },
-                { label: "Session", value: row.sessionId ?? NOT_AVAILABLE },
-                { label: "Children", value: live ? children.length : NOT_AVAILABLE },
-              ]}
-            />
-          </div>
-          <div className="space-y-2 border-t border-border px-4 py-3">
-            <PathField label="Executable" value={row.exe} />
-            <PathField label="Command line" value={row.cmd} />
-            <PathField label="Working directory" value={details?.cwd ?? null} />
-          </div>
-        </Card>
-
-        <MetricCard
-          nowMs={nowMs}
-          title={`CPU · ${row.restricted ? NOT_AVAILABLE : formatPercent(row.cpuPercent)}`}
-          series={CPU_SERIES}
-          history={history}
-          pick={(p) => [p.cpu]}
-          yMax={100}
-          format={percentAxis}
-          label="CPU usage of this process"
-        />
-        <MetricCard
-          nowMs={nowMs}
-          title={`Memory · ${formatBytes(row.memoryBytes)}${memPct != null ? ` (${formatPercent(memPct)})` : ""}`}
-          series={MEM_SERIES}
-          history={history}
-          pick={(p) => [p.memory]}
-          format={bytesAxis}
-          label="Memory usage of this process"
-          footer={`Virtual memory ${formatBytes(row.virtualMemoryBytes)}`}
-        />
-        <MetricCard
-          nowMs={nowMs}
-          title={
-            row.restricted
-              ? `Disk · ${NOT_AVAILABLE}`
-              : `Disk · ↓ ${formatBytesPerSecond(row.diskReadPerSec)} ↑ ${formatBytesPerSecond(row.diskWritePerSec)}`
-          }
-          series={IO_SERIES}
-          history={history}
-          pick={(p) => [p.read, p.write]}
-          format={rateAxis}
-          minYMax={RATE_MIN_Y}
-          label="Disk I/O of this process"
-          footer={
-            details?.totalReadBytes != null || details?.totalWrittenBytes != null
-              ? `Total read ${formatBytes(details?.totalReadBytes)} · written ${formatBytes(details?.totalWrittenBytes)}`
-              : "Lifetime totals unavailable for this process"
-          }
-        />
-        <ConnectionsCard connections={details?.connections} loading={loading} />
-
-        {children.length > 0 && (
-          <Card className="xl:col-span-2">
-            <CardHeader title={`Child processes (${children.length})`} />
-            <ul className="flex flex-wrap gap-2 px-4 pb-4 pt-3">
-              {children.map((c) => (
-                <li key={c.pid}>
-                  <button
-                    type="button"
-                    onClick={() => openProcess(c.pid)}
-                    className="rounded-md border border-border px-2 py-1 hover:bg-surface-2"
-                  >
-                    {c.name} <span className="num text-fg-subtle">{c.pid}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+          </Card>
+        )}
+        {tab === "threads" && (
+          <Card>
+            <ThreadsTab pid={pid} startTime={row.startTime} linux={platform === "linux"} />
           </Card>
         )}
       </div>
+
+      {tab === "overview" && hints.length > 0 && (
+        <div role="note" className="mb-4 rounded-md border border-warn/40 bg-warn-soft px-4 py-2">
+          {hints.map((h) => (
+            <p key={h.seq}>{h.detail}</p>
+          ))}
+        </div>
+      )}
+      {tab === "overview" && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Card className="xl:col-span-2">
+            <CardHeader title="General" />
+            <div className="grid gap-x-10 px-4 pb-4 pt-3 md:grid-cols-2">
+              <KeyValueList
+                items={[
+                  { label: "Name", value: row.name },
+                  { label: "PID", value: row.pid },
+                  {
+                    label: "Parent",
+                    value:
+                      row.parentPid == null ? (
+                        NOT_AVAILABLE
+                      ) : (
+                        <button
+                          type="button"
+                          className="text-accent hover:underline"
+                          onClick={() => row.parentPid != null && openProcess(row.parentPid)}
+                        >
+                          {details?.parentName ?? "PID"} ({row.parentPid})
+                        </button>
+                      ),
+                  },
+                  {
+                    label: "User",
+                    value: row.user ?? <Unavailable />,
+                    hint: "Owner information for other accounts' processes may require administrator/root rights.",
+                  },
+                  { label: "Status", value: STATUS_LABEL[row.status] },
+                  { label: "Architecture", value: details?.architecture ?? NOT_AVAILABLE },
+                ]}
+              />
+              <KeyValueList
+                items={[
+                  {
+                    label: "Started",
+                    value:
+                      row.startTime > 0 ? formatTimestamp(row.startTime * 1000) : NOT_AVAILABLE,
+                  },
+                  { label: "Runtime", value: formatDuration(runtime) },
+                  { label: "Threads", value: row.threads ?? <Unavailable /> },
+                  { label: "Priority", value: row.priority ?? <Unavailable /> },
+                  { label: "Session", value: row.sessionId ?? NOT_AVAILABLE },
+                  { label: "Children", value: live ? children.length : NOT_AVAILABLE },
+                ]}
+              />
+            </div>
+            <div className="space-y-2 border-t border-border px-4 py-3">
+              <PathField label="Executable" value={row.exe} />
+              <PathField label="Command line" value={row.cmd} />
+              <PathField label="Working directory" value={details?.cwd ?? null} />
+            </div>
+          </Card>
+
+          <MetricCard
+            nowMs={nowMs}
+            title={`CPU · ${row.restricted ? NOT_AVAILABLE : formatPercent(row.cpuPercent)}`}
+            series={CPU_SERIES}
+            history={history}
+            pick={(p) => [p.cpu]}
+            yMax={100}
+            format={percentAxis}
+            label="CPU usage of this process"
+          />
+          <MetricCard
+            nowMs={nowMs}
+            title={`Memory · ${formatBytes(memoryOf(row))}${memPct != null ? ` (${formatPercent(memPct)})` : ""}`}
+            series={MEM_SERIES}
+            history={history}
+            pick={(p) => [p.memory]}
+            format={bytesAxis}
+            label="Memory usage of this process"
+            footer={`Virtual memory ${formatBytes(row.virtualMemoryBytes)}`}
+          />
+          <MetricCard
+            nowMs={nowMs}
+            title={
+              row.restricted
+                ? `Disk · ${NOT_AVAILABLE}`
+                : `Disk · ↓ ${formatBytesPerSecond(row.diskReadPerSec)} ↑ ${formatBytesPerSecond(row.diskWritePerSec)}`
+            }
+            series={IO_SERIES}
+            history={history}
+            pick={(p) => [p.read, p.write]}
+            format={rateAxis}
+            minYMax={RATE_MIN_Y}
+            label="Disk I/O of this process"
+            footer={
+              details?.totalReadBytes != null || details?.totalWrittenBytes != null
+                ? `Total read ${formatBytes(details?.totalReadBytes)} · written ${formatBytes(details?.totalWrittenBytes)}`
+                : "Lifetime totals unavailable for this process"
+            }
+          />
+
+          {children.length > 0 && (
+            <Card className="xl:col-span-2">
+              <CardHeader title={`Child processes (${children.length})`} />
+              <ul className="flex flex-wrap gap-2 px-4 pb-4 pt-3">
+                {children.map((c) => (
+                  <li key={c.pid}>
+                    <button
+                      type="button"
+                      onClick={() => openProcess(c.pid)}
+                      className="rounded-md border border-border px-2 py-1 hover:bg-surface-2"
+                    >
+                      {c.name} <span className="num text-fg-subtle">{c.pid}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -260,7 +366,7 @@ function PathField({ label, value }: { label: string; value: string | null }) {
     <div className="grid grid-cols-[140px_1fr] gap-3">
       <span className="text-fg-muted">{label}</span>
       {value ? (
-        <code className="selectable break-all font-mono text-[12px]">{value}</code>
+        <code className="selectable break-all font-mono text-[0.8125rem]">{value}</code>
       ) : (
         <Unavailable />
       )}
@@ -359,7 +465,7 @@ function ConnectionsCard({
         ) : connections.length === 0 ? (
           <p className="text-fg-muted">No open TCP or UDP sockets.</p>
         ) : (
-          <table className="w-full text-left text-[12px]">
+          <table className="w-full text-left text-[0.8125rem]">
             <thead className="text-fg-muted">
               <tr>
                 <th className="py-1 pr-3 font-medium">Protocol</th>
@@ -405,14 +511,14 @@ function ActionButtons({ row }: { row: ProcessRow }) {
         disabled={!row.exe}
         onClick={() => void revealExecutable(row)}
       >
-        <FolderOpen size={14} aria-hidden /> Open location
+        <FolderOpen size="0.875rem" aria-hidden /> Open location
       </button>
       <button
         type="button"
         className={actionBtn}
         onClick={() => void requestAction(row, { type: suspended ? "resume" : "suspend" })}
       >
-        {suspended ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />}
+        {suspended ? <Play size="0.875rem" aria-hidden /> : <Pause size="0.875rem" aria-hidden />}
         {suspended ? "Resume" : "Suspend"}
       </button>
       <button
@@ -420,14 +526,14 @@ function ActionButtons({ row }: { row: ProcessRow }) {
         className={actionBtn}
         onClick={() => void requestAction(row, { type: "terminate" })}
       >
-        <Square size={13} aria-hidden /> End process
+        <Square size="0.8125rem" aria-hidden /> End process
       </button>
       <button
         type="button"
         className={`${actionBtn} text-crit hover:text-crit`}
         onClick={() => void requestAction(row, { type: "forceKill" })}
       >
-        <OctagonX size={14} aria-hidden /> Force end
+        <OctagonX size="0.875rem" aria-hidden /> Force end
       </button>
     </>
   );

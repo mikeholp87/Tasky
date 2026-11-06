@@ -15,6 +15,8 @@ export interface TableItem {
   depth?: number;
   hasChildren?: boolean;
   expanded?: boolean;
+  /** Applications view: a synthetic row summing the processes of one program. */
+  group?: boolean;
 }
 
 export interface Forest {
@@ -74,8 +76,8 @@ export interface FlattenOptions {
   collapsed: ReadonlySet<number>;
   compare: (a: ProcessRow, b: ProcessRow) => number;
   /**
-   * When set, only matching processes and their ancestors are shown, and
-   * ancestors of matches are expanded regardless of `collapsed`.
+   * When set, only matching processes and their ancestors are included.
+   * Collapsed ancestors still hide their descendants.
    */
   matches?: (row: ProcessRow) => boolean;
 }
@@ -89,37 +91,39 @@ export function flattenTree(rows: readonly ProcessRow[], options: FlattenOptions
   let keep: Set<number> | null = null;
   if (matches) {
     keep = new Set();
-    const visit = (row: ProcessRow, seen: Set<number>): boolean => {
-      if (seen.has(row.pid)) return false;
-      seen.add(row.pid);
-      let any = matches(row);
-      for (const child of children.get(row.pid) ?? []) {
-        if (visit(child, seen)) any = true;
-      }
-      if (any) keep?.add(row.pid);
-      return any;
-    };
-    const seen = new Set<number>();
-    for (const root of roots) visit(root, seen);
+    const parent = new Map<number, number>();
+    for (const [pid, kids] of children) for (const child of kids) parent.set(child.pid, pid);
+    const pending = rows.filter(matches).map((row) => row.pid);
+    while (pending.length > 0) {
+      const pid = pending.pop()!;
+      if (keep.has(pid)) continue;
+      keep.add(pid);
+      const ancestor = parent.get(pid);
+      if (ancestor !== undefined) pending.push(ancestor);
+    }
   }
 
   const out: TableItem[] = [];
   const visited = new Set<number>();
-  const walk = (list: ProcessRow[], depth: number) => {
-    const sorted = [...list].sort(compare);
-    for (const row of sorted) {
-      if (visited.has(row.pid)) continue;
-      if (keep && !keep.has(row.pid)) continue;
-      visited.add(row.pid);
-      const kids = (children.get(row.pid) ?? []).filter((c) => !keep || keep.has(c.pid));
-      const hasChildren = kids.length > 0;
-      // While filtering, always reveal the path to matches.
-      const expanded = hasChildren && (keep !== null || !collapsed.has(row.pid));
-      out.push({ row, depth, hasChildren, expanded });
-      if (expanded) walk(kids, depth + 1);
+  // Explicit stack avoids a call-stack overflow on deeply nested processes.
+  const pending = [...roots]
+    .sort(compare)
+    .reverse()
+    .map((row) => ({ row, depth: 0 }));
+  while (pending.length > 0) {
+    const { row, depth } = pending.pop()!;
+    if (visited.has(row.pid)) continue;
+    if (keep && !keep.has(row.pid)) continue;
+    visited.add(row.pid);
+    const kids = (children.get(row.pid) ?? []).filter((c) => !keep || keep.has(c.pid));
+    const hasChildren = kids.length > 0;
+    const expanded = hasChildren && !collapsed.has(row.pid);
+    out.push({ row, depth, hasChildren, expanded });
+    if (expanded) {
+      for (const child of kids.sort(compare).reverse())
+        pending.push({ row: child, depth: depth + 1 });
     }
-  };
-  walk(roots, 0);
+  }
   return out;
 }
 

@@ -703,6 +703,7 @@ mod tests {
             ipv6: Vec::new(),
             mac_address: None,
             is_primary: primary,
+            kind: crate::models::InterfaceKind::Unknown,
         }
     }
 

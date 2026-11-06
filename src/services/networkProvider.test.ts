@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NetworkSubmission } from "@/types";
+import { useBenchmarkStore } from "@/stores/benchmarkStore";
+import { buildRequest } from "./benchmarks";
 
 const backend = vi.hoisted(() => ({
   submitNetworkSamples: vi.fn(),
@@ -11,7 +13,11 @@ interface FakeEngine {
   onFinish: (results: unknown) => void;
   onError: (message: string) => void;
   play: () => void;
+  pause: () => void;
+  isRunning: boolean;
 }
+
+const mode = vi.hoisted(() => ({ finish: true, throws: false }));
 
 vi.mock("@/services/ipc", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/services/ipc")>();
@@ -34,9 +40,13 @@ vi.mock("@cloudflare/speedtest", () => {
       engines.push({ config, instance: this });
     }
     play() {
-      this.onFinish(fakeResults);
+      if (mode.throws) throw new Error("start failure");
+      this.isRunning = true;
+      if (mode.finish) this.onFinish(fakeResults);
     }
-    pause() {}
+    pause = vi.fn(() => {
+      this.isRunning = false;
+    });
   }
   return { default: SpeedTest };
 });
@@ -72,6 +82,9 @@ describe("network provider", () => {
     engines.length = 0;
     backend.submitNetworkSamples.mockResolvedValue(undefined);
     backend.reportNetworkProgress.mockResolvedValue(undefined);
+    mode.finish = true;
+    mode.throws = false;
+    useBenchmarkStore.getState().beginRun(REQUEST.runId, buildRequest(["network"]));
   });
 
   it("maps the backend plan to package measurements", () => {
@@ -119,5 +132,39 @@ describe("network provider", () => {
     ) as { version?: string };
     expect(types).toContain("logAimApiUrl: string | null");
     expect(version.version).toBe("1.15.0");
+  });
+
+  it("settles and unsubscribes when a run is cancelled without onFinish", async () => {
+    mode.finish = false;
+    const running = runNetworkProvider(REQUEST);
+    await vi.waitFor(() => expect(engines).toHaveLength(1));
+    useBenchmarkStore.getState().applyEvent({
+      type: "finished",
+      runId: REQUEST.runId,
+      phase: "cancelled",
+      resultId: null,
+      error: null,
+    });
+    await running;
+    expect(engines[0]?.instance.pause).toHaveBeenCalledOnce();
+    expect(backend.submitNetworkSamples).not.toHaveBeenCalled();
+    useBenchmarkStore.getState().clearRun();
+    expect(engines[0]?.instance.pause).toHaveBeenCalledOnce();
+  });
+
+  it("does not start a provider for a stale run", async () => {
+    useBenchmarkStore.getState().clearRun();
+    await runNetworkProvider(REQUEST);
+    expect(engines).toHaveLength(0);
+  });
+
+  it("handles synchronous provider failures and cleans up", async () => {
+    mode.throws = true;
+    await runNetworkProvider(REQUEST);
+    expect(engines[0]?.instance.pause).toHaveBeenCalledOnce();
+    expect(backend.submitNetworkSamples).toHaveBeenCalledWith(
+      REQUEST.token,
+      expect.objectContaining({ error: expect.stringContaining("could not be started") }),
+    );
   });
 });

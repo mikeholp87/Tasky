@@ -7,9 +7,10 @@ mod logging;
 mod settings;
 mod state;
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tm_core::inspect::ThreadSampler;
 
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
@@ -100,6 +101,7 @@ pub fn run() {
                 engine: Arc::clone(&engine),
                 benchmarks,
                 network_inbox,
+                threads: Arc::new(Mutex::new(ThreadSampler::default())),
                 settings,
                 logging,
                 visibility: Arc::new(WindowVisibility::default()),
@@ -164,6 +166,18 @@ pub fn run() {
             commands::monitoring::get_monitoring_state,
             commands::monitoring::set_monitoring_state,
             commands::monitoring::refresh_now,
+            commands::monitoring::set_memory_detail,
+            commands::inspect::list_startup_items,
+            commands::inspect::set_startup_enabled,
+            commands::inspect::list_sockets,
+            commands::inspect::get_open_files,
+            commands::inspect::find_file_users,
+            commands::inspect::get_memory_map,
+            commands::inspect::get_modules,
+            commands::inspect::get_threads,
+            commands::inspect::get_activity,
+            commands::inspect::pick_path,
+            commands::inspect::get_hardware_info,
             commands::processes::get_process_details,
             commands::control::assess_process_action,
             commands::control::perform_process_action,

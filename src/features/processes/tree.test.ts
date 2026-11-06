@@ -20,6 +20,8 @@ function p(pid: number, parentPid: number | null, name: string, startTime = 100)
     exe: null,
     cmd: null,
     sessionId: null,
+    kernelThread: false,
+    pssBytes: null,
     restricted: false,
   };
 }
@@ -63,6 +65,14 @@ describe("buildForest", () => {
 });
 
 describe("flattenTree", () => {
+  it("handles 10,000 nested processes with and without a search", () => {
+    const deep = Array.from({ length: 10_000 }, (_, i) => p(i + 1, i || null, `p${i}`, i + 1));
+    for (const matches of [undefined, (row: ProcessRow) => row.pid === 10_000]) {
+      const items = flattenTree(deep, { collapsed: new Set(), compare: byName, matches });
+      expect(items).toHaveLength(10_000);
+      expect(items.at(-1)?.depth).toBe(9_999);
+    }
+  });
   it("renders the full hierarchy sorted by sibling order", () => {
     expect(names(flattenTree(rows, { collapsed: new Set(), compare: byName }))).toEqual([
       "systemd",
@@ -85,13 +95,23 @@ describe("flattenTree", () => {
     });
   });
 
-  it("shows matches with their ancestors, expanded, when filtering", () => {
+  it("shows matches with their ancestors when expanded and filtering", () => {
     const items = flattenTree(rows, {
-      collapsed: new Set(parentPids(rows)),
+      collapsed: new Set(),
       compare: byName,
       matches: (r) => r.name === "renderer",
     });
     expect(names(items)).toEqual(["systemd", "  session", "    brave", "      renderer"]);
+  });
+
+  it("honors collapsed ancestors while filtering", () => {
+    const items = flattenTree(rows, {
+      collapsed: parentPids(rows),
+      compare: byName,
+      matches: (r) => r.name === "renderer",
+    });
+    expect(names(items)).toEqual(["systemd"]);
+    expect(items[0]).toMatchObject({ hasChildren: true, expanded: false });
   });
 });
 

@@ -27,7 +27,7 @@ export function ExportMenu() {
           disabled={!isBackendAvailable()}
           className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50"
         >
-          <Download size={14} aria-hidden />
+          <Download size="0.875rem" aria-hidden />
           Export
         </button>
       </DropdownMenu.Trigger>
@@ -35,7 +35,7 @@ export function ExportMenu() {
         <DropdownMenu.Content
           align="end"
           sideOffset={4}
-          className="z-50 w-72 rounded-lg border border-border bg-surface p-1 text-[13px] shadow-lg"
+          className="z-50 w-72 rounded-lg border border-border bg-surface p-1 text-[0.875rem] shadow-lg"
         >
           <DropdownMenu.Item
             className={itemCls}
@@ -64,7 +64,7 @@ export function ExportMenu() {
             Include command lines
           </DropdownMenu.CheckboxItem>
           {withCmd && (
-            <p className="px-2 pb-1 text-[12px] text-warn">
+            <p className="px-2 pb-1 text-[0.8125rem] text-warn">
               Command lines can contain passwords, tokens or other private data. Share the file
               carefully.
             </p>

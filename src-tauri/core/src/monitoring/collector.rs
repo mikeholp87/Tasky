@@ -6,9 +6,18 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{CpuRefreshKind, System};
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{EngineStats, HistoryPoint, MetricsTick, Platform, StaticSystemInfo};
+use crate::models::{
+    DiskSnapshot, EngineStats, HistoryPoint, MetricsTick, NetworkInterfaceSnapshot, Platform,
+    StaticSystemInfo,
+};
 use crate::monitoring::{
-    cpu, disks::DiskTracker, memory, network::NetworkTracker, processes::ProcessTracker,
+    cpu,
+    disks::DiskTracker,
+    memory,
+    memory_detail::{self, MemoryDetailTracker},
+    network::NetworkTracker,
+    processes::ProcessTracker,
+    sensors::SensorTracker,
 };
 use crate::platform;
 
@@ -17,6 +26,8 @@ pub struct Collector {
     disks: DiskTracker,
     networks: NetworkTracker,
     processes: ProcessTracker,
+    sensors: SensorTracker,
+    memory_detail: MemoryDetailTracker,
     last_sample: Instant,
     seq: u64,
 }
@@ -33,6 +44,8 @@ impl Collector {
             disks: DiskTracker::new(),
             networks: NetworkTracker::new(),
             processes: ProcessTracker::new(),
+            sensors: SensorTracker::new(),
+            memory_detail: MemoryDetailTracker::default(),
             last_sample: Instant::now(),
             seq: 0,
         })
@@ -42,6 +55,7 @@ impl Collector {
     pub fn static_info(&self) -> StaticSystemInfo {
         let cpus = self.sys.cpus();
         let first = cpus.first();
+        let os = platform::os_details();
         StaticSystemInfo {
             platform: Platform::current(),
             os_name: System::name().ok(),
@@ -62,10 +76,22 @@ impl Collector {
             boot_time_secs: System::boot_time().ok(),
             app_version: env!("CARGO_PKG_VERSION").to_owned(),
             self_pid: std::process::id(),
+            distribution: os.distribution,
+            desktop_environment: os.desktop_environment,
+            display_server: os.display_server,
+            container: os.container,
+            init_system: os.init_system,
         }
     }
 
-    pub fn sample(&mut self, interval_ms: u32, last_payload_bytes: u32) -> MetricsTick {
+    /// `memory_detail` asks for per-process PSS; it costs extra reads, so it is
+    /// only on while the UI shows it.
+    pub fn sample(
+        &mut self,
+        interval_ms: u32,
+        last_payload_bytes: u32,
+        memory_detail: bool,
+    ) -> MetricsTick {
         let started = Instant::now();
         let elapsed = started.duration_since(self.last_sample);
         self.last_sample = started;
@@ -78,8 +104,19 @@ impl Collector {
         let memory = memory::snapshot(&self.sys, platform::memory_extras());
         let disks = self.disks.sample(started, elapsed);
         let networks = self.networks.sample(elapsed);
-        let processes = self.processes.sample(&mut self.sys, elapsed);
+        let mut processes = self.processes.sample(&mut self.sys, elapsed);
+        if memory_detail {
+            self.memory_detail.update(
+                &mut processes,
+                started,
+                memory_detail::BUDGET,
+                platform::proportional_memory,
+            );
+        } else {
+            self.memory_detail.clear();
+        }
         let process_count = u32::try_from(processes.len()).unwrap_or(u32::MAX);
+        let (gpus, temperatures) = self.sensors.sample(started);
 
         let point = HistoryPoint {
             t: unix_millis(),
@@ -88,10 +125,14 @@ impl Collector {
             mem_percent: memory.used_percent as f32,
             mem_used: memory.used_bytes,
             swap_used: memory.swap_used_bytes,
-            net_rx: networks.iter().map(|n| n.rx_bytes_per_sec).sum(),
-            net_tx: networks.iter().map(|n| n.tx_bytes_per_sec).sum(),
-            disk_read: disks.iter().filter_map(|d| d.read_bytes_per_sec).sum(),
-            disk_write: disks.iter().filter_map(|d| d.write_bytes_per_sec).sum(),
+            net_rx: physical(&networks).map(|n| n.rx_bytes_per_sec).sum(),
+            net_tx: physical(&networks).map(|n| n.tx_bytes_per_sec).sum(),
+            disk_read: per_device(&disks)
+                .filter_map(|d| d.read_bytes_per_sec)
+                .sum(),
+            disk_write: per_device(&disks)
+                .filter_map(|d| d.write_bytes_per_sec)
+                .sum(),
         };
 
         MetricsTick {
@@ -103,7 +144,10 @@ impl Collector {
             disks,
             networks,
             processes,
+            gpus,
+            temperatures,
             alerts: Vec::new(),
+            activity: Vec::new(),
             point,
             engine: EngineStats {
                 poll_duration_ms: duration_ms(started.elapsed()),
@@ -116,6 +160,31 @@ impl Collector {
     }
 }
 
+/// Interfaces whose bytes are not already counted elsewhere (VPN payloads
+/// also cross the physical link; bridges and veth re-count container
+/// traffic).
+fn physical(
+    networks: &[NetworkInterfaceSnapshot],
+) -> impl Iterator<Item = &NetworkInterfaceSnapshot> {
+    networks.iter().filter(|n| n.kind.counts_in_totals())
+}
+
+/// One entry per device: btrfs subvolumes and bind mounts list the same
+/// device (and the same I/O counters) under several mount points.
+fn per_device(disks: &[DiskSnapshot]) -> impl Iterator<Item = &DiskSnapshot> {
+    let mut seen = std::collections::HashSet::new();
+    disks.iter().filter(move |d| {
+        // Windows counters are per drive-letter volume. Distinct volumes can
+        // have the same device/model name and must both contribute.
+        let key = if cfg!(target_os = "windows") {
+            d.mount_point.as_str()
+        } else {
+            d.name.as_str()
+        };
+        seen.insert(key)
+    })
+}
+
 fn duration_ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1_000.0
 }
@@ -125,4 +194,58 @@ pub fn unix_millis() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "release measurement; not a correctness test"]
+    fn measure_collector_stages() {
+        let mut collector = Collector::new().unwrap();
+        let mut samples: Vec<[f64; 5]> = Vec::new();
+        for _ in 0..20 {
+            std::thread::sleep(Duration::from_millis(500));
+            let now = Instant::now();
+            let elapsed = now.duration_since(collector.last_sample);
+            collector.last_sample = now;
+            collector.sys.refresh_cpu_specifics(cpu::refresh_kind());
+            let cpu_ms = duration_ms(now.elapsed());
+            let start = Instant::now();
+            collector
+                .sys
+                .refresh_memory_specifics(memory::refresh_kind());
+            let _ = platform::memory_extras();
+            let memory_ms = duration_ms(start.elapsed());
+            let start = Instant::now();
+            collector.disks.sample(now, elapsed);
+            let disk_ms = duration_ms(start.elapsed());
+            let start = Instant::now();
+            collector.networks.sample(elapsed);
+            let network_ms = duration_ms(start.elapsed());
+            let start = Instant::now();
+            collector.processes.sample(&mut collector.sys, elapsed);
+            samples.push([
+                cpu_ms,
+                memory_ms,
+                disk_ms,
+                network_ms,
+                duration_ms(start.elapsed()),
+            ]);
+        }
+        for (i, name) in ["cpu", "memory", "disks", "network", "processes"]
+            .iter()
+            .enumerate()
+        {
+            let mut values: Vec<_> = samples.iter().map(|s| s[i]).collect();
+            values.sort_by(f64::total_cmp);
+            println!(
+                "{name}: mean_ms={:.3} p95_ms={:.3} max_ms={:.3}",
+                values.iter().sum::<f64>() / values.len() as f64,
+                values[18],
+                values[19]
+            );
+        }
+    }
 }

@@ -13,7 +13,31 @@ const CAPACITY_REFRESH: Duration = Duration::from_secs(30);
 
 /// Pseudo / image file systems that are not useful as "drives".
 const IGNORED_FILE_SYSTEMS: &[&str] = &[
-    "squashfs", "overlay", "tmpfs", "devtmpfs", "ramfs", "proc", "sysfs", "efivarfs", "autofs",
+    "squashfs",
+    "overlay",
+    "tmpfs",
+    "devtmpfs",
+    "ramfs",
+    "proc",
+    "sysfs",
+    "efivarfs",
+    "autofs",
+    "cgroup",
+    "cgroup2",
+    "securityfs",
+    "debugfs",
+    "tracefs",
+    "pstore",
+    "configfs",
+    "fusectl",
+    "bpf",
+    "mqueue",
+    "hugetlbfs",
+    "binfmt_misc",
+    "nsfs",
+    "devpts",
+    "fuse.portal",
+    "fuse.gvfsd-fuse",
 ];
 
 pub struct DiskTracker {

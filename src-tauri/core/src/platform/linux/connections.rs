@@ -13,6 +13,7 @@ use crate::platform::procfs::{self, NetEntry};
 pub fn connections(pid: u32) -> Option<Vec<Connection>> {
     let fds = fs::read_dir(format!("/proc/{pid}/fd")).ok()?;
     let inodes: HashSet<u64> = fds
+        .take(200_000)
         .filter_map(|e| e.ok())
         .filter_map(|e| fs::read_link(e.path()).ok())
         .filter_map(|target| procfs::socket_inode(&target.to_string_lossy()))
@@ -28,20 +29,24 @@ pub fn connections(pid: u32) -> Option<Vec<Connection>> {
         ("udp", Protocol::Udp),
         ("udp6", Protocol::Udp6),
     ] {
-        let Ok(text) = fs::read_to_string(format!("/proc/{pid}/net/{file}")) else {
+        let Ok(text) = crate::filesystem::read_text(
+            std::path::Path::new(&format!("/proc/{pid}/net/{file}")),
+            8 * 1024 * 1024,
+        ) else {
             continue;
         };
         out.extend(
             text.lines()
                 .filter_map(procfs::parse_net_line)
                 .filter(|e| inodes.contains(&e.inode))
+                .take(crate::inspect::MAX_SOCKETS.saturating_sub(out.len()))
                 .map(|e| to_connection(&e, protocol)),
         );
     }
     Some(out)
 }
 
-fn to_connection(e: &NetEntry, protocol: Protocol) -> Connection {
+pub(super) fn to_connection(e: &NetEntry, protocol: Protocol) -> Connection {
     let is_tcp = matches!(protocol, Protocol::Tcp | Protocol::Tcp6);
     let state = is_tcp.then(|| tcp_state(e.state));
     let has_remote = is_tcp && state != Some(TcpState::Listen) && e.remote.1 != 0;

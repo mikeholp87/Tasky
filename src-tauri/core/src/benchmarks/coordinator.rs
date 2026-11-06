@@ -47,6 +47,7 @@ pub struct BenchmarkCoordinator {
     history: Arc<HistoryStore>,
     simulation_enabled: bool,
     save_history: AtomicBool,
+    shutting_down: AtomicBool,
     active: Mutex<Option<ActiveRun>>,
     /// Whether any CPU temperature sensor is readable (probed once; sensor
     /// enumeration can be slow on Windows).
@@ -79,6 +80,7 @@ impl BenchmarkCoordinator {
             history,
             simulation_enabled,
             save_history: AtomicBool::new(true),
+            shutting_down: AtomicBool::new(false),
             active: Mutex::new(None),
             temperature_available: OnceLock::new(),
             gpu_adapters: OnceLock::new(),
@@ -148,10 +150,15 @@ impl BenchmarkCoordinator {
     /// Removes benchmark files left behind by a crash. Never runs while a
     /// benchmark is active (its file would match the pattern).
     pub fn sweep_abandoned_files(&self) -> usize {
-        if self.running_run_id().is_some() {
+        // Exclude start() for the entire sweep. Checking the slot and then
+        // releasing it lets a new run create a file just before it is swept.
+        let active = self.active();
+        if active.is_some() {
             return 0;
         }
-        super::disk::file::sweep(&self.benchmark_dirs())
+        let removed = super::disk::file::sweep(&self.benchmark_dirs());
+        drop(active);
+        removed
     }
 
     fn factory(&self, request: &BenchmarkRequest) -> &dyn BenchmarkFactory {
@@ -249,6 +256,11 @@ impl BenchmarkCoordinator {
     ) -> AppResult<String> {
         let request = self.validate(request)?;
         let mut active = self.active();
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err(AppError::ActionUnavailable(
+                "The application is shutting down.".into(),
+            ));
+        }
         if let Some(run) = active.as_ref()
             && run.handle.as_ref().is_some_and(|h| !h.is_finished())
         {
@@ -300,6 +312,7 @@ impl BenchmarkCoordinator {
 
     /// Cancels any active run and waits (bounded) for its cleanup.
     pub fn shutdown(&self, wait: Duration) {
+        self.shutting_down.store(true, Ordering::SeqCst);
         let handle = {
             let mut active = self.active();
             active.as_mut().and_then(|run| {
@@ -328,6 +341,21 @@ impl BenchmarkCoordinator {
         sink: &dyn ProgressSink,
     ) {
         let started = Instant::now();
+        self.probe.record_activity(
+            crate::monitoring::activity::Pending::new(
+                crate::models::ActivityKind::BenchmarkStarted,
+            )
+            .detail(format!(
+                "{}{}",
+                request
+                    .kinds
+                    .iter()
+                    .map(|k| k.label())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if request.simulate { " (simulated)" } else { "" }
+            )),
+        );
         tracing::info!(
             run_id = id,
             kinds = ?request.kinds,
@@ -381,6 +409,12 @@ impl BenchmarkCoordinator {
                 .as_ref()
                 .map_or_else(|| "Benchmark failed".to_owned(), |e| e.message.clone()),
         };
+        self.probe.record_activity(
+            crate::monitoring::activity::Pending::new(
+                crate::models::ActivityKind::BenchmarkCompleted,
+            )
+            .detail(message.clone()),
+        );
         reporter.set_category(None, 1.0, 0.0);
         reporter.phase(outcome.phase, message);
         reporter.event(&BenchmarkEvent::Finished {
@@ -401,6 +435,9 @@ impl BenchmarkCoordinator {
         let started_at_ms = unix_millis();
         let started = Instant::now();
         reporter.phase(BenchmarkPhase::Preparing, "Collecting system information");
+        if let Err(e) = cancel.check() {
+            return stopped(cancel, &e);
+        }
         let env_before = environment::snapshot(&*self.probe);
         let mut warnings = preflight_warnings(&env_before);
         let _mode = BenchmarkModeGuard::new(&*self.probe);
@@ -411,6 +448,9 @@ impl BenchmarkCoordinator {
         let mut categories: Vec<CategoryResult> = Vec::new();
         let mut previous_heavy = false;
         for (index, &kind) in request.kinds.iter().enumerate() {
+            if let Err(e) = cancel.check() {
+                return stopped(cancel, &e);
+            }
             reporter.set_category(Some(kind), index as f32 / count, 1.0 / count);
             if previous_heavy
                 && kind.is_heavy()
@@ -441,6 +481,9 @@ impl BenchmarkCoordinator {
                     c
                 }
             };
+            if let Err(e) = cancel.check() {
+                return stopped(cancel, &e);
+            }
             category.kind = kind;
             category.duration_ms =
                 u64::try_from(category_started.elapsed().as_millis()).unwrap_or(u64::MAX);
@@ -455,6 +498,9 @@ impl BenchmarkCoordinator {
 
         reporter.set_category(None, 1.0, 0.0);
         reporter.phase(BenchmarkPhase::Finalizing, "Calculating results");
+        if let Err(e) = cancel.check() {
+            return stopped(cancel, &e);
+        }
         let completed = categories
             .iter()
             .filter(|c| c.status == CategoryStatus::Completed)
@@ -509,6 +555,9 @@ impl BenchmarkCoordinator {
             system_score,
             warnings,
         };
+        if let Err(e) = cancel.check() {
+            return stopped(cancel, &e);
+        }
         let result_id = if self.save_history.load(Ordering::SeqCst) {
             match self.history.save(&record) {
                 Ok(()) => Some(record.id.clone()),
@@ -695,6 +744,16 @@ mod tests {
         assert_eq!(phase, BenchmarkPhase::Completed);
         assert!(error.is_none());
         assert_eq!(result_id.as_deref(), Some(id.as_str()));
+        let activity = s.probe.activity.lock().unwrap();
+        assert_eq!(
+            activity.iter().map(|e| e.kind).collect::<Vec<_>>(),
+            vec![
+                crate::models::ActivityKind::BenchmarkStarted,
+                crate::models::ActivityKind::BenchmarkCompleted,
+            ]
+        );
+        assert!(activity[0].detail.as_deref().unwrap().contains("simulated"));
+        drop(activity);
 
         let record = s.coordinator.history().get(&id).unwrap();
         assert_eq!(record.method_version, METHOD_VERSION);
@@ -879,6 +938,72 @@ mod tests {
             finished(&sink).map(|f| f.0),
             Some(BenchmarkPhase::Cancelled)
         );
+        assert!(
+            s.coordinator
+                .start(request(vec![BenchmarkKind::Cpu]), sink.clone())
+                .is_err()
+        );
+        std::fs::remove_dir_all(s.dir).unwrap();
+    }
+
+    #[test]
+    fn cancellation_at_preparing_and_finalizing_is_not_persisted() {
+        struct CancelAtPhase {
+            coordinator: std::sync::Weak<BenchmarkCoordinator>,
+            at: BenchmarkPhase,
+            recording: RecordingSink,
+        }
+        impl ProgressSink for CancelAtPhase {
+            fn send(&self, event: &BenchmarkEvent) -> bool {
+                if let BenchmarkEvent::Progress(p) = event
+                    && p.phase == self.at
+                    && let Some(coordinator) = self.coordinator.upgrade()
+                {
+                    coordinator.cancel(&p.run_id);
+                }
+                self.recording.send(event)
+            }
+        }
+        for at in [BenchmarkPhase::Preparing, BenchmarkPhase::Finalizing] {
+            let s = setup(MockFactory::new(Duration::from_millis(1)));
+            let sink = Arc::new(CancelAtPhase {
+                coordinator: Arc::downgrade(&s.coordinator),
+                at,
+                recording: RecordingSink::default(),
+            });
+            s.coordinator
+                .start(request(vec![BenchmarkKind::Cpu]), sink.clone())
+                .unwrap();
+            assert_eq!(wait_finished(&sink.recording).0, BenchmarkPhase::Cancelled);
+            assert!(s.coordinator.history().list().is_empty());
+            assert!(!s.probe.mode.load(Ordering::SeqCst));
+            std::fs::remove_dir_all(s.dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn sweep_does_not_remove_active_run_files() {
+        let s = setup(MockFactory::new(Duration::from_millis(100)));
+        let dir = s.dir.join("files");
+        std::fs::create_dir(&dir).unwrap();
+        let coordinator = BenchmarkCoordinator::new(
+            s.probe.clone(),
+            s.coordinator.hardware.clone(),
+            s.coordinator.simulated.clone(),
+            s.coordinator.history.clone(),
+            true,
+            Some(dir.clone()),
+        );
+        let temp = super::super::disk::file::TempBenchFile::create(&dir).unwrap();
+        let sink = Arc::new(RecordingSink::default());
+        let id = coordinator
+            .start(request(vec![BenchmarkKind::Cpu]), sink.clone())
+            .unwrap();
+        assert_eq!(coordinator.sweep_abandoned_files(), 0);
+        assert!(temp.path().exists());
+        coordinator.cancel(&id);
+        wait_finished(&sink);
+        drop(temp);
         std::fs::remove_dir_all(s.dir).unwrap();
     }
 

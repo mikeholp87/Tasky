@@ -10,14 +10,32 @@ import {
   useRef,
 } from "react";
 import { cn } from "@/lib/cn";
+import { scaled, useRootPx } from "@/hooks/useRootPx";
 import { columnWidth, useProcessStore } from "@/stores/processStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import type { ProcessRow } from "@/types";
 import { type HeatLevel, heatLevel, memoryHeatLevel } from "@/utils/levels";
+import { GROUP_MEMORY_NOTE } from "./apps";
 import { cellContent, cellTitle } from "./cells";
-import { COLUMN_BY_ID, type ColumnId, type ProcessContext, type SortState } from "./logic";
+import {
+  COLUMN_BY_ID,
+  type ColumnId,
+  type ProcessContext,
+  type SortState,
+  isNewProcess,
+  memoryOf,
+  runState,
+  type RunState,
+} from "./logic";
 import type { TableItem } from "./tree";
+
+/** Red/green execution state: row marker and status-cell tint. */
+const RUN_COLOR: Record<RunState, { bar: string; bg?: string; fg?: string }> = {
+  active: { bar: "var(--ok)", bg: "var(--ok-soft)", fg: "var(--ok)" },
+  idle: { bar: "transparent" },
+  problem: { bar: "var(--crit)", bg: "var(--crit-soft)", fg: "var(--crit)" },
+};
 
 const HEAT_BG: Record<HeatLevel, string | undefined> = {
   0: undefined,
@@ -35,22 +53,28 @@ interface ProcessTableProps {
   selfPid: number | undefined;
   /** Renders tree affordances (indentation, expand/collapse). */
   tree?: boolean;
-  /** Wraps each row, e.g. to attach a context menu. */
-  renderRow?: (row: ProcessRow, element: React.ReactElement) => React.ReactElement;
+  /**
+   * Wraps the whole table once, e.g. to attach a single context menu.
+   * `find` resolves the process shown in a row, by PID.
+   */
+  wrapTable?: (
+    table: React.ReactElement,
+    find: (pid: number) => ProcessRow | undefined,
+  ) => React.ReactElement;
   /** Delete key on the selected row; must ask for confirmation. */
   onRequestTerminate?: (row: ProcessRow) => void;
 }
 
 /**
  * Virtualized process table: only visible rows are rendered, so thousands
- * of processes stay cheap. Rows are keyed by PID.
+ * of processes stay cheap. Rows are keyed by PID and process start time.
  */
 export function ProcessTable({
   items,
   ctx,
   selfPid,
   tree = false,
-  renderRow,
+  wrapTable,
   onRequestTerminate,
 }: ProcessTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -58,21 +82,24 @@ export function ProcessTable({
   const widths = useProcessStore((s) => s.columnWidths);
   const sort = useProcessStore((s) => s.sort);
   const selectedPid = useProcessStore((s) => s.selectedPid);
+  const selectedStartTime = useProcessStore((s) => s.selectedStartTime);
   const select = useProcessStore((s) => s.select);
   const toggleCollapsed = useProcessStore((s) => s.toggleCollapsed);
   const setCollapsed = useProcessStore((s) => s.setCollapsed);
   const openProcess = useUiStore((s) => s.openProcess);
   const compact = useSettingsStore((s) => s.compactTable);
   const heat = useSettingsStore((s) => s.heatMapping);
-  const rowHeight = compact ? 26 : 32;
+  const highlightSecs = useSettingsStore((s) => s.newProcessSeconds);
+  const rootPx = useRootPx();
+  const rowHeight = scaled(compact ? 26 : 32, rootPx);
 
   const template = useMemo(
-    () => visibleColumns.map((c) => `${columnWidth(widths, c)}px`).join(" "),
-    [visibleColumns, widths],
+    () => visibleColumns.map((c) => `${scaled(columnWidth(widths, c), rootPx)}px`).join(" "),
+    [visibleColumns, widths, rootPx],
   );
   const totalWidth = useMemo(
-    () => visibleColumns.reduce((sum, c) => sum + columnWidth(widths, c), 0),
-    [visibleColumns, widths],
+    () => visibleColumns.reduce((sum, c) => sum + scaled(columnWidth(widths, c), rootPx), 0),
+    [visibleColumns, widths, rootPx],
   );
 
   const virtualizer = useVirtualizer({
@@ -80,7 +107,10 @@ export function ProcessTable({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
     overscan: 12,
-    getItemKey: (index) => items[index]?.row.pid ?? index,
+    getItemKey: (index) => {
+      const row = items[index]?.row;
+      return row ? `${row.pid}:${row.startTime}` : index;
+    },
     // Render a first screenful before layout is measured.
     initialRect: { width: 1200, height: 800 },
   });
@@ -90,8 +120,15 @@ export function ProcessTable({
   }, [rowHeight, virtualizer]);
 
   const selectedIndex = useMemo(
-    () => (selectedPid == null ? -1 : items.findIndex((i) => i.row.pid === selectedPid)),
-    [items, selectedPid],
+    () =>
+      selectedPid == null
+        ? -1
+        : items.findIndex(
+            (i) =>
+              i.row.pid === selectedPid &&
+              (i.group ? selectedStartTime == null : i.row.startTime === selectedStartTime),
+          ),
+    [items, selectedPid, selectedStartTime],
   );
 
   const onKeyDown = useCallback(
@@ -130,11 +167,12 @@ export function ProcessTable({
           }
           return;
         case "Enter":
-          if (current) openProcess(current.row.pid);
+          if (current?.group) toggleCollapsed(current.row.pid);
+          else if (current) openProcess(current.row.pid);
           e.preventDefault();
           return;
         case "Delete":
-          if (current && onRequestTerminate) {
+          if (current && !current.group && onRequestTerminate) {
             e.preventDefault();
             onRequestTerminate(current.row);
           }
@@ -157,12 +195,18 @@ export function ProcessTable({
       select,
       setCollapsed,
       openProcess,
+      toggleCollapsed,
       onRequestTerminate,
       virtualizer,
     ],
   );
 
-  return (
+  const find = useCallback(
+    (pid: number) => items.find((i) => !i.group && i.row.pid === pid)?.row,
+    [items],
+  );
+
+  const table = (
     <div
       ref={scrollRef}
       role={tree ? "treegrid" : "grid"}
@@ -179,17 +223,18 @@ export function ProcessTable({
           {virtualizer.getVirtualItems().map((v) => {
             const item = items[v.index];
             if (!item) return null;
-            const element = (
+            return (
               <Row
-                key={item.row.pid}
+                key={`${item.row.pid}:${item.row.startTime}`}
                 item={item}
                 index={v.index}
                 columns={visibleColumns}
                 template={template}
                 ctx={ctx}
                 heat={heat}
+                highlightSecs={highlightSecs}
                 tree={tree}
-                selected={item.row.pid === selectedPid}
+                selected={v.index === selectedIndex}
                 isSelf={item.row.pid === selfPid}
                 offset={v.start}
                 height={rowHeight}
@@ -197,11 +242,6 @@ export function ProcessTable({
                 onOpen={openProcess}
                 onToggle={toggleCollapsed}
               />
-            );
-            return renderRow ? (
-              <RowSlot key={item.row.pid}>{renderRow(item.row, element)}</RowSlot>
-            ) : (
-              element
             );
           })}
         </div>
@@ -213,11 +253,7 @@ export function ProcessTable({
       </div>
     </div>
   );
-}
-
-/** Keyed wrapper so wrapped rows keep stable identity. */
-function RowSlot({ children }: { children: React.ReactElement }) {
-  return children;
+  return wrapTable ? wrapTable(table, find) : table;
 }
 
 const HeaderRow = memo(function HeaderRow({
@@ -234,7 +270,7 @@ const HeaderRow = memo(function HeaderRow({
     <div
       role="row"
       aria-rowindex={1}
-      className="sticky top-0 z-10 grid border-b border-border bg-surface-2 text-[12px] font-medium text-fg-muted"
+      className="sticky top-0 z-10 grid border-b border-border bg-surface-2 text-[0.8125rem] font-medium text-fg-muted"
       style={{ gridTemplateColumns: template }}
     >
       {columns.map((id) => {
@@ -259,9 +295,9 @@ const HeaderRow = memo(function HeaderRow({
               <span className="truncate">{col.label}</span>
               {active &&
                 (sort.direction === "asc" ? (
-                  <ArrowUp size={12} aria-hidden />
+                  <ArrowUp size="0.75rem" aria-hidden />
                 ) : (
-                  <ArrowDown size={12} aria-hidden />
+                  <ArrowDown size="0.75rem" aria-hidden />
                 ))}
             </button>
             <ResizeHandle column={id} />
@@ -274,6 +310,7 @@ const HeaderRow = memo(function HeaderRow({
 
 function ResizeHandle({ column }: { column: ColumnId }) {
   const setWidth = useProcessStore((s) => s.setColumnWidth);
+  const rootPx = useRootPx();
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -282,13 +319,16 @@ function ResizeHandle({ column }: { column: ColumnId }) {
     const startX = e.clientX;
     const startWidth = columnWidth(useProcessStore.getState().columnWidths, column);
     const move = (ev: globalThis.PointerEvent) =>
-      setWidth(column, startWidth + ev.clientX - startX);
-    const up = () => {
+      // Stored widths are in 16px-root units; the pointer moves in screen px.
+      setWidth(column, startWidth + ((ev.clientX - startX) * 16) / rootPx);
+    // Fires after pointerup, pointercancel (touch interrupt, alt-tab) and any
+    // other way the capture ends, so the drag can never get stuck on.
+    const end = () => {
       el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
+      el.removeEventListener("lostpointercapture", end);
     };
     el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
+    el.addEventListener("lostpointercapture", end);
   };
   return (
     <div
@@ -306,6 +346,8 @@ interface RowProps {
   template: string;
   ctx: ProcessContext;
   heat: boolean;
+  /** Seconds a new process is highlighted; 0 is off. */
+  highlightSecs: number;
   tree: boolean;
   selected: boolean;
   isSelf: boolean;
@@ -314,8 +356,6 @@ interface RowProps {
   onSelect: (pid: number) => void;
   onOpen: (pid: number) => void;
   onToggle: (pid: number) => void;
-  /** Injected by a wrapping context-menu trigger; composed with selection. */
-  onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
 }
 
 const Row = memo(function Row({
@@ -325,6 +365,7 @@ const Row = memo(function Row({
   template,
   ctx,
   heat,
+  highlightSecs,
   tree,
   selected,
   isSelf,
@@ -333,35 +374,34 @@ const Row = memo(function Row({
   onSelect,
   onOpen,
   onToggle,
-  onContextMenu,
-  ...rest
 }: RowProps) {
   const { row } = item;
-  const memPct = ctx.totalMemoryBytes > 0 ? (row.memoryBytes / ctx.totalMemoryBytes) * 100 : 0;
+  const memPct = ctx.totalMemoryBytes > 0 ? (memoryOf(row) / ctx.totalMemoryBytes) * 100 : 0;
+  const isNew = isNewProcess(row.startTime, ctx.nowSecs, highlightSecs);
+  const run = RUN_COLOR[runState(row)];
   return (
     <div
-      // Context-menu triggers inject handlers via props when wrapping.
-      {...rest}
       role="row"
       aria-rowindex={index + 2}
       aria-selected={selected}
       aria-level={tree ? (item.depth ?? 0) + 1 : undefined}
       aria-expanded={tree && item.hasChildren ? item.expanded : undefined}
       data-pid={row.pid}
+      data-group={item.group ? "" : undefined}
+      data-run={heat ? runState(row) : undefined}
       onClick={() => onSelect(row.pid)}
-      onDoubleClick={() => onOpen(row.pid)}
-      onContextMenu={(e) => {
-        onSelect(row.pid);
-        onContextMenu?.(e);
-      }}
+      onDoubleClick={() => (item.group ? onToggle(row.pid) : onOpen(row.pid))}
+      onContextMenu={() => onSelect(row.pid)}
       className={cn(
-        "absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[13px]",
-        selected ? "bg-accent-soft" : "hover:bg-surface-2",
+        "absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[0.875rem]",
+        selected ? "bg-accent-soft" : isNew ? "bg-accent-soft/40" : "hover:bg-surface-2",
+        item.group && "font-medium",
       )}
       style={{ transform: `translateY(${offset}px)`, height, gridTemplateColumns: template }}
     >
       {columns.map((id) => {
         const col = COLUMN_BY_ID[id];
+        const statusTint = heat && id === "status";
         const level: HeatLevel = !heat
           ? 0
           : id === "cpu"
@@ -373,14 +413,24 @@ const Row = memo(function Row({
           <div
             key={id}
             role="gridcell"
-            title={cellTitle(id, row)}
+            title={
+              item.group && (id === "memory" || id === "memoryPercent")
+                ? GROUP_MEMORY_NOTE
+                : cellTitle(id, row)
+            }
             className={cn(
               "flex h-full min-w-0 items-center px-2",
               col.align === "right" && "num justify-end",
               id === "name" && "font-medium",
-              (id === "exe" || id === "cmd") && "selectable font-mono text-[12px] text-fg-muted",
+              (id === "exe" || id === "cmd") &&
+                "selectable font-mono text-[0.8125rem] text-fg-muted",
             )}
-            style={{ background: HEAT_BG[level] }}
+            style={{
+              background: statusTint ? (run.bg ?? HEAT_BG[level]) : HEAT_BG[level],
+              color: statusTint ? run.fg : undefined,
+              // A coloured edge on the first cell marks the live state.
+              boxShadow: heat && id === columns[0] ? `inset 3px 0 0 0 ${run.bar}` : undefined,
+            }}
           >
             {id === "name" && tree && (
               <span
@@ -399,14 +449,25 @@ const Row = memo(function Row({
                     }}
                     className="grid size-4 place-items-center rounded text-fg-muted hover:bg-border"
                   >
-                    {item.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    {item.expanded ? (
+                      <ChevronDown size="0.8125rem" />
+                    ) : (
+                      <ChevronRight size="0.8125rem" />
+                    )}
                   </button>
                 )}
               </span>
             )}
-            <span className="truncate">{cellContent(id, row, ctx)}</span>
+            <span className="truncate">
+              {item.group && id === "pid" ? "—" : cellContent(id, row, ctx)}
+            </span>
+            {id === "name" && isNew && (
+              <span className="ml-2 shrink-0 rounded bg-accent-soft px-1 text-[0.6875rem] font-normal text-accent">
+                New
+              </span>
+            )}
             {id === "name" && isSelf && (
-              <span className="ml-2 shrink-0 rounded bg-surface-2 px-1 text-[10px] font-normal text-fg-muted">
+              <span className="ml-2 shrink-0 rounded bg-surface-2 px-1 text-[0.6875rem] font-normal text-fg-muted">
                 this app
               </span>
             )}

@@ -65,6 +65,11 @@ function failure(message: string): NetworkSubmission {
 /** Executes one provider request from the backend. */
 export async function runNetworkProvider(request: ProviderRequest): Promise<void> {
   const { token } = request;
+  const active = () => {
+    const run = useBenchmarkStore.getState().run;
+    return run?.runId === request.runId && !isTerminal(run.phase);
+  };
+  if (!active()) return;
   const submit = (samples: NetworkSubmission) =>
     backend.submitNetworkSamples(token, samples).catch(() => {
       // The run was cancelled or timed out; the backend already moved on.
@@ -83,21 +88,33 @@ export async function runNetworkProvider(request: ProviderRequest): Promise<void
     return;
   }
 
-  const engine = new SpeedTest({
-    autoStart: false,
-    measurements: toMeasurements(request.measurements),
-    logMeasurementApiUrl: null,
-    // Only the default endpoint may receive results, and only on opt-in.
-    ...(request.shareResults ? {} : { logAimApiUrl: null }),
-    measureDownloadLoadedLatency: true,
-    measureUploadLoadedLatency: true,
-  });
+  // Loading the provider chunk can race cancellation or a new run.
+  if (!active()) return;
+
+  let engine: InstanceType<typeof SpeedTest>;
+  try {
+    engine = new SpeedTest({
+      autoStart: false,
+      measurements: toMeasurements(request.measurements),
+      logMeasurementApiUrl: null,
+      // Only the default endpoint may receive results, and only on opt-in.
+      ...(request.shareResults ? {} : { logAimApiUrl: null }),
+      measureDownloadLoadedLatency: true,
+      measureUploadLoadedLatency: true,
+      // Includes connection establishment and response transfer. The backend
+      // also enforces a whole-test deadline.
+      bandwidthAbortRequestDuration: 30_000,
+    });
+  } catch {
+    await submit(failure("The internet test provider could not be initialized."));
+    return;
+  }
 
   const total = Math.max(1, request.measurements.length);
   let step = 0;
   let lastSent = 0;
   const sendProgress = (force = false) => {
-    const now = Date.now();
+    const now = performance.now();
     if (!force && now - lastSent < PROGRESS_INTERVAL_MS) return;
     lastSent = now;
     const live: NetworkLiveValue[] = [];
@@ -118,28 +135,54 @@ export async function runNetworkProvider(request: ProviderRequest): Promise<void
       .catch(() => {});
   };
 
-  // Stop transferring as soon as the run ends (e.g. the user cancelled).
-  const unsubscribe = useBenchmarkStore.subscribe((s) => {
-    if (s.run?.runId === request.runId && isTerminal(s.run.phase) && engine.isRunning) {
-      engine.pause();
-      unsubscribe();
-    }
-  });
-
-  await new Promise<void>((resolve) => {
-    engine.onPhaseChange = ({ measurementId }) => {
-      step = measurementId;
-      sendProgress(true);
-    };
-    engine.onResultsChange = () => sendProgress();
-    engine.onFinish = (results) => {
-      void submit(toSubmission(results)).then(resolve);
-    };
-    engine.onError = (message) => {
-      engine.pause();
-      void submit(failure(message)).then(resolve);
-    };
-    engine.play();
-  });
-  unsubscribe();
+  let unsubscribe = () => {};
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (samples?: NetworkSubmission) => {
+        if (settled) return;
+        settled = true;
+        // Detach before pause: providers may synchronously call back on pause.
+        engine.onFinish = () => {};
+        engine.onError = () => {};
+        engine.onPhaseChange = () => {};
+        engine.onResultsChange = () => {};
+        engine.pause();
+        if (samples) void submit(samples).then(resolve);
+        else resolve();
+      };
+      unsubscribe = useBenchmarkStore.subscribe(() => {
+        if (!active()) finish();
+      });
+      // Covers a lost terminal event or stalled IPC, as well as a hung fetch.
+      timeout = setTimeout(() => finish(failure("The internet test timed out.")), 480_000);
+      engine.onPhaseChange = ({ measurementId }) => {
+        step = measurementId;
+        sendProgress(true);
+      };
+      engine.onResultsChange = () => sendProgress();
+      engine.onFinish = (results) => {
+        try {
+          finish(toSubmission(results));
+        } catch {
+          finish(failure("The internet test returned unreadable measurements."));
+        }
+      };
+      engine.onError = (message) => {
+        finish(failure(message));
+      };
+      if (!active()) finish();
+      else {
+        try {
+          engine.play();
+        } catch {
+          finish(failure("The internet test provider could not be started."));
+        }
+      }
+    });
+  } finally {
+    clearTimeout(timeout);
+    unsubscribe();
+  }
 }
