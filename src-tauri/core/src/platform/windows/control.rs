@@ -1,14 +1,17 @@
 //! Process control with documented Win32 APIs. No shell commands.
 
-use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, WPARAM};
+use ::windows::Win32::Foundation::{
+    CloseHandle, ERROR_INVALID_PARAMETER, HANDLE, HWND, LPARAM, WPARAM,
+};
 use ::windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
 };
 use ::windows::Win32::System::Threading::{
-    ABOVE_NORMAL_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS, HIGH_PRIORITY_CLASS,
-    IDLE_PRIORITY_CLASS, IsProcessCritical, NORMAL_PRIORITY_CLASS, OpenThread,
+    ABOVE_NORMAL_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS, GetProcessIdOfThread,
+    HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, IsProcessCritical, NORMAL_PRIORITY_CLASS, OpenThread,
     PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION, PROCESS_TERMINATE, ResumeThread,
-    SetPriorityClass, SuspendThread, THREAD_SUSPEND_RESUME, TerminateProcess,
+    SetPriorityClass, SuspendThread, THREAD_QUERY_LIMITED_INFORMATION, THREAD_SUSPEND_RESUME,
+    TerminateProcess,
 };
 use ::windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GW_OWNER, GetWindow, GetWindowThreadProcessId, IsWindowVisible, PostMessageW,
@@ -74,10 +77,10 @@ pub fn suspend(pid: u32) -> AppResult<()> {
     let threads = thread_ids(pid)?;
     let mut done: Vec<u32> = Vec::with_capacity(threads.len());
     for tid in threads {
-        if let Err(e) = with_thread(tid, |h| unsafe { SuspendThread(h) }) {
+        if let Err(e) = with_thread(pid, tid, |h| unsafe { SuspendThread(h) }) {
             // Leave the process as we found it.
             for t in &done {
-                let _ = with_thread(*t, |h| unsafe { ResumeThread(h) });
+                let _ = with_thread(pid, *t, |h| unsafe { ResumeThread(h) });
             }
             return Err(thread_error(pid, e, "suspend"));
         }
@@ -88,7 +91,7 @@ pub fn suspend(pid: u32) -> AppResult<()> {
 
 pub fn resume(pid: u32) -> AppResult<()> {
     for tid in thread_ids(pid)? {
-        with_thread(tid, |h| unsafe { ResumeThread(h) })
+        with_thread(pid, tid, |h| unsafe { ResumeThread(h) })
             .map_err(|e| thread_error(pid, e, "resume"))?;
     }
     Ok(())
@@ -191,18 +194,56 @@ fn thread_ids(pid: u32) -> AppResult<Vec<u32>> {
 
 /// Opens a thread for suspend/resume and runs `op`, which returns the
 /// previous suspend count or `u32::MAX` on failure.
-fn with_thread(tid: u32, op: impl FnOnce(HANDLE) -> u32) -> Result<(), ::windows::core::Error> {
+fn with_thread(
+    pid: u32,
+    tid: u32,
+    op: impl FnOnce(HANDLE) -> u32,
+) -> Result<(), ::windows::core::Error> {
     // SAFETY: plain FFI; the handle is closed below.
-    let handle = unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, tid) }?;
-    let result = op(handle);
+    let handle = unsafe {
+        OpenThread(
+            THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+            false,
+            tid,
+        )
+    }?;
+    // The snapshot can be stale: a thread ID may have been recycled.
+    // SAFETY: handle was opened with thread query permission.
+    let owner = unsafe { GetProcessIdOfThread(handle) };
+    let result = if owner == 0 {
+        Err(::windows::core::Error::from_thread())
+    } else if owner != pid {
+        Err(::windows::core::Error::from_hresult(
+            ERROR_INVALID_PARAMETER.to_hresult(),
+        ))
+    } else if op(handle) == u32::MAX {
+        // Capture the error before CloseHandle can change the thread's last error.
+        Err(::windows::core::Error::from_thread())
+    } else {
+        Ok(())
+    };
     // SAFETY: handle from OpenThread, closed once.
     let _ = unsafe { CloseHandle(handle) };
-    if result == u32::MAX {
-        return Err(::windows::core::Error::from_thread());
-    }
-    Ok(())
+    result
 }
 
 fn thread_error(pid: u32, e: ::windows::core::Error, verb: &str) -> AppError {
     map_error(pid, &e, &format!("{verb} the process"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_a_thread_owned_by_another_process_without_running_the_operation() {
+        let tid = unsafe { ::windows::Win32::System::Threading::GetCurrentThreadId() };
+        let called = std::cell::Cell::new(false);
+        let result = with_thread(std::process::id().wrapping_add(1), tid, |_| {
+            called.set(true);
+            0
+        });
+        assert!(result.is_err());
+        assert!(!called.get());
+    }
 }
