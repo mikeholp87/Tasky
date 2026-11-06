@@ -105,8 +105,67 @@ then capture the page.
 KDE Plasma and GNOME. On GNOME the system tray needs the AppIndicator
 extension. Packages: `.deb`, `.rpm` and AppImage (see Building).
 
-For Debian package support, APT installation, and release setup, see
-[docs/DEBIAN_PACKAGING.md](docs/DEBIAN_PACKAGING.md).
+## Install from the Debian APT repository
+
+The signed APT repository provides `amd64` packages for Ubuntu 22.04 or newer
+and Debian 12 or newer.
+
+Install the tools needed to add the repository:
+
+```sh
+sudo apt update
+sudo apt install ca-certificates curl gnupg
+```
+
+Download the repository signing key and verify its full fingerprint before
+trusting it. It must be
+`48F80DD56C8966D259B211C81D4B05C4EEA1F6B4`:
+
+```sh
+curl -fsSLo /tmp/tasky-archive-keyring.asc \
+  https://mikeholp87.github.io/Tasky/tasky-archive-keyring.asc
+gpg --show-keys --with-fingerprint /tmp/tasky-archive-keyring.asc
+```
+
+If the fingerprint matches, install the key in its own APT keyring and add the
+Tasky source:
+
+```sh
+gpg --dearmor --output /tmp/tasky-archive-keyring.gpg \
+  /tmp/tasky-archive-keyring.asc
+sudo install -D -m 0644 /tmp/tasky-archive-keyring.gpg \
+  /usr/share/keyrings/tasky-archive-keyring.gpg
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/tasky-archive-keyring.gpg] https://mikeholp87.github.io/Tasky stable main' \
+  | sudo tee /etc/apt/sources.list.d/tasky.list >/dev/null
+```
+
+Install and launch Tasky from your desktop application menu:
+
+```sh
+sudo apt update
+sudo apt install tasky
+```
+
+To update Tasky when a new release is published:
+
+```sh
+sudo apt update
+sudo apt install --only-upgrade tasky
+```
+
+To uninstall Tasky and remove the repository configuration:
+
+```sh
+sudo apt remove tasky
+sudo rm /etc/apt/sources.list.d/tasky.list \
+  /usr/share/keyrings/tasky-archive-keyring.gpg
+sudo apt update
+```
+
+Standalone `.deb` packages and SHA-256 checksums are also available from
+[GitHub Releases](https://github.com/mikeholp87/Tasky/releases). See
+[docs/DEBIAN_PACKAGING.md](docs/DEBIAN_PACKAGING.md) for release and repository
+maintenance details.
 
 Platform differences are documented in
 [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).
