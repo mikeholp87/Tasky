@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#edeff5" />
+    <meta name="description" content="Tasky is a private system monitor and task manager for Linux and Windows. Install the latest Linux release from the signed APT repository." />
+    <title>Tasky — your system at a glance</title>
+    <link rel="icon" href="./tasky-icon.png" type="image/png" />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #edeff5;
+        --paper: #fff;
+        --ink: #14161f;
+        --muted: #4b5167;
+        --line: #d9ddea;
+        --blue: #4350e0;
+        --green: #087b57;
+        --purple: #7442d1;
+        --teal: #0a7c94;
+        font-family: Inter, "Segoe UI", system-ui, sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; }
+      a { color: var(--blue); text-underline-offset: 0.2em; }
+      a:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+      .wrap { width: min(1080px, calc(100% - 40px)); margin: auto; }
+      header { height: 84px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+      .brand { display: flex; align-items: center; gap: 12px; color: var(--ink); font-size: 19px; font-weight: 700; letter-spacing: -0.04em; text-decoration: none; }
+      .brand img { width: 38px; height: 38px; }
+      .nav { display: flex; gap: 24px; color: var(--muted); font-size: 14px; }
+      .nav a { color: inherit; }
+      main { padding: 58px 0 72px; }
+      .hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr); gap: 60px; align-items: center; padding: 28px 0 68px; }
+      .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--green); font-size: 13px; font-weight: 650; }
+      .eyebrow::before { width: 8px; height: 8px; border-radius: 50%; background: currentColor; content: ""; }
+      h1 { max-width: 600px; margin: 19px 0 18px; font-size: clamp(42px, 6vw, 68px); line-height: 0.99; letter-spacing: -0.065em; }
+      .lead { max-width: 510px; color: var(--muted); font-size: 18px; line-height: 1.65; }
+      .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 27px; }
+      .button { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; padding: 0 18px; border: 1px solid var(--blue); border-radius: 7px; background: var(--blue); color: #fff; font-size: 14px; font-weight: 650; text-decoration: none; }
+      .button.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
+      .scope { margin-top: 22px; color: var(--muted); font-size: 13px; }
+      .scope strong { color: var(--ink); font-weight: 600; }
+      .monitor { overflow: hidden; min-height: 280px; padding: 22px; border: 1px solid #d8dced; border-radius: 12px; background: var(--paper); box-shadow: 0 18px 45px #22284a12; }
+      .monitor-head { display: flex; justify-content: space-between; align-items: center; padding-bottom: 18px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 650; }
+      .live { color: var(--green); font-size: 12px; font-weight: 600; }
+      .live::before { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: currentColor; content: ""; }
+      .plot { display: block; width: 100%; height: 155px; margin-top: 18px; }
+      .resources { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 5px; }
+      .resource { padding-top: 10px; border-top: 2px solid var(--tone); color: var(--muted); font-size: 11px; }
+      .resource b { display: block; margin-bottom: 3px; color: var(--ink); font-size: 12px; }
+      .install { display: grid; grid-template-columns: minmax(220px, 0.68fr) minmax(0, 1.32fr); gap: 48px; padding: 42px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+      h2 { margin: 0 0 12px; font-size: 28px; letter-spacing: -0.045em; }
+      .install-copy p, .fine { color: var(--muted); font-size: 14px; line-height: 1.65; }
+      .install-copy p { margin: 0 0 16px; }
+      .code { overflow-x: auto; margin: 0; padding: 22px; border-radius: 8px; background: #171b2b; color: #f2f3fa; font: 12px/1.8 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+      .fine { margin: 14px 0 0; font-size: 12px; }
+      .details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; padding: 54px 0 0; }
+      .detail { padding-top: 16px; border-top: 1px solid var(--line); }
+      .detail h3 { margin: 0 0 8px; font-size: 16px; letter-spacing: -0.02em; }
+      .detail p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+      footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px 0 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+      @media (max-width: 760px) {
+        .wrap { width: min(100% - 32px, 540px); }
+        header { height: 70px; }
+        .nav { gap: 14px; font-size: 12px; }
+        main { padding-top: 35px; }
+        .hero, .install { grid-template-columns: 1fr; gap: 28px; }
+        .hero { padding: 18px 0 44px; }
+        .monitor { min-height: 250px; }
+        .install { padding: 25px 20px; }
+        .details { grid-template-columns: 1fr; gap: 22px; padding-top: 40px; }
+      }
+      @media (max-width: 420px) {
+        .nav { gap: 10px; }
+        .nav a:first-child { display: none; }
+        .code { font-size: 11px; }
+        footer { flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="./" aria-label="Tasky home"><img src="./tasky-icon.png" alt="" />Tasky</a>
+        <nav class="nav" aria-label="Main navigation">
+          <a href="#install">Install</a>
+          <a href="https://github.com/mikeholp87/Tasky/releases/latest">Releases</a>
+          <a href="https://github.com/mikeholp87/Tasky">Source</a>
+        </nav>
+      </header>
+      <main>
+        <section class="hero" aria-labelledby="hero-title">
+          <div>
+            <div class="eyebrow">A clear view of your system</div>
+            <h1 id="hero-title">Know what your computer is doing.</h1>
+            <p class="lead">Tasky is a fast, private system monitor and task manager. Follow live resource use, inspect processes and keep control from one quiet, focused desktop app.</p>
+            <div class="actions">
+              <a class="button" href="#install">Install Tasky</a>
+              <a class="button secondary" href="https://github.com/mikeholp87/Tasky/releases/latest">View latest release</a>
+            </div>
+            <p class="scope"><strong>Linux · amd64</strong> &nbsp; Ubuntu 22.04+ and Debian 12+</p>
+          </div>
+          <div class="monitor">
+            <div class="monitor-head"><span>System overview</span><span class="live">Live monitoring</span></div>
+            <svg class="plot" viewBox="0 0 420 155" role="img" aria-label="CPU, memory, storage and network activity traces">
+              <g stroke="#e4e7ef" stroke-width="1"><path d="M0 25.5H420M0 64.5H420M0 103.5H420M0 142.5H420" /></g>
+              <path d="M0 111 C24 105 27 53 53 65 S80 125 104 91 131 78 153 84 179 36 203 56 228 112 250 82 278 93 299 58 328 63 350 46 377 83 399 57 420 51" fill="none" stroke="#4350e0" stroke-width="3" />
+              <path d="M0 132 C26 127 34 118 55 120 S82 115 105 119 131 108 155 113 179 107 202 109 229 99 252 104 280 101 302 105 331 94 353 99 379 93 398 97 415 88 420 91" fill="none" stroke="#0b8a63" stroke-width="2" />
+              <path d="M0 143 C27 140 34 138 57 140 S83 132 106 136 131 128 155 132 180 124 203 129 229 119 253 124 278 115 302 119 329 109 353 114 379 108 401 111 416 103 420 105" fill="none" stroke="#7442d1" stroke-width="2" />
+              <path d="M0 151 C30 149 34 145 58 148 S86 140 108 144 132 138 157 141 181 134 204 138 228 130 254 134 278 126 303 130 331 122 354 126 380 119 401 123 415 115 420 118" fill="none" stroke="#0a7c94" stroke-width="2" />
+            </svg>
+            <div class="resources">
+              <div class="resource" style="--tone:var(--blue)"><b>CPU</b>Per-core load</div>
+              <div class="resource" style="--tone:var(--green)"><b>Memory</b>Usage history</div>
+              <div class="resource" style="--tone:var(--purple)"><b>Storage</b>Disk activity</div>
+              <div class="resource" style="--tone:var(--teal)"><b>Network</b>Interface rates</div>
+            </div>
+          </div>
+        </section>
+        <section id="install" class="install" aria-labelledby="install-title">
+          <div class="install-copy">
+            <h2 id="install-title">Install with APT</h2>
+            <p>Add the signed Tasky repository once. APT will keep it updated with your system packages.</p>
+            <p>Before installing, review the <a href="https://github.com/mikeholp87/Tasky/blob/linux-port/docs/DEBIAN_PACKAGING.md">key verification steps</a> and compare the full fingerprint with a trusted project announcement.</p>
+            <p><a href="./tasky-archive-keyring.fingerprint">View the repository key fingerprint</a></p>
+          </div>
+          <div>
+            <pre class="code"><code>sudo install -d -m 0755 /usr/share/keyrings
+curl -fsSL https://mikeholp87.github.io/Tasky/tasky-archive-keyring.asc \
+  | gpg --dearmor \
+  | sudo tee /usr/share/keyrings/tasky-archive-keyring.gpg &gt;/dev/null
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/tasky-archive-keyring.gpg] https://mikeholp87.github.io/Tasky stable main' \
+  | sudo tee /etc/apt/sources.list.d/tasky.list &gt;/dev/null
+sudo apt update
+sudo apt install tasky</code></pre>
+            <p class="fine">To update later: <code>sudo apt update &amp;&amp; sudo apt upgrade</code>. To remove: <code>sudo apt remove tasky</code>.</p>
+          </div>
+        </section>
+        <section class="details" aria-label="About Tasky">
+          <article class="detail"><h3>Processes in context</h3><p>Search, sort and inspect process trees. End or suspend tasks with safeguards for critical system processes.</p></article>
+          <article class="detail"><h3>Private by design</h3><p>Monitoring stays on your computer. Tasky works offline; network access is used only by the optional internet benchmark.</p></article>
+          <article class="detail"><h3>Built for Linux desktops</h3><p>Native packages support Ubuntu 22.04 and newer, and Debian 12 and newer on amd64. KDE Plasma and GNOME are supported.</p></article>
+        </section>
+      </main>
+      <footer>
+        <span>Tasky is free and open source.</span>
+        <span><a href="https://github.com/mikeholp87/Tasky">GitHub project</a> · <a href="https://github.com/mikeholp87/Tasky/releases/latest">Latest release</a></span>
+      </footer>
+    </div>
+  </body>
+</html>

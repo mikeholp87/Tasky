@@ -107,6 +107,8 @@ extension. Packages: `.deb`, `.rpm` and AppImage (see Building).
 
 ## Install from the Debian APT repository
 
+Browse the [Tasky landing page](https://mikeholp87.github.io/Tasky/).
+
 The signed APT repository provides `amd64` packages for Ubuntu 22.04 or newer
 and Debian 12 or newer.
 
