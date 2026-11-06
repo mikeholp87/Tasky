@@ -26,10 +26,12 @@ pub fn update_settings<R: Runtime>(
 ) -> AppResult<Settings> {
     settings.validate()?;
     let previous = state.settings.get();
-    if previous.start_with_os != settings.start_with_os {
-        set_autostart(&app, settings.start_with_os)?;
-    }
-    let saved = state.settings.save(settings)?;
+    let saved = save_with_autostart(
+        &previous,
+        settings,
+        |enabled| set_autostart(&app, enabled),
+        |next| state.settings.save(next),
+    )?;
     apply_runtime(&state, &saved);
     crate::desktop::update_pause_label(&app, state.engine.state().paused);
     Ok(saved)
@@ -41,13 +43,40 @@ pub fn reset_settings<R: Runtime>(
     state: State<'_, AppState>,
 ) -> AppResult<Settings> {
     let defaults = Settings::default();
-    if state.settings.get().start_with_os {
-        set_autostart(&app, false)?;
-    }
-    let saved = state.settings.save(defaults)?;
+    let previous = state.settings.get();
+    let saved = save_with_autostart(
+        &previous,
+        defaults,
+        |enabled| set_autostart(&app, enabled),
+        |next| state.settings.save(next),
+    )?;
     apply_runtime(&state, &saved);
     crate::desktop::update_pause_label(&app, state.engine.state().paused);
     Ok(saved)
+}
+
+fn save_with_autostart(
+    previous: &Settings,
+    next: Settings,
+    set_autostart: impl Fn(bool) -> AppResult<()>,
+    save: impl FnOnce(Settings) -> AppResult<Settings>,
+) -> AppResult<Settings> {
+    let changed = previous.start_with_os != next.start_with_os;
+    if changed {
+        set_autostart(next.start_with_os)?;
+    }
+    match save(next) {
+        Ok(saved) => Ok(saved),
+        Err(error) if changed => {
+            if let Err(rollback) = set_autostart(previous.start_with_os) {
+                return Err(AppError::SystemQueryFailed(format!(
+                    "Settings were not saved: {error}. Restoring the previous startup setting also failed: {rollback}"
+                )));
+            }
+            Err(error)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[tauri::command]
@@ -103,6 +132,27 @@ fn set_autostart<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> AppResult<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_save_restores_previous_autostart_registration() {
+        let previous = Settings::default();
+        let next = Settings {
+            start_with_os: true,
+            ..previous.clone()
+        };
+        let changes = std::cell::RefCell::new(Vec::new());
+        let result = save_with_autostart(
+            &previous,
+            next,
+            |enabled| {
+                changes.borrow_mut().push(enabled);
+                Ok(())
+            },
+            |_| Err(AppError::SystemQueryFailed("disk unavailable".into())),
+        );
+        assert!(result.is_err());
+        assert_eq!(*changes.borrow(), vec![true, false]);
+    }
 
     #[test]
     fn history_points_cover_the_window() {
