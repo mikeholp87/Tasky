@@ -1,6 +1,6 @@
-# Task Manager
+# Tasky
 
-![Task Manager overview in the dark theme: CPU with a per-core load strip, memory, storage and network](docs/screenshots/overview-dark.png)
+![Tasky overview in the dark theme: CPU with a per-core load strip, memory, storage and network](docs/screenshots/overview-dark.png)
 
 <sub>Overview in the dark theme (synthetic sample data).</sub>
 

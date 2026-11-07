@@ -56,12 +56,12 @@ type SectionId =
 interface Section {
   id: SectionId;
   label: string;
-  group: "System" | "Hardware" | "Task Manager";
+  group: "System" | "Hardware" | "Tasky";
   summary: string;
   content: ReactNode;
 }
 
-const GROUPS: readonly Section["group"][] = ["System", "Hardware", "Task Manager"];
+const GROUPS: readonly Section["group"][] = ["System", "Hardware", "Tasky"];
 
 /** Kept for the session so coming back to the page reopens the same section. */
 const useSelectedSection = create<{ id: SectionId; set: (id: SectionId) => void }>((set) => ({
@@ -195,8 +195,8 @@ export function SystemInfoPage() {
     },
     {
       id: "app",
-      label: "Task Manager",
-      group: "Task Manager",
+      label: "Tasky",
+      group: "Tasky",
       summary: appSummary(info),
       content: <AppSection info={info} />,
     },

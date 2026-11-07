@@ -12,7 +12,7 @@ pub fn confirm<R: Runtime>(app: &AppHandle<R>, message: &str) -> AppResult<()> {
     if app
         .dialog()
         .message(message)
-        .title("Task Manager — confirm operation")
+        .title("Tasky — confirm operation")
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancel)
         .blocking_show()

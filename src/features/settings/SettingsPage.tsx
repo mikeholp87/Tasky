@@ -68,9 +68,9 @@ export function SettingsPage() {
           <Toggle
             label="Minimize to tray"
             description={
-              "Closing the window keeps Task Manager running in the system tray, so alerts still work." +
+              "Closing the window keeps Tasky running in the system tray, so alerts still work." +
               (noTrayHost
-                ? " GNOME shows no tray by default; without the AppIndicator extension, closing the window quits Task Manager."
+                ? " GNOME shows no tray by default; without the AppIndicator extension, closing the window quits Tasky."
                 : "")
             }
             checked={s.minimizeToTray}

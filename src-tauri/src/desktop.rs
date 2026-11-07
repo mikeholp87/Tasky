@@ -198,7 +198,7 @@ pub struct TrayItems<R: Runtime> {
 }
 
 pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayItems<R>> {
-    let open = MenuItem::with_id(app, "open", "Open Task Manager", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open Tasky", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, "pause", "Pause monitoring", true, None::<&str>)?;
     let summary = MenuItem::with_id(app, "summary", "CPU — | RAM —", false, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -215,7 +215,7 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayItems<R>>
     )?;
 
     let mut builder = TrayIconBuilder::with_id("main")
-        .tooltip("Task Manager")
+        .tooltip("Tasky")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {

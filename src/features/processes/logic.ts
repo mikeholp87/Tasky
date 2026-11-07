@@ -425,6 +425,21 @@ export function memoryOf(row: Pick<ProcessRow, "pssBytes" | "memoryBytes">): num
 
 export type RunState = "active" | "idle" | "problem";
 
+export function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() || path;
+}
+
+/**
+ * Name to show for a process. Linux truncates the kernel name to 15
+ * characters ("WebKitWebProces"); when the executable's file name extends it,
+ * show the full file name.
+ */
+export function displayName(row: Pick<ProcessRow, "name" | "exe">): string {
+  if (!row.exe) return row.name;
+  const base = baseName(row.exe);
+  return base.length > row.name.length && base.startsWith(row.name) ? base : row.name;
+}
+
 /**
  * The colour follows the status label exactly, so the two can never disagree.
  * (The backend already reports "Running" for a process that used CPU during

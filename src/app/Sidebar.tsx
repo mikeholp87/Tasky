@@ -36,7 +36,7 @@ export const Sidebar = memo(function Sidebar() {
     >
       <div className="flex h-14 items-center gap-2.5 px-4">
         <LogoMark />
-        <span className="text-[1.0625rem] font-semibold tracking-tight">Task Manager</span>
+        <span className="text-[1.0625rem] font-semibold tracking-tight">Tasky</span>
       </div>
       <div className="flex-1 overflow-y-auto px-2 pb-3">
         {groups.map((group) => (

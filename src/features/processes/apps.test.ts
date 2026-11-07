@@ -92,6 +92,16 @@ describe("applications view", () => {
   });
 });
 
+describe("group label", () => {
+  it("uses the shared process name when the executable path is a version number", () => {
+    const versioned = [1, 2].map((pid) =>
+      makeProcessRow({ pid, name: "claude", exe: "/home/a/.local/share/claude/versions/2.1.318" }),
+    );
+    const items = flattenApps(versioned, { expanded: new Set(), compare: byCpu });
+    expect(items[0]?.row.name).toBe("claude (2)");
+  });
+});
+
 describe("new process highlight", () => {
   it("covers the configured window only", () => {
     expect(isNewProcess(100, 105, 10)).toBe(true);

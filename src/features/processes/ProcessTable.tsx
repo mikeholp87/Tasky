@@ -30,9 +30,9 @@ import {
 } from "./logic";
 import type { TableItem } from "./tree";
 
-/** Red/green execution state: row marker and status-cell tint. */
+/** Execution state: a coloured row edge, plus a status-cell tint only for problem states. */
 const RUN_COLOR: Record<RunState, { bar: string; bg?: string; fg?: string }> = {
-  active: { bar: "var(--ok)", bg: "var(--ok-soft)", fg: "var(--ok)" },
+  active: { bar: "var(--ok)" },
   idle: { bar: "transparent" },
   problem: { bar: "var(--crit)", bg: "var(--crit-soft)", fg: "var(--crit)" },
 };
@@ -411,6 +411,11 @@ const Row = memo(function Row({
               "flex h-full min-w-0 items-center px-2",
               col.align === "right" && "num justify-end",
               id === "name" && "font-medium",
+              // Zero activity recedes so real disk I/O stands out.
+              ((id === "diskRead" && row.diskReadPerSec <= 0) ||
+                (id === "diskWrite" && row.diskWritePerSec <= 0)) &&
+                !row.restricted &&
+                "text-fg-subtle",
               (id === "exe" || id === "cmd") &&
                 "selectable font-mono text-[0.8125rem] text-fg-muted",
             )}

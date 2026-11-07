@@ -73,7 +73,7 @@ pub fn assess(
     if facts.pid == facts.self_pid && disruptive {
         a.add(
             ProtectionLevel::Blocked,
-            "This is Task Manager itself. Close the window or use Quit instead.",
+            "This is Tasky itself. Close the window or use Quit instead.",
         );
     }
 

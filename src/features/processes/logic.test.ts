@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProcessRow } from "@/types";
 import {
   type ProcessContext,
+  displayName,
   matchesSearch,
   nextSort,
   processView,
@@ -238,5 +239,17 @@ describe("run state colouring", () => {
     for (const status of ["stopped", "zombie", "dead", "diskSleep"] as const) {
       expect(runState(row({ status, cpuPercent: 40 }))).toBe("problem");
     }
+  });
+});
+
+describe("display name", () => {
+  it("restores a name truncated to 15 characters from the executable", () => {
+    const r = row({ name: "WebKitWebProces", exe: "/usr/lib/webkit2gtk-4.1/WebKitWebProcess" });
+    expect(displayName(r)).toBe("WebKitWebProcess");
+  });
+
+  it("keeps the name when the executable does not extend it", () => {
+    expect(displayName(row({ name: "claude", exe: "/home/a/versions/2.1.318" }))).toBe("claude");
+    expect(displayName(row({ name: "sshd", exe: null }))).toBe("sshd");
   });
 });
