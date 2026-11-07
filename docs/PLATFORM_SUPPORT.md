@@ -1,11 +1,11 @@
 # Platform support
 
-| Platform                             | Status                                                                                                                                                           |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows 11 (x64)                     | Primary target. Built, tested and run during development.                                                                                                        |
+| Platform                             | Status                                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Windows 11 (x64)                     | Primary target. Built, tested and run during development.                                                                |
 | Debian / Ubuntu                      | `.deb` and signed APT packages support amd64 on Ubuntu 22.04+ and Debian 12+; Linux-specific code is also checked in CI. |
-| Other mainstream Linux distributions | Expected to work (only `/proc` and standard syscalls are used).                                                                                                  |
-| macOS                                | Not yet supported. The platform layer has compiling stubs that report features as unavailable.                                                                   |
+| Other mainstream Linux distributions | Expected to work (only `/proc` and standard syscalls are used).                                                          |
+| macOS                                | Not yet supported. The platform layer has compiling stubs that report features as unavailable.                           |
 
 ## Feature matrix
 

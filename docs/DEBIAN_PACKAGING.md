@@ -64,6 +64,7 @@ Releases.
    The `fpr` value is the full fingerprint. Store it as the environment
    variable `APTLY_KEY_ID` in `apt-signing`. The workflow also accepts it as an
    environment secret for compatibility with an existing setup.
+
 4. Add this environment secret in `apt-signing`:
    - `APTLY_GPG_KEY`: output of
      `gpg --armor --export-secret-keys <FULL_FINGERPRINT>`.
@@ -83,6 +84,7 @@ Releases.
    Enter the passphrase as the `APTLY_GPG_PASSPHRASE` environment secret in
    the repository settings. Keep an offline backup of the key and its
    revocation certificate.
+
 5. Commit the desired application version, push it, create the matching
    annotated tag (for example `git tag -a v0.1.0 -m 'Release v0.1.0'`), and
    push that tag. The release fails if the tag differs from the Tauri version.
