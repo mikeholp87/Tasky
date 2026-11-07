@@ -2,11 +2,10 @@
 name: Deploy static content to Pages
 
 on:
-  # Runs on pushes targeting the default branch
-  push:
-    branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
+  # Manual only. GitHub Pages holds a single site: the tag-driven
+  # release-linux.yml publishes the signed APT repo there, and a push-triggered
+  # deploy from here would overwrite it (apt then fails with "no longer has a
+  # Release file").
   workflow_dispatch:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
