@@ -25,6 +25,7 @@ export function ExportMenu() {
         <button
           type="button"
           disabled={!isBackendAvailable()}
+          title={isBackendAvailable() ? undefined : "Export is available in the desktop app"}
           className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50"
         >
           <Download size="0.875rem" aria-hidden />

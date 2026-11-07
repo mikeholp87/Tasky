@@ -173,7 +173,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     align: "right",
     width: 90,
     minWidth: 60,
-    defaultVisible: true,
+    defaultVisible: false,
     descendingFirst: false,
     sortValue: (r) => num(r.parentPid),
   },

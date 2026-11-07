@@ -48,8 +48,9 @@ export const CoreStrip = memo(function CoreStrip({
               "transition-[height] duration-300",
             )}
             style={{
-              height: `${Math.max(pct, 6)}%`,
-              opacity: pct < 3 ? 0.35 : 1,
+              // At least 3px, so an idle machine still shows a bar per core.
+              height: `max(${pct}%, 3px)`,
+              opacity: pct < 3 ? 0.55 : 1,
               background: `linear-gradient(to top, color-mix(in srgb, var(${TONE[usageLevel(pct)]}) 40%, transparent), var(${TONE[usageLevel(pct)]}))`,
             }}
           />
