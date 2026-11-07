@@ -4,6 +4,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { backend, toAppError } from "@/services/ipc";
 import { loadDiskTargets, runBenchmark } from "@/services/benchmarks";
 import { isActive, useBenchmarkStore } from "@/stores/benchmarkStore";
+import { useMetricsStore } from "@/stores/metricsStore";
 import type {
   BenchmarkProfile,
   BenchmarkResult,
@@ -47,12 +48,16 @@ export function DiskCard({
   const active = isActive(status);
   const mine = active && status.kind === "disk";
 
+  // Reload when a drive is plugged in or removed (the monitor sees the mount
+  // table change within a tick), so the target list is never stale.
+  const mounts = useMetricsStore((s) => s.tick?.disks.map((d) => d.mountPoint).join("\n"));
   useEffect(() => {
     void loadDiskTargets();
-  }, []);
+  }, [mounts]);
 
   const recommended = targets?.find((t) => t.recommended) ?? targets?.[0];
-  const targetId = chosen ?? recommended?.id;
+  // A chosen drive that has been unplugged falls back to the recommended one.
+  const targetId = chosen && targets?.some((t) => t.id === chosen) ? chosen : recommended?.id;
   const target = targets?.find((t) => t.id === targetId);
   const none = targets !== null && targets.length === 0;
 

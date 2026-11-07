@@ -46,7 +46,7 @@ monitoring is paused it blocks indefinitely, using no CPU.
 Each tick:
 
 1. `Collector::sample` refreshes CPU, memory, disks (I/O and capacity every
-   tick, mount list every 30 s), networks and processes, and measures the real
+   tick, mount list as soon as the mount table changes, 30 s fallback), networks and processes, and measures the real
    elapsed time.
 2. `AlertEvaluator` checks rules against the sample.
 3. Results are published to shared state under short write locks: latest

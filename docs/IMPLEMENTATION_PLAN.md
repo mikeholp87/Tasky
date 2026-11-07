@@ -37,7 +37,7 @@ OS ─► platform/* (sysinfo + native APIs) ─► MonitoringEngine (1 dedicate
 ```
 
 - **One monitoring thread** owns the `sysinfo::System`/`Networks`/`Disks`. A `std::thread` loop with a control `mpsc` receiver handles SetInterval, Pause, Resume, RefreshNow, TrackPid, and Shutdown. It sleeps with `recv_timeout`, so pausing costs zero CPU.
-- **Tiered refresh:** CPU, memory, network, disk capacity and processes every tick. Disk list every 30 s. Static system info once at startup (`get_static_info` command).
+- **Tiered refresh:** CPU, memory, network, disk capacity and processes every tick. Disk list as soon as the mount table changes on Linux (30 s fallback elsewhere). Static system info once at startup (`get_static_info` command).
 - **Rates** are computed from counter deltas divided by the measured `Instant` elapsed time, never the nominal interval. This lives in `monitoring/rates.rs` as pure functions with unit tests.
 - **Locks:** collect into local structs with no lock held, then swap the result into state with a short write lock.
 - **Ring buffers:** generic `RingBuffer<T>` (`monitoring/history.rs`). The system history holds 3600 points (1 h at 1 s, configurable). Per-process CPU/mem history holds 300 points, and dead PIDs are pruned. The frontend fetches history once via `get_history(range)`, then appends live ticks.

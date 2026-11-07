@@ -4,24 +4,24 @@ How each metric is collected, refreshed and calculated.
 
 ## Refresh schedule
 
-| Data                                             | Frequency       | Source                                               |
-| ------------------------------------------------ | --------------- | ---------------------------------------------------- |
-| CPU (total, per core, frequency)                 | every tick      | sysinfo                                              |
-| Load average (Unix)                              | every tick      | sysinfo                                              |
-| Memory, swap                                     | every tick      | sysinfo                                              |
-| Cached / buffers (Linux)                         | every tick      | `/proc/meminfo`                                      |
-| System cache, commit charge (Windows)            | every tick      | `GetPerformanceInfo`                                 |
-| Processes: CPU, memory, I/O                      | every tick      | sysinfo                                              |
-| Processes: exe, command line, user               | once per PID    | sysinfo (`UpdateKind::OnlyIfNotSet`)                 |
-| Threads, priority (Windows)                      | every tick      | `NtQuerySystemInformation(SystemProcessInformation)` |
-| Threads, nice (Linux)                            | every tick      | `/proc/[pid]/stat`                                   |
-| Disk throughput                                  | every tick      | sysinfo (`IOCTL_DISK_PERFORMANCE` on Windows)        |
-| Disk IOPS, active time                           | every tick      | `IOCTL_DISK_PERFORMANCE` / `/proc/diskstats`         |
-| Disk list                                        | every 30 s      | sysinfo                                              |
-| Disk capacity                                    | every tick      | sysinfo (`statvfs` / `GetDiskFreeSpaceEx`)           |
-| Network rates and totals                         | every tick      | sysinfo                                              |
-| OS, CPU model, core counts, boot time            | once at startup | sysinfo                                              |
-| Process details (cwd, architecture, connections) | when opened     | sysinfo, IP Helper / `/proc/net`                     |
+| Data                                             | Frequency                    | Source                                               |
+| ------------------------------------------------ | ---------------------------- | ---------------------------------------------------- |
+| CPU (total, per core, frequency)                 | every tick                   | sysinfo                                              |
+| Load average (Unix)                              | every tick                   | sysinfo                                              |
+| Memory, swap                                     | every tick                   | sysinfo                                              |
+| Cached / buffers (Linux)                         | every tick                   | `/proc/meminfo`                                      |
+| System cache, commit charge (Windows)            | every tick                   | `GetPerformanceInfo`                                 |
+| Processes: CPU, memory, I/O                      | every tick                   | sysinfo                                              |
+| Processes: exe, command line, user               | once per PID                 | sysinfo (`UpdateKind::OnlyIfNotSet`)                 |
+| Threads, priority (Windows)                      | every tick                   | `NtQuerySystemInformation(SystemProcessInformation)` |
+| Threads, nice (Linux)                            | every tick                   | `/proc/[pid]/stat`                                   |
+| Disk throughput                                  | every tick                   | sysinfo (`IOCTL_DISK_PERFORMANCE` on Windows)        |
+| Disk IOPS, active time                           | every tick                   | `IOCTL_DISK_PERFORMANCE` / `/proc/diskstats`         |
+| Disk list                                        | on change (Linux), else 30 s | sysinfo                                              |
+| Disk capacity                                    | every tick                   | sysinfo (`statvfs` / `GetDiskFreeSpaceEx`)           |
+| Network rates and totals                         | every tick                   | sysinfo                                              |
+| OS, CPU model, core counts, boot time            | once at startup              | sysinfo                                              |
+| Process details (cwd, architecture, connections) | when opened                  | sysinfo, IP Helper / `/proc/net`                     |
 
 A tick happens every 500 ms / 1 s / 2 s / 5 s (default 1 s), or on demand.
 

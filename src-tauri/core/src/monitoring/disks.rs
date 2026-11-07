@@ -7,10 +7,35 @@ use crate::models::{DiskKind, DiskSnapshot};
 use crate::monitoring::rates::{active_percent, counter_rate, delta_rate, percent};
 use crate::platform::{self, DiskIoCounters};
 
-/// How often the mount list is re-enumerated so unplugged drives disappear.
-/// Capacities are re-read on every tick (a `statvfs`/`GetDiskFreeSpaceEx` per
-/// mount) so deleting files is reflected immediately in the UI.
+/// Fallback cadence for re-enumerating the mount list. On Linux a change to
+/// the mount table triggers it at once (see [`mount_table`]), so this only
+/// covers other platforms and the slow-moving disk type. Capacities are
+/// re-read on every tick (a `statvfs`/`GetDiskFreeSpaceEx` per mount) so
+/// deleting files is reflected immediately in the UI.
 const MOUNT_LIST_REFRESH: Duration = Duration::from_secs(30);
+
+/// The kernel's mount table. Reading it is a few KB, so it is compared on
+/// every tick: a drive that was just plugged in or unmounted shows up on the
+/// next tick instead of after the fallback interval.
+#[cfg(target_os = "linux")]
+fn mount_table() -> Option<String> {
+    std::fs::read_to_string("/proc/self/mountinfo").ok()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn mount_table() -> Option<String> {
+    None
+}
+
+/// Whether to re-enumerate drives: the mount table changed (when readable),
+/// or the fallback interval has elapsed.
+fn list_refresh_due(
+    current: Option<&str>,
+    previous: Option<&str>,
+    since_refresh: Duration,
+) -> bool {
+    since_refresh >= MOUNT_LIST_REFRESH || (current.is_some() && current != previous)
+}
 
 /// Pseudo / image file systems that are not useful as "drives".
 const IGNORED_FILE_SYSTEMS: &[&str] = &[
@@ -45,6 +70,8 @@ pub struct DiskTracker {
     /// `None` when the platform cannot enumerate disks at all.
     disks: Option<Disks>,
     last_mount_refresh: Instant,
+    /// Mount table at the last re-enumeration.
+    mount_table: Option<String>,
     /// Mount points that already have a byte-count baseline. A disk's first
     /// sample reports lifetime totals rather than a delta, so it shows 0.
     primed: HashSet<String>,
@@ -60,6 +87,7 @@ impl DiskTracker {
         Self {
             disks,
             last_mount_refresh: Instant::now(),
+            mount_table: mount_table(),
             primed: HashSet::new(),
             previous_io: HashMap::new(),
         }
@@ -69,9 +97,12 @@ impl DiskTracker {
         let Some(disks) = self.disks.as_mut() else {
             return Vec::new();
         };
-        if now.duration_since(self.last_mount_refresh) >= MOUNT_LIST_REFRESH {
+        let table = mount_table();
+        let since = now.duration_since(self.last_mount_refresh);
+        if list_refresh_due(table.as_deref(), self.mount_table.as_deref(), since) {
             disks.refresh_specifics(true, DiskRefreshKind::everything());
             self.last_mount_refresh = now;
+            self.mount_table = table;
         } else {
             // Free space is cheap to query and changes when the user writes or
             // deletes files, so refresh it on every tick.
@@ -200,6 +231,23 @@ mod tests {
         assert!(kind.storage(), "free space must update on every tick");
         assert!(kind.io_usage(), "throughput must update on every tick");
         assert!(!kind.kind(), "disk type only needs the slow refresh");
+    }
+
+    #[test]
+    fn a_changed_mount_table_refreshes_the_drive_list_at_once() {
+        let soon = Duration::from_secs(1);
+        assert!(!list_refresh_due(Some("a"), Some("a"), soon));
+        assert!(
+            list_refresh_due(Some("a\nb"), Some("a"), soon),
+            "drive plugged in"
+        );
+        assert!(
+            list_refresh_due(Some("a"), Some("a\nb"), soon),
+            "drive removed"
+        );
+        // No mount table (other platforms, unreadable): only the timer applies.
+        assert!(!list_refresh_due(None, Some("a"), soon));
+        assert!(list_refresh_due(None, None, MOUNT_LIST_REFRESH));
     }
 
     #[test]
