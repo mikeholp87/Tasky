@@ -20,13 +20,20 @@ struct RuleState {
 /// The value that crossed a threshold and, for process rules, which process.
 struct Observation {
     value: f64,
-    subject: Option<(u32, String)>,
-    detail: Option<String>,
+    subject: Subject,
+    name: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum Subject {
+    System,
+    Process(u32, u64),
+    Disk(String),
 }
 
 #[derive(Default)]
 pub struct AlertEvaluator {
-    state: HashMap<String, RuleState>,
+    state: HashMap<String, (AlertRule, HashMap<Subject, RuleState>)>,
 }
 
 impl AlertEvaluator {
@@ -36,25 +43,36 @@ impl AlertEvaluator {
         let mut next = HashMap::with_capacity(rules.len());
 
         for rule in rules.iter().filter(|r| r.enabled) {
-            let mut st = self.state.get(&rule.id).copied().unwrap_or_default();
-            match observe(rule, tick).filter(|o| o.value > rule.threshold) {
-                None => st = RuleState::default(),
-                Some(obs) => {
-                    let since = *st.since_ms.get_or_insert(now);
-                    let held_ms = now.saturating_sub(since);
-                    if !st.fired && held_ms >= u64::from(rule.duration_secs) * 1_000 {
-                        st.fired = true;
-                        events.push(AlertEvent {
-                            rule_id: rule.id.clone(),
-                            rule_name: rule.name.clone(),
-                            timestamp_ms: now,
-                            message: message(rule, &obs),
-                            pid: obs.subject.as_ref().map(|s| s.0),
-                        });
-                    }
+            let mut previous = self
+                .state
+                .remove(&rule.id)
+                .filter(|(old, _)| old == rule)
+                .map(|(_, episodes)| episodes)
+                .unwrap_or_default();
+            let mut episodes = HashMap::new();
+            for obs in observe(rule, tick)
+                .into_iter()
+                .filter(|o| o.value > rule.threshold)
+            {
+                let mut st = previous.remove(&obs.subject).unwrap_or_default();
+                let since = *st.since_ms.get_or_insert(now);
+                let held_ms = now.saturating_sub(since);
+                if !st.fired && held_ms >= u64::from(rule.duration_secs) * 1_000 {
+                    st.fired = true;
+                    events.push(AlertEvent {
+                        rule_id: rule.id.clone(),
+                        rule_name: rule.name.clone(),
+                        timestamp_ms: now,
+                        message: message(rule, &obs),
+                        pid: match obs.subject {
+                            Subject::Process(pid, _) => Some(pid),
+                            _ => None,
+                        },
+                    });
                 }
+                episodes.insert(obs.subject, st);
             }
-            next.insert(rule.id.clone(), st);
+            next.insert(rule.id.clone(), (rule.clone(), episodes));
         }
         // Rules that were removed or disabled forget their state.
         self.state = next;
@@ -70,30 +88,37 @@ fn normalize(name: &str) -> String {
         .unwrap_or(lower)
 }
 
-fn observe(rule: &AlertRule, tick: &MetricsTick) -> Option<Observation> {
-    let simple = |value: f64| Observation {
-        value,
-        subject: None,
-        detail: None,
+fn observe(rule: &AlertRule, tick: &MetricsTick) -> Vec<Observation> {
+    let simple = |value: f64| {
+        vec![Observation {
+            value,
+            subject: Subject::System,
+            name: None,
+        }]
     };
     match rule.metric {
-        AlertMetric::SystemCpu => Some(simple(f64::from(tick.cpu.usage_percent))),
-        AlertMetric::SystemMemory => Some(simple(tick.memory.used_percent)),
+        AlertMetric::SystemCpu => simple(f64::from(tick.cpu.usage_percent)),
+        AlertMetric::SystemMemory => simple(tick.memory.used_percent),
         AlertMetric::DiskUsage => tick
             .disks
             .iter()
-            .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent))
             .map(|d| Observation {
                 value: d.used_percent,
-                subject: None,
-                detail: Some(d.mount_point.clone()),
-            }),
+                subject: Subject::Disk(d.mount_point.clone()),
+                name: None,
+            })
+            .collect(),
         AlertMetric::ProcessCpu | AlertMetric::ProcessMemory => {
-            let wanted = normalize(rule.process_name.as_deref()?);
+            let Some(name) = rule.process_name.as_deref() else {
+                return Vec::new();
+            };
+            let wanted = normalize(name);
             tick.processes
                 .iter()
                 // Restricted processes have unknown CPU; never alert on a 0.
                 .filter(|p| normalize(&p.name) == wanted)
+                // An unknown start time cannot identify a process episode.
+                .filter(|p| p.start_time > 0)
                 .filter(|p| rule.metric == AlertMetric::ProcessMemory || !p.restricted)
                 .map(|p| Observation {
                     value: if rule.metric == AlertMetric::ProcessCpu {
@@ -101,10 +126,10 @@ fn observe(rule: &AlertRule, tick: &MetricsTick) -> Option<Observation> {
                     } else {
                         p.memory_bytes as f64
                     },
-                    subject: Some((p.pid, p.name.clone())),
-                    detail: None,
+                    subject: Subject::Process(p.pid, p.start_time),
+                    name: Some(p.name.clone()),
                 })
-                .max_by(|a, b| a.value.total_cmp(&b.value))
+                .collect()
         }
     }
 }
@@ -118,16 +143,16 @@ fn message(rule: &AlertRule, obs: &Observation) -> String {
     match (rule.metric, &obs.subject) {
         (AlertMetric::SystemCpu, _) => format!("CPU usage is {:.0}%{held}.", obs.value),
         (AlertMetric::SystemMemory, _) => format!("Memory usage is {:.0}%{held}.", obs.value),
-        (AlertMetric::DiskUsage, _) => format!(
-            "Drive {} is {:.0}% full.",
-            obs.detail.as_deref().unwrap_or("?"),
-            obs.value
-        ),
-        (AlertMetric::ProcessCpu, Some((pid, name))) => {
+        (AlertMetric::DiskUsage, Subject::Disk(mount)) => {
+            format!("Drive {} is {:.0}% full.", mount, obs.value)
+        }
+        (AlertMetric::ProcessCpu, Subject::Process(pid, _)) => {
+            let name = obs.name.as_deref().unwrap_or("Process");
             format!("{name} (PID {pid}) is using {:.0}% CPU{held}.", obs.value)
         }
-        (AlertMetric::ProcessMemory, Some((pid, name))) => format!(
-            "{name} (PID {pid}) is using {} of memory{held}.",
+        (AlertMetric::ProcessMemory, Subject::Process(pid, _)) => format!(
+            "{} (PID {pid}) is using {} of memory{held}.",
+            obs.name.as_deref().unwrap_or("Process"),
             format_bytes(obs.value)
         ),
         _ => format!("{} triggered.", rule.name),
@@ -303,6 +328,86 @@ mod tests {
     }
 
     #[test]
+    fn process_durations_do_not_transfer_between_pids_or_reused_pids() {
+        let rules = [rule(AlertMetric::ProcessCpu, 80.0, 20, Some("node"))];
+        let mut ev = AlertEvaluator::default();
+        assert!(
+            ev.evaluate(&rules, &tick(0, 0.0, vec![proc(1, "node", 90.0, false)]))
+                .is_empty()
+        );
+        assert!(
+            ev.evaluate(&rules, &tick(10, 0.0, vec![proc(2, "node", 90.0, false)]))
+                .is_empty()
+        );
+        assert!(
+            ev.evaluate(&rules, &tick(20, 0.0, vec![proc(2, "node", 90.0, false)]))
+                .is_empty()
+        );
+        assert_eq!(
+            ev.evaluate(&rules, &tick(30, 0.0, vec![proc(2, "node", 90.0, false)]))
+                .len(),
+            1
+        );
+        let mut replacement = proc(2, "node", 90.0, false);
+        replacement.start_time = 40;
+        assert!(
+            ev.evaluate(&rules, &tick(40, 0.0, vec![replacement.clone()]))
+                .is_empty()
+        );
+        assert_eq!(
+            ev.evaluate(&rules, &tick(60, 0.0, vec![replacement])).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn matching_processes_keep_independent_episodes_when_the_leader_changes() {
+        let rules = [rule(AlertMetric::ProcessCpu, 80.0, 20, Some("node"))];
+        let mut ev = AlertEvaluator::default();
+        ev.evaluate(
+            &rules,
+            &tick(
+                0,
+                0.0,
+                vec![proc(1, "node", 99.0, false), proc(2, "node", 85.0, false)],
+            ),
+        );
+        ev.evaluate(
+            &rules,
+            &tick(
+                10,
+                0.0,
+                vec![proc(1, "node", 85.0, false), proc(2, "node", 99.0, false)],
+            ),
+        );
+        let fired = ev.evaluate(
+            &rules,
+            &tick(
+                20,
+                0.0,
+                vec![proc(1, "node", 85.0, false), proc(2, "node", 99.0, false)],
+            ),
+        );
+        assert_eq!(fired.len(), 2);
+        assert!(fired.iter().any(|e| e.pid == Some(1)));
+        assert!(fired.iter().any(|e| e.pid == Some(2)));
+    }
+
+    #[test]
+    fn editing_a_rule_restarts_its_duration_and_rearms_fired_rules() {
+        let mut r = rule(AlertMetric::SystemCpu, 80.0, 20, None);
+        let mut ev = AlertEvaluator::default();
+        ev.evaluate(&[r.clone()], &tick(0, 90.0, vec![]));
+        r.metric = AlertMetric::SystemMemory;
+        r.threshold = 40.0;
+        assert!(ev.evaluate(&[r.clone()], &tick(20, 0.0, vec![])).is_empty());
+        assert_eq!(ev.evaluate(&[r.clone()], &tick(40, 0.0, vec![])).len(), 1);
+        r.threshold = 45.0;
+        assert!(ev.evaluate(&[r.clone()], &tick(50, 0.0, vec![])).is_empty());
+        assert_eq!(ev.evaluate(&[r], &tick(70, 0.0, vec![])).len(), 1);
+    }
+
+    #[test]
     fn restricted_processes_never_trigger_cpu_rules() {
         let rules = [rule(AlertMetric::ProcessCpu, 0.0, 0, Some("svchost"))];
         let mut ev = AlertEvaluator::default();
@@ -312,6 +417,20 @@ mod tests {
                 &tick(0, 10.0, vec![proc(4, "svchost.exe", 0.5, true)])
             )
             .is_empty()
+        );
+    }
+
+    #[test]
+    fn unknown_process_lifetimes_do_not_share_alert_episodes() {
+        let rules = [rule(AlertMetric::ProcessMemory, 1.0, 20, Some("node"))];
+        let mut process = proc(7, "node", 0.0, true);
+        process.start_time = 0;
+        let mut evaluator = AlertEvaluator::default();
+        evaluator.evaluate(&rules, &tick(0, 0.0, vec![process.clone()]));
+        assert!(
+            evaluator
+                .evaluate(&rules, &tick(30, 0.0, vec![process]))
+                .is_empty()
         );
     }
 

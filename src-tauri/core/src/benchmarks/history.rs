@@ -31,15 +31,23 @@ struct File {
 pub struct HistoryStore {
     path: Option<PathBuf>,
     results: Mutex<Vec<BenchmarkResult>>,
+    recovery_error: Option<String>,
 }
 
 impl HistoryStore {
     pub fn load(dir: Option<&Path>) -> Self {
         let path = dir.map(|d| d.join(FILE_NAME));
-        let results = path.as_deref().map(read_or_empty).unwrap_or_default();
+        let (results, recovery_error) = match path.as_deref().map(read_or_empty).transpose() {
+            Ok(results) => (results.unwrap_or_default(), None),
+            Err(e) => {
+                tracing::warn!("could not preserve benchmark history: {e}");
+                (Vec::new(), Some(e.to_string()))
+            }
+        };
         Self {
             path,
             results: Mutex::new(results),
+            recovery_error,
         }
     }
 
@@ -78,6 +86,11 @@ impl HistoryStore {
     }
 
     fn persist(&self, results: &[BenchmarkResult]) -> AppResult<()> {
+        if let Some(error) = &self.recovery_error {
+            return Err(AppError::SystemQueryFailed(format!(
+                "existing benchmark history could not be preserved: {error}. Resolve the recovery-file problem and restart Task Manager before saving results."
+            )));
+        }
         let Some(path) = &self.path else {
             return Ok(());
         };
@@ -91,26 +104,34 @@ impl HistoryStore {
     }
 }
 
-fn read_or_empty(path: &Path) -> Vec<BenchmarkResult> {
-    let text = match crate::filesystem::read_text(path, 8 * 1024 * 1024) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+fn read_or_empty(path: &Path) -> std::io::Result<Vec<BenchmarkResult>> {
+    match crate::filesystem::read_text(path, 8 * 1024 * 1024) {
+        Ok(text) => match serde_json::from_str::<File>(&text) {
+            Ok(mut f) if f.version == FORMAT_VERSION => {
+                f.results.truncate(MAX_RESULTS);
+                return Ok(f.results);
+            }
+            _ => {
+                tracing::warn!("benchmark history is invalid; preserving it before starting empty")
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => {
             tracing::warn!("could not read benchmark history: {e}");
-            return Vec::new();
-        }
-    };
-    match serde_json::from_str::<File>(&text) {
-        Ok(mut f) if f.version == FORMAT_VERSION => {
-            f.results.truncate(MAX_RESULTS);
-            f.results
-        }
-        _ => {
-            tracing::warn!("benchmark history is unreadable; keeping a copy and starting empty");
-            let _ = std::fs::rename(path, path.with_extension("json.invalid"));
-            Vec::new()
         }
     }
+    let backup = path.with_extension("json.invalid");
+    match std::fs::symlink_metadata(&backup) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::rename(path, backup)?,
+        Err(e) => return Err(e),
+        Ok(_) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "a previous benchmarks.json.invalid recovery copy already exists",
+            ));
+        }
+    }
+    Ok(Vec::new())
 }
 
 fn write_atomic(path: &Path, json: &str) -> AppResult<()> {
@@ -270,6 +291,42 @@ pub(crate) mod tests {
         store.add(sample("x")).unwrap();
         assert_eq!(HistoryStore::load(Some(&dir)).list().len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn oversized_history_is_preserved_before_saving_a_new_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let original = vec![b' '; 8 * 1024 * 1024 + 1];
+        std::fs::write(&path, &original).unwrap();
+        let store = HistoryStore::load(Some(dir.path()));
+        store.add(sample("new")).unwrap();
+        assert_eq!(
+            std::fs::read(path.with_extension("json.invalid")).unwrap(),
+            original
+        );
+        assert_eq!(HistoryStore::load(Some(dir.path())).list()[0].id, "new");
+    }
+
+    #[test]
+    fn failed_recovery_blocks_writes_and_preserves_both_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let backup = path.with_extension("json.invalid");
+        std::fs::write(&path, "current unreadable history").unwrap();
+        std::fs::write(&backup, "previous recovery").unwrap();
+        let store = HistoryStore::load(Some(dir.path()));
+        assert!(store.add(sample("new")).is_err());
+        assert!(store.delete("old").is_err());
+        assert!(store.list().is_empty());
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            "current unreadable history"
+        );
+        assert_eq!(
+            std::fs::read_to_string(backup).unwrap(),
+            "previous recovery"
+        );
     }
 
     #[test]

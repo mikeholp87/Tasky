@@ -91,7 +91,10 @@ export function ProcessContextMenu({
             <ContextMenu.Label className="truncate px-2 py-1 text-[0.8125rem] text-fg-subtle">
               {row.name} · PID {row.pid}
             </ContextMenu.Label>
-            <Item icon={<FileSearch size="0.875rem" />} onSelect={() => openProcess(row.pid)}>
+            <Item
+              icon={<FileSearch size="0.875rem" />}
+              onSelect={() => openProcess(row.pid, row.startTime)}
+            >
               Open details
             </Item>
             <Item

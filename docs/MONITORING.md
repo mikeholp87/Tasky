@@ -17,7 +17,8 @@ How each metric is collected, refreshed and calculated.
 | Threads, nice (Linux)                            | every tick      | `/proc/[pid]/stat`                                   |
 | Disk throughput                                  | every tick      | sysinfo (`IOCTL_DISK_PERFORMANCE` on Windows)        |
 | Disk IOPS, active time                           | every tick      | `IOCTL_DISK_PERFORMANCE` / `/proc/diskstats`         |
-| Disk list, capacity                              | every 30 s      | sysinfo                                              |
+| Disk list                                        | every 30 s      | sysinfo                                              |
+| Disk capacity                                    | every tick      | sysinfo (`statvfs` / `GetDiskFreeSpaceEx`)           |
 | Network rates and totals                         | every tick      | sysinfo                                              |
 | OS, CPU model, core counts, boot time            | once at startup | sysinfo                                              |
 | Process details (cwd, architecture, connections) | when opened     | sysinfo, IP Helper / `/proc/net`                     |

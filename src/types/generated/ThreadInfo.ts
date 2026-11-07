@@ -6,7 +6,7 @@ export type ThreadInfo = { tid: number, name: string | null, state: ProcessState
  * Share of the whole machine, like the Processes page. `None` on the
  * first sample, which has no previous reading to compare with.
  */
-cpuPercent: number | null, cpuTimeMs: number, priority: number | null, 
+cpuPercent: number | null, cpuTimeMs: number | null, priority: number | null, 
 /**
  * Unix seconds.
  */

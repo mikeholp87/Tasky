@@ -6,11 +6,11 @@ import { ACCESS_LABEL, FILE_KIND_LABEL, filterOpenFiles } from "./logic";
 import { InspectBody } from "./InspectBody";
 
 /** Loaded once when the tab opens (descriptor listing can be large); Refresh re-reads. */
-export function OpenFilesTab({ pid }: { pid: number }) {
+export function OpenFilesTab({ pid, startTime }: { pid: number; startTime: number }) {
   const [query, setQuery] = useState("");
   const { data, error, loading, refresh } = useRemoteData(
-    () => backend.getOpenFiles(pid),
-    `files:${pid}`,
+    () => backend.getOpenFiles(pid, startTime),
+    `files:${pid}:${startTime}`,
   );
   const shown = useMemo(() => filterOpenFiles(data?.files ?? [], query), [data, query]);
   return (

@@ -174,6 +174,11 @@ pub fn threads(pid: u32) -> crate::errors::AppResult<Vec<crate::inspect::RawThre
     imp::threads(pid)
 }
 
+#[cfg(target_os = "linux")]
+pub fn startup_directory() -> crate::errors::AppResult<std::path::PathBuf> {
+    imp::startup_directory()
+}
+
 /// Instruction set a process runs as, e.g. "x64" or "x86_64".
 pub fn process_architecture(pid: u32) -> Option<String> {
     imp::process_architecture(pid)

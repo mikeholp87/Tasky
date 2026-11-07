@@ -63,6 +63,12 @@ export function CommandPalette() {
     return list.filter((c) => c.id === "search" || c.label.toLowerCase().includes(needle));
   }, [query, paused, navigate]);
 
+  useEffect(() => {
+    const command = commands[active];
+    if (open && command)
+      document.getElementById(`cmd-${command.id}`)?.scrollIntoView({ block: "nearest" });
+  }, [active, commands, open]);
+
   const close = () => {
     setOpen(false);
     setQuery("");

@@ -111,7 +111,7 @@ buffers. No change.
 
 ## 11. Disk
 
-sysinfo `Disks` for mounts/capacity (30 s) and bytes (every tick);
+sysinfo `Disks` for mounts (30 s) and capacity/bytes (every tick);
 `/proc/diskstats` for IOPS and busy time. Extend the pseudo-FS list; dedupe
 devices in history totals.
 

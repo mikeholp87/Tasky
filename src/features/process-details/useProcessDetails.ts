@@ -26,39 +26,63 @@ interface FetchResult {
  * regular metrics ticks (no extra polling). Callers key the consuming
  * component by PID so state never leaks between processes.
  */
-export function useProcessDetails(pid: number): ProcessDetailsState {
+export function useProcessDetails(
+  pid: number,
+  selectedStartTime?: number | null,
+): ProcessDetailsState {
   const [nonce, setNonce] = useState(0);
   const [result, setResult] = useState<FetchResult | null>(null);
   const [livePoints, setLivePoints] = useState<ProcessPoint[]>([]);
   const requestKey = `${pid}:${nonce}`;
+  const [openedStartTime] = useState(
+    () =>
+      selectedStartTime ??
+      useMetricsStore.getState().tick?.processes.find((p) => p.pid === pid)?.startTime,
+  );
 
   // Once details load they pin the process instance, so a reused PID is
   // reported as an exit rather than shown as this process.
-  const startTime = result?.details?.row.startTime;
+  const startTime = openedStartTime ?? result?.details?.row.startTime;
   const live = useMetricsStore(
     (s) =>
       s.tick?.processes.find(
-        (p) => p.pid === pid && (startTime == null || p.startTime === startTime),
+        (p) => p.pid === pid && startTime != null && startTime > 0 && p.startTime === startTime,
       ) ?? null,
   );
 
   useEffect(() => {
     if (!isBackendAvailable()) return;
     let cancelled = false;
-    backend.getProcessDetails(pid).then(
-      (details) => !cancelled && setResult({ key: requestKey, details, error: null }),
-      (e: unknown) =>
-        !cancelled &&
-        setResult((prev) => ({
-          key: requestKey,
-          details: prev?.details ?? null,
-          error: toAppError(e),
-        })),
-    );
+    backend
+      .getProcessDetails(pid, startTime)
+      .then((details) => {
+        if (details.row.startTime <= 0) {
+          throw {
+            kind: "actionUnavailable",
+            message: "The process start time is unavailable, so its identity cannot be verified.",
+          } satisfies AppError;
+        }
+        if (startTime != null && details.row.startTime !== startTime) {
+          throw {
+            kind: "processNotFound",
+            message: `Process ${pid} is no longer running.`,
+          } satisfies AppError;
+        }
+        if (!cancelled) setResult({ key: requestKey, details, error: null });
+      })
+      .catch(
+        (e: unknown) =>
+          !cancelled &&
+          setResult((prev) => ({
+            key: requestKey,
+            details: prev?.details ?? null,
+            error: toAppError(e),
+          })),
+      );
     return () => {
       cancelled = true;
     };
-  }, [pid, requestKey]);
+  }, [pid, requestKey, startTime]);
 
   // Accumulate points from live ticks via a store subscription.
   useEffect(
@@ -67,7 +91,7 @@ export function useProcessDetails(pid: number): ProcessDetailsState {
         const tick = state.tick;
         if (!tick || tick === prev.tick) return;
         const row = tick.processes.find(
-          (p) => p.pid === pid && (startTime == null || p.startTime === startTime),
+          (p) => p.pid === pid && startTime != null && p.startTime > 0 && p.startTime === startTime,
         );
         if (row) {
           setLivePoints((points) => appendPoint(points, toPoint(row, tick.timestampMs)));

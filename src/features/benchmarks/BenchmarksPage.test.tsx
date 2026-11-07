@@ -255,6 +255,19 @@ describe("BenchmarksPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("A worker stopped unexpectedly.");
   });
 
+  it("shows a persistence failure even when the measurement completed", () => {
+    useBenchmarkStore.setState({
+      status: {
+        ...IDLE,
+        state: "completed",
+        kind: "cpu",
+        message: "The result could not be saved: existing history could not be preserved.",
+      },
+    });
+    render(<BenchmarksPage />);
+    expect(screen.getByRole("alert")).toHaveTextContent(/could not be saved/);
+  });
+
   it("lists graphics adapters with the recommended one selected and runs on it", async () => {
     useBenchmarkStore.setState({ adapters: [LLVMPIPE, IGPU] });
     render(<BenchmarksPage />);

@@ -6,11 +6,19 @@ import { formatBytes } from "@/utils/format";
 import { filterModules } from "./logic";
 import { InspectBody } from "./InspectBody";
 
-export function ModulesTab({ pid, windows }: { pid: number; windows: boolean }) {
+export function ModulesTab({
+  pid,
+  startTime,
+  windows,
+}: {
+  pid: number;
+  startTime: number;
+  windows: boolean;
+}) {
   const [query, setQuery] = useState("");
   const { data, error, loading, refresh } = useRemoteData(
-    () => backend.getModules(pid),
-    `modules:${pid}`,
+    () => backend.getModules(pid, startTime),
+    `modules:${pid}:${startTime}`,
   );
   const shown = useMemo(() => filterModules(data ?? [], query), [data, query]);
   return (

@@ -7,9 +7,10 @@ use crate::models::{DiskKind, DiskSnapshot};
 use crate::monitoring::rates::{active_percent, counter_rate, delta_rate, percent};
 use crate::platform::{self, DiskIoCounters};
 
-/// How often the mount list and capacities are re-read. Throughput is read on
-/// every tick.
-const CAPACITY_REFRESH: Duration = Duration::from_secs(30);
+/// How often the mount list is re-enumerated so unplugged drives disappear.
+/// Capacities are re-read on every tick (a `statvfs`/`GetDiskFreeSpaceEx` per
+/// mount) so deleting files is reflected immediately in the UI.
+const MOUNT_LIST_REFRESH: Duration = Duration::from_secs(30);
 
 /// Pseudo / image file systems that are not useful as "drives".
 const IGNORED_FILE_SYSTEMS: &[&str] = &[
@@ -43,7 +44,7 @@ const IGNORED_FILE_SYSTEMS: &[&str] = &[
 pub struct DiskTracker {
     /// `None` when the platform cannot enumerate disks at all.
     disks: Option<Disks>,
-    last_capacity_refresh: Instant,
+    last_mount_refresh: Instant,
     /// Mount points that already have a byte-count baseline. A disk's first
     /// sample reports lifetime totals rather than a delta, so it shows 0.
     primed: HashSet<String>,
@@ -58,7 +59,7 @@ impl DiskTracker {
             .ok();
         Self {
             disks,
-            last_capacity_refresh: Instant::now(),
+            last_mount_refresh: Instant::now(),
             primed: HashSet::new(),
             previous_io: HashMap::new(),
         }
@@ -68,11 +69,13 @@ impl DiskTracker {
         let Some(disks) = self.disks.as_mut() else {
             return Vec::new();
         };
-        if now.duration_since(self.last_capacity_refresh) >= CAPACITY_REFRESH {
+        if now.duration_since(self.last_mount_refresh) >= MOUNT_LIST_REFRESH {
             disks.refresh_specifics(true, DiskRefreshKind::everything());
-            self.last_capacity_refresh = now;
+            self.last_mount_refresh = now;
         } else {
-            disks.refresh_specifics(false, DiskRefreshKind::nothing().with_io_usage());
+            // Free space is cheap to query and changes when the user writes or
+            // deletes files, so refresh it on every tick.
+            disks.refresh_specifics(false, tick_refresh_kind());
         }
 
         let relevant: Vec<&sysinfo::Disk> = disks
@@ -161,6 +164,13 @@ impl DiskTracker {
     }
 }
 
+/// What every tick must re-read: free space (so deletions are visible
+/// immediately) and I/O counters (so throughput stays live). Disk type and the
+/// mount list change rarely, so they are refreshed on the slower cadence.
+fn tick_refresh_kind() -> DiskRefreshKind {
+    DiskRefreshKind::nothing().with_storage().with_io_usage()
+}
+
 /// Filters out pseudo file systems, snap images and zero-sized mounts.
 pub fn is_relevant(file_system: &str, mount_point: &str, total_bytes: u64) -> bool {
     if total_bytes == 0 {
@@ -182,6 +192,14 @@ mod tests {
         assert!(is_relevant("NTFS", "C:\\", 500));
         assert!(is_relevant("ext4", "/", 500));
         assert!(is_relevant("vfat", "/boot/efi", 500));
+    }
+
+    #[test]
+    fn every_tick_refreshes_capacity() {
+        let kind = tick_refresh_kind();
+        assert!(kind.storage(), "free space must update on every tick");
+        assert!(kind.io_usage(), "throughput must update on every tick");
+        assert!(!kind.kind(), "disk type only needs the slow refresh");
     }
 
     #[test]

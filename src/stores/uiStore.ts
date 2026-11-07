@@ -1,15 +1,17 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { ROUTES, type RouteId } from "@/app/routes";
+import { useMetricsStore } from "./metricsStore";
 
 interface UiState {
   route: RouteId;
   /** PID shown on the Process Details page. */
   selectedPid: number | null;
+  selectedStartTime: number | null;
   /** Theme actually applied (system preference resolved). */
   resolvedTheme: "light" | "dark";
   navigate: (route: RouteId) => void;
-  openProcess: (pid: number) => void;
+  openProcess: (pid: number, startTime?: number) => void;
   setResolvedTheme: (theme: "light" | "dark") => void;
 }
 
@@ -22,9 +24,18 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       route: "overview",
       selectedPid: null,
+      selectedStartTime: null,
       resolvedTheme: "light",
       navigate: (route) => set({ route }),
-      openProcess: (pid) => set({ selectedPid: pid, route: "process-details" }),
+      openProcess: (pid, startTime) =>
+        set({
+          selectedPid: pid,
+          selectedStartTime:
+            startTime ??
+            useMetricsStore.getState().tick?.processes.find((p) => p.pid === pid)?.startTime ??
+            null,
+          route: "process-details",
+        }),
       setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
     }),
     {

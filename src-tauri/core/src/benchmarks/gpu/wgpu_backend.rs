@@ -204,6 +204,15 @@ fn map_poll(e: wgpu::PollError) -> GpuError {
     }
 }
 
+fn timestamp_seconds(start: u64, end: u64, period_ns: f64, wall: f64) -> Result<f64, GpuError> {
+    let seconds = end.saturating_sub(start) as f64 * period_ns / 1e9;
+    if seconds.is_finite() && seconds > 0.0 && seconds < wall * 4.0 {
+        Ok(seconds)
+    } else {
+        Err(GpuError::Other("The GPU returned invalid execution timestamps. This run cannot be scored reliably; try another adapter or driver.".into()))
+    }
+}
+
 impl Executor {
     fn new(
         adapter: &wgpu::Adapter,
@@ -589,14 +598,7 @@ impl GpuExecutor for Executor {
                     u64::from_le_bytes(bytes[0..8].try_into().unwrap_or([0; 8])),
                     u64::from_le_bytes(bytes[8..16].try_into().unwrap_or([0; 8])),
                 );
-                let ns = end.saturating_sub(start) as f64 * t.period_ns;
-                // A zero or absurd span means the counter was unusable;
-                // fall back to the wall clock rather than report nonsense.
-                Ok(if ns > 0.0 && ns / 1e9 < wall * 4.0 {
-                    ns / 1e9
-                } else {
-                    wall
-                })
+                timestamp_seconds(start, end, t.period_ns, wall)
             }
             None => Ok(wall),
         }
@@ -672,6 +674,20 @@ mod hardware_tests {
     use crate::benchmarks::cpu::runner::Observer;
     use crate::benchmarks::gpu::runner::run_gpu;
     use crate::benchmarks::model::{BenchmarkState, LiveReading};
+
+    #[test]
+    fn invalid_gpu_timestamps_fail_instead_of_changing_timing_methods() {
+        assert_eq!(timestamp_seconds(10, 1_000_000_010, 1.0, 1.0).unwrap(), 1.0);
+        for (start, end, period) in [
+            (0, 0, 1.0),
+            (20, 10, 1.0),
+            (0, 5_000_000_000, 1.0),
+            (0, 1, f64::NAN),
+            (0, 1, -1.0),
+        ] {
+            assert!(timestamp_seconds(start, end, period, 1.0).is_err());
+        }
+    }
 
     struct Quiet;
     impl Observer for Quiet {

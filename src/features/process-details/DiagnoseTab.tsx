@@ -23,9 +23,15 @@ export function DiagnoseTab({
   childCount: number;
   events: readonly ActivityEvent[];
 }) {
-  const threads = useRemoteData(() => backend.getThreads(row.pid), `diag-threads:${row.pid}`);
+  const threads = useRemoteData(
+    () => backend.getThreads(row.pid, row.startTime),
+    `diag-threads:${row.pid}:${row.startTime}`,
+  );
   // Open files are unsupported on Windows; that is not an error for diagnosis.
-  const files = useRemoteData(() => backend.getOpenFiles(row.pid), `diag-files:${row.pid}`);
+  const files = useRemoteData(
+    () => backend.getOpenFiles(row.pid, row.startTime),
+    `diag-files:${row.pid}:${row.startTime}`,
+  );
   const findings = useMemo(
     () =>
       diagnose({

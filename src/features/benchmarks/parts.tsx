@@ -64,15 +64,17 @@ export function RunRow({
   label: string;
   onRun: () => void;
 }) {
+  const cancelling = useBenchmarkStore((s) => s.cancelling);
   return (
     <div className="flex flex-wrap items-center gap-3">
       {mine ? (
         <button
           type="button"
           onClick={() => void cancelBenchmark()}
+          disabled={cancelling}
           className="flex h-9 items-center gap-2 rounded-lg border border-border px-4 font-medium hover:bg-surface-2"
         >
-          <Square size="0.875rem" aria-hidden /> Cancel
+          <Square size="0.875rem" aria-hidden /> {cancelling ? "Cancelling…" : "Cancel"}
         </button>
       ) : (
         <button
@@ -90,16 +92,16 @@ export function RunRow({
   );
 }
 
-/** Cancelled or failed outcome of the latest run of this kind. */
+/** Terminal outcome, including completed runs that could not be saved. */
 export function Outcome({ kind }: { kind: BenchmarkKind }) {
   const status = useBenchmarkStore((s) => s.status);
   if (isActive(status) || status.kind !== kind) return null;
   if (status.state === "cancelled" && status.message) {
     return <p className="text-fg-muted">{status.message}</p>;
   }
-  if (status.state === "failed") {
+  if (status.state === "failed" || (status.state === "completed" && status.message)) {
     return (
-      <p role="alert" className="text-crit">
+      <p role="alert" className={status.state === "failed" ? "text-crit" : "text-warn"}>
         {status.message ?? "The benchmark failed."}
       </p>
     );
@@ -122,13 +124,14 @@ const PROGRESS_NOTE: Partial<Record<BenchmarkKind, string>> = {
 
 export function Progress({ kind }: { kind: BenchmarkKind }) {
   const s = useBenchmarkStore((st) => st.status);
+  const cancelling = useBenchmarkStore((st) => st.cancelling);
   const pct = Math.round(s.fraction * 100);
   const dash = <span className="text-fg-subtle">—</span>;
   return (
     <div className="space-y-3 rounded-xl bg-surface-2 p-4">
       <div className="flex items-baseline justify-between gap-3">
         <span role="status" className="font-medium">
-          {s.stage || "Starting"}
+          {cancelling ? "Cancelling…" : s.stage || "Starting"}
         </span>
         <span className="num text-fg-muted">{pct}%</span>
       </div>

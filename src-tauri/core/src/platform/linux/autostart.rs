@@ -117,7 +117,7 @@ fn with_disabled(text: &str, disabled: bool) -> String {
 }
 
 pub struct Dirs {
-    user: PathBuf,
+    pub(super) user: PathBuf,
     system: Vec<PathBuf>,
     /// The running desktop(s), from `XDG_CURRENT_DESKTOP`; empty when unknown.
     desktops: Vec<String>,
@@ -126,21 +126,29 @@ pub struct Dirs {
 impl Dirs {
     pub fn from_env() -> Self {
         let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty());
-        let config = var("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| var("HOME").map(|h| Path::new(&h).join(".config")))
-            .unwrap_or_default();
+        let user = user_directory(
+            var("XDG_CONFIG_HOME").map(PathBuf::from),
+            var("HOME").map(PathBuf::from),
+        );
         let system = var("XDG_CONFIG_DIRS")
             .map(|v| std::env::split_paths(&v).collect())
             .unwrap_or_else(|| vec![PathBuf::from("/etc/xdg")]);
         Self {
-            user: config.join("autostart"),
+            user,
             system: system.into_iter().map(|d| d.join("autostart")).collect(),
             desktops: var("XDG_CURRENT_DESKTOP")
                 .map(|v| v.to_string_lossy().split(':').map(str::to_owned).collect())
                 .unwrap_or_default(),
         }
     }
+}
+
+fn user_directory(config: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
+    config
+        .filter(|p| p.is_absolute())
+        .or_else(|| home.map(|p| p.join(".config")))
+        .unwrap_or_default()
+        .join("autostart")
 }
 
 fn read_dir(dir: &Path) -> Vec<(String, String)> {
@@ -270,6 +278,48 @@ mod tests {
     use super::*;
 
     const APP: &str = "[Desktop Entry]\nType=Application\nName=Dropbox\nExec=dropbox start %u\n";
+
+    #[test]
+    fn custom_xdg_configuration_is_used_and_relative_values_are_ignored() {
+        let home = Some(PathBuf::from("/home/fixture"));
+        assert_eq!(
+            user_directory(Some(PathBuf::from("/tmp/custom-config")), home.clone()),
+            PathBuf::from("/tmp/custom-config/autostart")
+        );
+        assert_eq!(
+            user_directory(Some(PathBuf::from("relative")), home),
+            PathBuf::from("/home/fixture/.config/autostart")
+        );
+    }
+
+    #[test]
+    fn tasky_login_entry_preserves_custom_content_and_system_overrides() {
+        let root = tempfile::tempdir().unwrap();
+        let dirs = Dirs {
+            user: root.path().join("custom-xdg/autostart"),
+            system: vec![root.path().join("system/autostart")],
+            desktops: vec!["KDE".into()],
+        };
+        let id = "Task Manager.desktop";
+        let entry = "[Desktop Entry]\nType=Application\nName=Task Manager\nExec=\"/opt/Task Manager/tasky\" --custom-argument\nOnlyShowIn=GNOME;\n# keep this comment\n";
+        fs::create_dir_all(&dirs.system[0]).unwrap();
+        fs::write(dirs.system[0].join(id), entry).unwrap();
+        assert!(list(&dirs)[0].enabled);
+        assert!(
+            !list(&dirs)[0].runs_here,
+            "registration is independent of desktop eligibility"
+        );
+        set_enabled(&dirs, id, false).unwrap();
+        assert!(!list(&dirs)[0].enabled);
+        set_enabled(&dirs, id, true).unwrap();
+        assert!(list(&dirs)[0].enabled);
+        assert!(!dirs.user.join(id).exists());
+        assert_eq!(fs::read_to_string(dirs.system[0].join(id)).unwrap(), entry);
+        fs::write(dirs.user.join(id), entry).unwrap();
+        set_enabled(&dirs, id, false).unwrap();
+        set_enabled(&dirs, id, true).unwrap();
+        assert_eq!(fs::read_to_string(dirs.user.join(id)).unwrap(), entry);
+    }
 
     #[test]
     fn parses_and_strips_field_codes() {

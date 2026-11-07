@@ -2,7 +2,7 @@ name: Security
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
   schedule:
     - cron: "21 4 * * 1"
   workflow_dispatch:

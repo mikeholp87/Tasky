@@ -36,10 +36,32 @@ impl SettingsStore {
 
     /// Validates, persists and stores `next`. Returns the stored settings.
     pub fn save(&self, next: Settings) -> AppResult<Settings> {
+        let enabled = next.start_with_os;
+        self.save_with_autostart(next, || Ok(enabled), |_| Ok(()))
+    }
+
+    pub fn save_with_autostart(
+        &self,
+        next: Settings,
+        read_autostart: impl FnOnce() -> AppResult<bool>,
+        mut set_autostart: impl FnMut(bool) -> AppResult<()>,
+    ) -> AppResult<Settings> {
         next.validate()?;
         let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
-        if let Some(path) = &self.path {
-            write_atomic(path, &next)?;
+        let previous_autostart = read_autostart()?;
+        let changed = previous_autostart != next.start_with_os;
+        if changed {
+            set_autostart(next.start_with_os)?;
+        }
+        if let Some(path) = &self.path
+            && let Err(error) = write_atomic(path, &next)
+        {
+            if changed && let Err(rollback) = set_autostart(previous_autostart) {
+                return Err(AppError::SystemQueryFailed(format!(
+                    "{error}; restoring the previous login setting also failed: {rollback}"
+                )));
+            }
+            return Err(error);
         }
         *current = next.clone();
         Ok(next)
@@ -85,6 +107,11 @@ mod tests {
     use super::*;
     use tm_core::models::ThemePreference;
 
+    fn save(store: &SettingsStore, next: Settings) -> AppResult<Settings> {
+        let previous = store.get().start_with_os;
+        store.save_with_autostart(next, || Ok(previous), |_| Ok(()))
+    }
+
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("tm-settings-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -97,7 +124,7 @@ mod tests {
         let store = SettingsStore::load(Some(&dir));
         let mut s = store.get();
         s.theme = ThemePreference::Dark;
-        store.save(s).unwrap();
+        save(&store, s).unwrap();
         assert_eq!(
             SettingsStore::load(Some(&dir)).get().theme,
             ThemePreference::Dark
@@ -112,7 +139,7 @@ mod tests {
             refresh_interval_ms: 7,
             ..Settings::default()
         };
-        assert!(store.save(bad).is_err());
+        assert!(save(&store, bad).is_err());
         assert_eq!(store.get(), Settings::default());
     }
 
@@ -123,7 +150,7 @@ mod tests {
         std::fs::write(dir.join(FILE_NAME), vec![b' '; 300 * 1024]).unwrap();
         let store = SettingsStore::load(Some(&dir));
         assert_eq!(store.get(), Settings::default());
-        store.save(Settings::default()).unwrap();
+        save(&store, Settings::default()).unwrap();
         assert!(dir.join("settings.json.invalid").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -136,5 +163,48 @@ mod tests {
         assert_eq!(SettingsStore::load(Some(&dir)).get(), Settings::default());
         assert!(dir.join("settings.json.invalid").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn failed_persistence_restores_actual_autostart_and_memory() {
+        let root = temp_dir("autostart-rollback");
+        std::fs::create_dir_all(&root).unwrap();
+        let blocker = root.join("blocker");
+        std::fs::write(&blocker, "keep").unwrap();
+        let store = SettingsStore::load(Some(&blocker));
+        let enabled = std::cell::Cell::new(false);
+        let next = Settings {
+            start_with_os: true,
+            ..Settings::default()
+        };
+        let result = store.save_with_autostart(
+            next,
+            || Ok(enabled.get()),
+            |value| {
+                enabled.set(value);
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert!(!enabled.get());
+        assert_eq!(store.get(), Settings::default());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn actual_autostart_is_used_even_when_the_stored_preference_disagrees() {
+        let store = SettingsStore::load(None);
+        let enabled = std::cell::Cell::new(true);
+        store
+            .save_with_autostart(
+                Settings::default(),
+                || Ok(enabled.get()),
+                |value| {
+                    enabled.set(value);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert!(!enabled.get());
     }
 }

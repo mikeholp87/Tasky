@@ -6,6 +6,7 @@
 //! Nothing but generated test bytes is ever sent: no files, no system
 //! information, no benchmark history.
 
+use crate::benchmarks::CancelToken;
 use std::io::Read;
 use std::time::{Duration, Instant};
 
@@ -80,7 +81,7 @@ pub trait Session: Send {
 pub trait Provider: Send + Sync {
     fn name(&self) -> &str;
     fn host(&self) -> &str;
-    fn session(&self) -> Result<Box<dyn Session>, NetError>;
+    fn session(&self, cancel: &CancelToken) -> Result<Box<dyn Session>, NetError>;
 }
 
 // ------------------------------------------------------------- Cloudflare
@@ -133,12 +134,13 @@ impl Provider for Cloudflare {
             .trim_start_matches("http://")
     }
 
-    fn session(&self) -> Result<Box<dyn Session>, NetError> {
+    fn session(&self, cancel: &CancelToken) -> Result<Box<dyn Session>, NetError> {
         let config = ureq::Agent::config_builder()
             .max_redirects(0)
             // Status codes are read from the response, so Retry-After is kept.
             .http_status_as_error(false)
             .https_only(!cfg!(test))
+            .timeout_resolve(Some(Duration::from_secs(5)))
             .timeout_connect(Some(Duration::from_secs(5)))
             // A stalled transfer is detected without waiting minutes.
             .timeout_recv_body(Some(self.body_timeout))
@@ -147,8 +149,11 @@ impl Provider for Cloudflare {
             .timeout_global(Some(Duration::from_secs(120)))
             .user_agent("TaskManager-Benchmark")
             .build();
+        let agent: ureq::Agent = config.into();
+        let shutdown = agent.clone();
+        cancel.on_cancel(move || shutdown.shutdown());
         Ok(Box::new(CloudflareSession {
-            agent: config.into(),
+            agent,
             base: self.base.clone(),
             colo: None,
         }))
@@ -275,12 +280,13 @@ impl Session for CloudflareSession {
                 break;
             }
             total += n as u64;
+            let keep_reading = progress(n);
             if total > bytes {
                 return Err(NetError::BadResponse(
                     "download exceeds the requested size".into(),
                 ));
             }
-            if !progress(n) {
+            if !keep_reading {
                 // Stopped on purpose; dropping the reader closes the transfer.
                 return Ok(());
             }
@@ -375,6 +381,9 @@ pub(crate) mod test_server {
         ShortBody,
         /// Sends headers, then nothing.
         Stall,
+        StallHeaders,
+        StallDownload,
+        StallUpload,
         /// Answers with something that is not HTTP.
         Garbage,
         /// Always answers 503.
@@ -453,6 +462,10 @@ pub(crate) mod test_server {
                     length = v.trim().parse().unwrap_or(0);
                 }
             }
+            if mode == Mode::StallHeaders || (mode == Mode::StallUpload && method == "POST") {
+                stall(stop);
+                return Ok(());
+            }
             match mode {
                 Mode::Garbage => return out.write_all(b"this is not http\r\n\r\n"),
                 Mode::RateLimited => {
@@ -490,11 +503,8 @@ pub(crate) mod test_server {
                 out,
                 "HTTP/1.1 200 OK\r\nContent-Length: {wanted}\r\ncolo: TST\r\n\r\n"
             )?;
-            if mode == Mode::Stall {
-                let until = Instant::now() + Duration::from_secs(60);
-                while Instant::now() < until && !stop.load(Ordering::Relaxed) {
-                    std::thread::sleep(Duration::from_millis(100));
-                }
+            if mode == Mode::Stall || (mode == Mode::StallDownload && wanted > 0) {
+                stall(stop);
                 return Ok(());
             }
             let send = if mode == Mode::ShortBody {
@@ -519,6 +529,13 @@ pub(crate) mod test_server {
             if mode == Mode::ShortBody {
                 return Ok(());
             }
+        }
+    }
+
+    fn stall(stop: &AtomicBool) {
+        let until = Instant::now() + Duration::from_secs(60);
+        while Instant::now() < until && !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
 }
@@ -555,7 +572,7 @@ mod security_tests {
         let (url, thread) = server(response.into_bytes());
         assert!(
             Cloudflare::with_base(&url, Duration::from_secs(3))
-                .session()
+                .session(&CancelToken::new())
                 .unwrap()
                 .ping()
                 .is_err()
@@ -575,7 +592,7 @@ mod security_tests {
             response.extend([b'x'; 4096]);
             let (url, thread) = server(response);
             let mut session = Cloudflare::with_base(&url, Duration::from_secs(3))
-                .session()
+                .session(&CancelToken::new())
                 .unwrap();
             let mut reported = 0;
             let result = if ping {
@@ -587,7 +604,7 @@ mod security_tests {
                 })
             };
             assert!(matches!(result, Err(NetError::BadResponse(_))));
-            assert!(reported <= 1024);
+            assert_eq!(reported, if ping { 0 } else { 1025 });
             thread.join().unwrap();
         }
     }
@@ -595,7 +612,7 @@ mod security_tests {
     #[test]
     fn rejects_oversized_requests_before_contacting_any_server() {
         let provider = Cloudflare::with_base("http://127.0.0.1:1", Duration::from_secs(1));
-        let mut session = provider.session().unwrap();
+        let mut session = provider.session(&CancelToken::new()).unwrap();
         assert!(matches!(
             session.download(MAX_TRANSFER_BYTES + 1, &mut |_| true),
             Err(NetError::BadResponse(_))

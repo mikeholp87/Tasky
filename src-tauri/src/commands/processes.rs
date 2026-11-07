@@ -16,8 +16,9 @@ use tm_core::monitoring::details;
 pub async fn get_process_details(
     state: State<'_, AppState>,
     pid: i64,
+    start_time: Option<u64>,
 ) -> AppResult<ProcessDetails> {
     let pid = validate::pid(pid)?;
     let engine = Arc::clone(&state.engine);
-    super::blocking::run(move || details::process_details(&engine, pid)).await
+    super::blocking::run(move || details::process_details(&engine, pid, start_time)).await
 }

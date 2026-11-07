@@ -54,6 +54,7 @@ const bytesAxis = (v: number) => formatBytes(v);
 
 export function ProcessDetailsPage() {
   const pid = useUiStore((s) => s.selectedPid);
+  const startTime = useUiStore((s) => s.selectedStartTime);
   const navigate = useUiStore((s) => s.navigate);
 
   if (pid == null) {
@@ -75,11 +76,11 @@ export function ProcessDetailsPage() {
     );
   }
   // Keyed so all local state resets when switching processes.
-  return <ProcessDetailsView key={pid} pid={pid} />;
+  return <ProcessDetailsView key={`${pid}:${startTime}`} pid={pid} startTime={startTime} />;
 }
 
-function ProcessDetailsView({ pid }: { pid: number }) {
-  const { live, details, history, loading, error, refresh } = useProcessDetails(pid);
+function ProcessDetailsView({ pid, startTime }: { pid: number; startTime: number | null }) {
+  const { live, details, history, loading, error, refresh } = useProcessDetails(pid, startTime);
   const navigate = useUiStore((s) => s.navigate);
   const openProcess = useUiStore((s) => s.openProcess);
   const rows = useMetricsStore((s) => s.tick?.processes);
@@ -201,22 +202,22 @@ function ProcessDetailsView({ pid }: { pid: number }) {
           <ConnectionsCard connections={details?.connections} loading={loading} />
         )}
         {/* Inspection tabs mount only when opened, so nothing is read until then. */}
-        {tab === "files" && (
+        {tab === "files" && !exited && (
           <Card>
-            <OpenFilesTab pid={pid} />
+            <OpenFilesTab pid={pid} startTime={row.startTime} />
           </Card>
         )}
-        {tab === "modules" && (
+        {tab === "modules" && !exited && (
           <Card>
-            <ModulesTab pid={pid} windows={platform === "windows"} />
+            <ModulesTab pid={pid} startTime={row.startTime} windows={platform === "windows"} />
           </Card>
         )}
-        {tab === "maps" && (
+        {tab === "maps" && !exited && (
           <Card>
-            <MemoryMapTab pid={pid} />
+            <MemoryMapTab pid={pid} startTime={row.startTime} />
           </Card>
         )}
-        {tab === "diagnose" && (
+        {tab === "diagnose" && !exited && (
           <Card>
             <DiagnoseTab
               row={row}
@@ -227,9 +228,9 @@ function ProcessDetailsView({ pid }: { pid: number }) {
             />
           </Card>
         )}
-        {tab === "threads" && (
+        {tab === "threads" && !exited && (
           <Card>
-            <ThreadsTab pid={pid} linux={platform === "linux"} />
+            <ThreadsTab pid={pid} startTime={row.startTime} linux={platform === "linux"} />
           </Card>
         )}
       </div>

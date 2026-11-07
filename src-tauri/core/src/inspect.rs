@@ -5,10 +5,42 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use crate::errors::{AppError, AppResult};
 use crate::models::{
     MemoryKindTotal, MemoryMap, MemoryRegion, MemoryRegionKind, ModuleInfo, ProcessState,
     ThreadInfo, ThreadList,
 };
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+
+/// Numeric-PID reads must not return a replacement process's data.
+pub fn for_process<T>(
+    pid: u32,
+    start_time: u64,
+    read: impl FnOnce() -> AppResult<T>,
+) -> AppResult<T> {
+    if start_time == 0 {
+        return Err(AppError::ActionUnavailable(
+            "The process start time is unavailable, so its identity cannot be verified.".into(),
+        ));
+    }
+    let mut system = System::new().map_err(|e| AppError::SystemQueryFailed(e.to_string()))?;
+    let mut check = || {
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
+            true,
+            ProcessRefreshKind::nothing().without_tasks(),
+        );
+        system
+            .process(Pid::from_u32(pid))
+            .filter(|p| p.start_time() == start_time)
+            .map(|_| ())
+            .ok_or(AppError::ProcessNotFound(pid))
+    };
+    check()?;
+    let result = read();
+    check()?;
+    result
+}
 
 /// Row caps keep a pathological process (hundreds of thousands of mappings)
 /// from producing an unusable IPC payload.
@@ -188,9 +220,11 @@ pub struct RawThread {
     pub tid: u32,
     pub name: Option<String>,
     pub state: Option<ProcessState>,
-    pub cpu_time_ms: u64,
+    pub cpu_time_ms: Option<u64>,
     pub priority: Option<i32>,
     pub start_time: Option<u64>,
+    /// Native creation counter preserves identity within the same display second.
+    pub start_id: Option<u64>,
     pub processor: Option<u32>,
     pub wait_channel: Option<String>,
 }
@@ -207,7 +241,7 @@ struct Last {
     pid: u32,
     process_start: u64,
     at: Instant,
-    cpu_ms: HashMap<u32, u64>,
+    cpu_ms: HashMap<(u32, u64), u64>,
 }
 
 impl ThreadSampler {
@@ -234,17 +268,21 @@ impl ThreadSampler {
         let mut threads: Vec<ThreadInfo> = raw
             .into_iter()
             .map(|t| {
-                cpu_ms.insert(t.tid, t.cpu_time_ms);
-                let cpu_percent = previous
-                    .as_ref()
-                    .zip(elapsed_ms)
+                let reading = t
+                    .start_id
+                    .zip(t.cpu_time_ms)
+                    .map(|(start, cpu)| ((t.tid, start), cpu));
+                if let Some((identity, cpu)) = reading {
+                    cpu_ms.insert(identity, cpu);
+                }
+                let cpu_percent = reading
+                    .zip(previous.as_ref().zip(elapsed_ms))
                     // Too short an interval gives meaningless ratios.
-                    .filter(|(_, e)| *e >= 100.0)
-                    .map(|(l, e)| {
-                        // A thread new since the last sample used all its time in this window.
-                        let before = l.cpu_ms.get(&t.tid).copied().unwrap_or(0);
-                        let used = t.cpu_time_ms.saturating_sub(before) as f64;
-                        (used / e * 100.0 / cores.max(1) as f64).clamp(0.0, 100.0) as f32
+                    .filter(|(_, (_, e))| *e >= 100.0)
+                    .and_then(|((identity, cpu), (l, e))| {
+                        let before = l.cpu_ms.get(&identity)?;
+                        let used = cpu.checked_sub(*before)? as f64;
+                        Some((used / e * 100.0 / cores.max(1) as f64).clamp(0.0, 100.0) as f32)
                     });
                 ThreadInfo {
                     tid: t.tid,
@@ -289,6 +327,46 @@ impl ThreadSampler {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn unverified_process_identities_never_run_the_inspector() {
+        for start_time in [0, u64::MAX] {
+            let mut inspected = false;
+            assert!(
+                for_process(std::process::id(), start_time, || {
+                    inspected = true;
+                    Ok(())
+                })
+                .is_err()
+            );
+            assert!(!inspected);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_process_that_exits_during_inspection_cannot_return_data() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let mut system = System::new().unwrap();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
+            true,
+            ProcessRefreshKind::nothing().without_tasks(),
+        );
+        let start_time = system.process(Pid::from_u32(pid)).unwrap().start_time();
+        let result = for_process(pid, start_time, || {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            Ok("must not escape")
+        });
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(matches!(result, Err(AppError::ProcessNotFound(found)) if found == pid));
+    }
 
     fn region(start: u64, end: u64, perms: &str, path: Option<&str>, exe: Option<&str>) -> Region {
         Region {
@@ -408,9 +486,10 @@ mod tests {
             tid,
             name: None,
             state: Some(ProcessState::Running),
-            cpu_time_ms,
+            cpu_time_ms: Some(cpu_time_ms),
             priority: None,
-            start_time: None,
+            start_time: Some(1),
+            start_id: Some(1),
             processor: None,
             wait_channel: None,
         }
@@ -436,8 +515,11 @@ mod tests {
         let by_tid = |tid| second.threads.iter().find(|t| t.tid == tid).unwrap();
         assert!((by_tid(1).cpu_percent.unwrap() - 20.0).abs() < 0.01);
         assert_eq!(by_tid(2).cpu_percent, Some(0.0));
-        // A thread that appeared in the window is charged what it used.
-        assert!((by_tid(3).cpu_percent.unwrap() - 2.5).abs() < 0.01);
+        assert_eq!(
+            by_tid(3).cpu_percent,
+            None,
+            "a new thread needs its own baseline"
+        );
         assert_eq!(second.threads[0].tid, 1, "busiest thread first");
     }
 
@@ -468,5 +550,53 @@ mod tests {
             1,
         );
         assert!((later.threads[0].cpu_percent.unwrap() - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn unavailable_cpu_and_reused_threads_never_create_false_baselines() {
+        let mut sampler = ThreadSampler::default();
+        let now = Instant::now();
+        let mut unavailable = raw(1, 0);
+        unavailable.cpu_time_ms = None;
+        sampler.sample(7, 100, vec![unavailable.clone()], now, 0, 1);
+        let absent = sampler.sample(
+            7,
+            100,
+            vec![unavailable],
+            now + Duration::from_secs(1),
+            1_000,
+            1,
+        );
+        assert_eq!(absent.threads[0].cpu_percent, None);
+        assert_eq!(absent.threads[0].cpu_time_ms, None);
+        let first = sampler.sample(
+            7,
+            100,
+            vec![raw(1, 50_000)],
+            now + Duration::from_secs(2),
+            2_000,
+            1,
+        );
+        assert_eq!(first.threads[0].cpu_percent, None);
+        let known = sampler.sample(
+            7,
+            100,
+            vec![raw(1, 50_100)],
+            now + Duration::from_secs(3),
+            3_000,
+            1,
+        );
+        assert_eq!(known.threads[0].cpu_percent, Some(10.0));
+        let mut replacement = raw(1, 1_000);
+        replacement.start_id = Some(2);
+        let reused = sampler.sample(
+            7,
+            100,
+            vec![replacement],
+            now + Duration::from_secs(4),
+            4_000,
+            1,
+        );
+        assert_eq!(reused.threads[0].cpu_percent, None);
     }
 }

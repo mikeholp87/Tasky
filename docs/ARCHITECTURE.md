@@ -45,8 +45,9 @@ monitoring is paused it blocks indefinitely, using no CPU.
 
 Each tick:
 
-1. `Collector::sample` refreshes CPU, memory, disks (I/O every tick, capacity
-   every 30 s), networks and processes, and measures the real elapsed time.
+1. `Collector::sample` refreshes CPU, memory, disks (I/O and capacity every
+   tick, mount list every 30 s), networks and processes, and measures the real
+   elapsed time.
 2. `AlertEvaluator` checks rules against the sample.
 3. Results are published to shared state under short write locks: latest
    tick, system history ring, per-process history ring, alert log.
@@ -172,8 +173,9 @@ debug logging and autostart.
   `monitoring/`, run `npm run gen:types`, render them in a feature folder.
 - **New platform capability:** add the function to every `platform/*`
   module (stub where unsupported) and re-export it from `platform/mod.rs`.
-- **GPU, temperatures, battery:** sysinfo's `component` and `gpu` features
-  are deliberately disabled today; enabling them is a collector change plus
-  new model fields.
+- **GPU and temperatures:** sysinfo's `component` and `gpu` features are enabled.
+  `monitoring/sensors.rs` refreshes readings periodically; System Information
+  displays them. Battery information is collected on demand through the platform
+  layer. Adding live history requires extending the bounded history models.
 - **Process history persistence (SQLite):** subscribe a new `TickSink` that
   writes sampled rows with a retention policy. The engine needs no changes.

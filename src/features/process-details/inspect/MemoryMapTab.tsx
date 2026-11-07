@@ -12,12 +12,12 @@ import { REGION_COLOR, REGION_LABEL, filterRegions, segments } from "./logic";
 const ROW_HEIGHT = 24;
 const COLUMNS = "grid-cols-[9.375rem_9.375rem_4.375rem_5rem_8.75rem_1fr]";
 
-export function MemoryMapTab({ pid }: { pid: number }) {
+export function MemoryMapTab({ pid, startTime }: { pid: number; startTime: number }) {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<MemoryRegionKind | "all">("all");
   const { data, error, loading, refresh } = useRemoteData(
-    () => backend.getMemoryMap(pid),
-    `maps:${pid}`,
+    () => backend.getMemoryMap(pid, startTime),
+    `maps:${pid}:${startTime}`,
   );
   const shown = useMemo(() => filterRegions(data?.regions ?? [], kind, query), [data, kind, query]);
   return (

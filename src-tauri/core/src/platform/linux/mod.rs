@@ -22,6 +22,16 @@ pub fn startup_items() -> crate::errors::AppResult<Vec<crate::models::StartupIte
     Ok(autostart::list(&autostart::Dirs::from_env()))
 }
 
+pub fn startup_directory() -> crate::errors::AppResult<std::path::PathBuf> {
+    let directory = autostart::Dirs::from_env().user;
+    if !directory.is_absolute() {
+        return Err(crate::errors::AppError::InvalidArgument(
+            "The startup directory must be absolute.".into(),
+        ));
+    }
+    Ok(directory)
+}
+
 pub fn set_startup_enabled(id: &str, enabled: bool) -> crate::errors::AppResult<()> {
     autostart::set_enabled(&autostart::Dirs::from_env(), id, enabled)
 }

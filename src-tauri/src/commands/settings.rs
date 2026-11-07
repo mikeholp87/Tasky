@@ -3,35 +3,30 @@
 use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Runtime, State};
-use tauri_plugin_autostart::ManagerExt;
-use tm_core::errors::{AppError, AppResult};
+use tm_core::errors::AppResult;
 use tm_core::models::{AlertEvent, MonitoringState, Settings};
 use tm_core::monitoring::engine::MAX_HISTORY_POINTS;
 
 use crate::state::AppState;
 
 #[tauri::command]
-pub fn get_settings(state: State<'_, AppState>) -> Settings {
-    state.settings.get()
+pub fn get_settings<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> AppResult<Settings> {
+    let mut settings = state.settings.get();
+    settings.start_with_os = crate::autostart::is_enabled(&app)?;
+    Ok(settings)
 }
 
-/// Validates, applies and persists new settings. Side effects that can fail
-/// (autostart registration) run before saving, so a failure leaves both the
-/// system and the stored settings unchanged.
+/// Rolls autostart back if persistence fails; one store lock covers both changes.
 #[tauri::command]
 pub fn update_settings<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     settings: Settings,
 ) -> AppResult<Settings> {
-    settings.validate()?;
-    let previous = state.settings.get();
-    if previous.start_with_os != settings.start_with_os {
-        set_autostart(&app, settings.start_with_os)?;
-    }
-    let saved = state.settings.save(settings)?;
-    apply_runtime(&state, &saved);
-    Ok(saved)
+    save_settings(&app, &state, settings)
 }
 
 #[tauri::command]
@@ -39,12 +34,20 @@ pub fn reset_settings<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
 ) -> AppResult<Settings> {
-    let defaults = Settings::default();
-    if state.settings.get().start_with_os {
-        set_autostart(&app, false)?;
-    }
-    let saved = state.settings.save(defaults)?;
-    apply_runtime(&state, &saved);
+    save_settings(&app, &state, Settings::default())
+}
+
+pub fn save_settings<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    settings: Settings,
+) -> AppResult<Settings> {
+    let saved = state.settings.save_with_autostart(
+        settings,
+        || crate::autostart::is_enabled(app),
+        |enabled| crate::autostart::set(app, enabled),
+    )?;
+    apply_runtime(state, &saved);
     Ok(saved)
 }
 
@@ -78,21 +81,6 @@ pub fn apply_runtime(state: &AppState, s: &Settings) {
 pub fn history_points(s: &Settings) -> usize {
     let per_minute = 60_000 / s.refresh_interval_ms.max(1) as usize;
     (s.history_minutes as usize * per_minute).min(MAX_HISTORY_POINTS)
-}
-
-fn set_autostart<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> AppResult<()> {
-    let manager = app.autolaunch();
-    let result = if enabled {
-        manager.enable()
-    } else {
-        manager.disable()
-    };
-    result.map_err(|e| {
-        AppError::PermissionDenied(format!(
-            "Could not {} starting with the operating system: {e}",
-            if enabled { "enable" } else { "disable" }
-        ))
-    })
 }
 
 #[cfg(test)]

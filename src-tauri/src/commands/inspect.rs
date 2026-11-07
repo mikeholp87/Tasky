@@ -6,7 +6,7 @@ use super::blocking::run as blocking;
 use std::sync::Arc;
 use std::time::Instant;
 
-use tauri::{AppHandle, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_dialog::DialogExt;
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::{
@@ -42,7 +42,14 @@ pub async fn set_startup_enabled(app: AppHandle, id: String, enabled: bool) -> A
                 id.escape_debug()
             ),
         )?;
-        platform::set_startup_enabled(&id, enabled)
+        if id == crate::autostart::entry_id(&app) {
+            let state = app.state::<AppState>();
+            let mut settings = state.settings.get();
+            settings.start_with_os = enabled;
+            super::settings::save_settings(&app, &state, settings).map(|_| ())
+        } else {
+            platform::set_startup_enabled(&id, enabled)
+        }
     })
     .await
 }
@@ -54,9 +61,10 @@ pub async fn list_sockets() -> AppResult<SocketList> {
 }
 
 #[tauri::command]
-pub async fn get_open_files(pid: i64) -> AppResult<OpenFileList> {
+pub async fn get_open_files(pid: i64, start_time: u64) -> AppResult<OpenFileList> {
     let pid = validate::pid(pid)?;
-    blocking(move || platform::open_files(pid)).await
+    blocking(move || tm_core::inspect::for_process(pid, start_time, || platform::open_files(pid)))
+        .await
 }
 
 /// Which processes use a file (or, on Linux, a directory).
@@ -67,32 +75,33 @@ pub async fn find_file_users(path: String) -> AppResult<FileUserList> {
 }
 
 #[tauri::command]
-pub async fn get_memory_map(pid: i64) -> AppResult<MemoryMap> {
+pub async fn get_memory_map(pid: i64, start_time: u64) -> AppResult<MemoryMap> {
     let pid = validate::pid(pid)?;
-    blocking(move || platform::memory_map(pid)).await
+    blocking(move || tm_core::inspect::for_process(pid, start_time, || platform::memory_map(pid)))
+        .await
 }
 
 #[tauri::command]
-pub async fn get_modules(pid: i64) -> AppResult<Vec<ModuleInfo>> {
+pub async fn get_modules(pid: i64, start_time: u64) -> AppResult<Vec<ModuleInfo>> {
     let pid = validate::pid(pid)?;
-    blocking(move || platform::modules(pid)).await
+    blocking(move || tm_core::inspect::for_process(pid, start_time, || platform::modules(pid)))
+        .await
 }
 
 /// Threads with CPU percentages. The percentage needs two readings, so the
 /// UI polls this while the Threads tab is visible; the backend keeps the
 /// previous reading of one process only.
 #[tauri::command]
-pub async fn get_threads(state: State<'_, AppState>, pid: i64) -> AppResult<ThreadList> {
+pub async fn get_threads(
+    state: State<'_, AppState>,
+    pid: i64,
+    start_time: u64,
+) -> AppResult<ThreadList> {
     let pid = validate::pid(pid)?;
     let engine = Arc::clone(&state.engine);
     let sampler = Arc::clone(&state.threads);
     blocking(move || {
-        // The start time identifies this instance of the PID.
-        let start_time = engine
-            .process(pid)
-            .ok_or(AppError::ProcessNotFound(pid))?
-            .start_time;
-        let raw = platform::threads(pid)?;
+        let raw = tm_core::inspect::for_process(pid, start_time, || platform::threads(pid))?;
         let cores = engine.static_info().logical_core_count as usize;
         let mut sampler = sampler.lock().unwrap_or_else(|e| e.into_inner());
         Ok(sampler.sample(pid, start_time, raw, Instant::now(), unix_millis(), cores))

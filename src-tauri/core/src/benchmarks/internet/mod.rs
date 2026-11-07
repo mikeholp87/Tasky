@@ -105,8 +105,12 @@ pub fn plan(provider: &dyn Provider, profile: BenchmarkProfile) -> InternetPlan 
     }
 }
 
-fn fail(host: &str, e: &NetError) -> BenchmarkError {
-    BenchmarkError::Failed(e.message(host))
+fn fail(host: &str, e: &NetError, cancel: &CancelToken) -> BenchmarkError {
+    if cancel.is_cancelled() {
+        BenchmarkError::Cancelled
+    } else {
+        BenchmarkError::Failed(e.message(host))
+    }
 }
 
 fn latency_stats(ms: &[f64]) -> Option<LatencyStats> {
@@ -135,14 +139,19 @@ fn idle_latency(
     observer: &dyn Observer,
 ) -> Result<(Vec<f64>, Option<String>), BenchmarkError> {
     let host = provider.host();
-    let mut session = provider.session().map_err(|e| fail(host, &e))?;
-    session.ping().map_err(|e| fail(host, &e))?;
+    if cancel.is_cancelled() {
+        return Err(BenchmarkError::Cancelled);
+    }
+    let mut session = provider
+        .session(cancel)
+        .map_err(|e| fail(host, &e, cancel))?;
+    session.ping().map_err(|e| fail(host, &e, cancel))?;
     let mut rtts = Vec::with_capacity(cfg.idle_pings);
     for i in 0..cfg.idle_pings {
         if cancel.is_cancelled() {
             return Err(BenchmarkError::Cancelled);
         }
-        let rtt = session.ping().map_err(|e| fail(host, &e))?;
+        let rtt = session.ping().map_err(|e| fail(host, &e, cancel))?;
         rtts.push(rtt.as_secs_f64() * 1000.0);
         observer.stage(
             BenchmarkState::Running,
@@ -161,6 +170,7 @@ fn transfer(
     cfg: &InternetConfig,
     upload: bool,
     cancel: &CancelToken,
+    session_bytes: &AtomicU64,
     observer: &dyn Observer,
     span: (f32, f32),
 ) -> Result<TransferResult, BenchmarkError> {
@@ -172,6 +182,9 @@ fn transfer(
     };
     let label = if upload { "Upload" } else { "Download" };
     let total = AtomicU64::new(0);
+    let phase = CancelToken::new();
+    let phase_cancel = phase.clone();
+    cancel.on_cancel(move || phase_cancel.cancel());
     let stop = AtomicBool::new(false);
     let failure: Mutex<Option<NetError>> = Mutex::new(None);
     let pings: Mutex<Vec<(f64, f64)>> = Mutex::new(Vec::new());
@@ -180,23 +193,28 @@ fn transfer(
     let planned = (cfg.ramp + cfg.window).as_secs_f64();
 
     let record = |e: NetError| {
-        failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get_or_insert(e);
+        let mut failure = failure.lock().unwrap_or_else(PoisonError::into_inner);
+        let interrupted =
+            phase.is_cancelled() && matches!(e, NetError::Unreachable(_) | NetError::Timeout);
+        if !interrupted {
+            failure.get_or_insert(e);
+        }
         stop.store(true, Ordering::Relaxed);
+        drop(failure);
+        phase.cancel();
     };
 
     std::thread::scope(|scope| {
         for _ in 0..conns {
             scope.spawn(|| {
-                let mut session = match provider.session() {
+                let mut session = match provider.session(&phase) {
                     Ok(s) => s,
                     Err(e) => return record(e),
                 };
                 while !stop.load(Ordering::Relaxed) {
                     let mut count = |n: usize| {
                         let t = total.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
+                        session_bytes.fetch_add(n as u64, Ordering::Relaxed);
                         if t >= cap || cancel.is_cancelled() {
                             stop.store(true, Ordering::Relaxed);
                         }
@@ -215,7 +233,7 @@ fn transfer(
         }
         // Latency while the link is busy, on its own connection.
         scope.spawn(|| {
-            let Ok(mut session) = provider.session() else {
+            let Ok(mut session) = provider.session(&phase) else {
                 return;
             };
             if session.ping().is_err() {
@@ -256,6 +274,7 @@ fn transfer(
             }
         }
         stop.store(true, Ordering::Relaxed);
+        phase.cancel();
     });
 
     if cancel.is_cancelled() {
@@ -266,7 +285,7 @@ fn transfer(
         .unwrap_or_else(PoisonError::into_inner)
         .take()
     {
-        return Err(fail(host, &e));
+        return Err(fail(host, &e, cancel));
     }
     let elapsed = samples.last().map_or(0.0, |s| s.0);
     // A very fast link reaches the data cap before the ramp-up is over; then
@@ -313,12 +332,29 @@ pub fn run_internet(
     cfg: &InternetConfig,
     path: NetworkPath,
     cancel: &CancelToken,
+    session_bytes: &AtomicU64,
     observer: &dyn Observer,
 ) -> Result<InternetResult, BenchmarkError> {
     observer.stage(BenchmarkState::Preflight, "Connecting", 0.0);
     let (rtts, location) = idle_latency(provider, cfg, cancel, observer)?;
-    let download = transfer(provider, cfg, false, cancel, observer, (0.1, 0.55))?;
-    let upload = transfer(provider, cfg, true, cancel, observer, (0.55, 1.0))?;
+    let download = transfer(
+        provider,
+        cfg,
+        false,
+        cancel,
+        session_bytes,
+        observer,
+        (0.1, 0.55),
+    )?;
+    let upload = transfer(
+        provider,
+        cfg,
+        true,
+        cancel,
+        session_bytes,
+        observer,
+        (0.55, 1.0),
+    )?;
     let mut notes = vec![
         "Throughput is bytes actually moved, sampled in short windows after the first seconds of ramp-up.".to_owned(),
         "Packet loss is not measured: HTTP cannot tell a lost packet from a retransmission.".to_owned(),
@@ -392,6 +428,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
+            &AtomicU64::new(0),
             &quiet(),
         )
         .expect("runs");
@@ -424,6 +461,7 @@ mod tests {
             &cfg,
             PATH,
             &CancelToken::new(),
+            &AtomicU64::new(0),
             &quiet(),
         )
         .expect("runs");
@@ -450,6 +488,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
+            &AtomicU64::new(0),
             &quiet(),
         )
         .expect_err("fails");
@@ -468,6 +507,7 @@ mod tests {
                 &InternetConfig::test(),
                 PATH,
                 &CancelToken::new(),
+                &AtomicU64::new(0),
                 &quiet(),
             )
             .expect_err("fails");
@@ -484,6 +524,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
+            &AtomicU64::new(0),
             &quiet(),
         )
         .expect_err("fails");
@@ -503,6 +544,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
+            &AtomicU64::new(0),
             &quiet(),
         )
         .expect_err("fails");
@@ -520,6 +562,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
+            &AtomicU64::new(0),
             &quiet(),
         )
         .expect_err("fails");
@@ -538,7 +581,14 @@ mod tests {
         let mut cfg = InternetConfig::test();
         cfg.window = Duration::from_secs(30);
         let started = Instant::now();
-        let r = run_internet(&provider(&server.base), &cfg, PATH, &cancel, &quiet());
+        let r = run_internet(
+            &provider(&server.base),
+            &cfg,
+            PATH,
+            &cancel,
+            &AtomicU64::new(0),
+            &quiet(),
+        );
         t.join().unwrap();
         assert!(matches!(r, Err(BenchmarkError::Cancelled)), "{r:?}");
         assert!(
@@ -546,6 +596,127 @@ mod tests {
             "{:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn cancellation_interrupts_stalled_headers_downloads_and_uploads() {
+        for mode in [Mode::StallHeaders, Mode::StallDownload, Mode::StallUpload] {
+            let server = start(mode, 0);
+            let cancel = CancelToken::new();
+            let token = cancel.clone();
+            let stop = std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(700));
+                token.cancel();
+            });
+            let mut cfg = InternetConfig::test();
+            cfg.idle_pings = 1;
+            cfg.max_down = 10 * MB;
+            cfg.chunk_up = 50 * MB;
+            cfg.window = Duration::from_secs(30);
+            let started = Instant::now();
+            let result = run_internet(
+                &provider(&server.base),
+                &cfg,
+                PATH,
+                &cancel,
+                &AtomicU64::new(0),
+                &quiet(),
+            );
+            stop.join().unwrap();
+            assert!(
+                matches!(result, Err(BenchmarkError::Cancelled)),
+                "{result:?}"
+            );
+            assert!(
+                started.elapsed() < Duration::from_secs(3),
+                "cancellation took {:?}",
+                started.elapsed()
+            );
+        }
+    }
+
+    #[test]
+    fn phase_deadline_interrupts_stalled_workers_and_loaded_latency() {
+        let server = start(Mode::StallHeaders, 0);
+        let mut cfg = InternetConfig::test();
+        cfg.ramp = Duration::ZERO;
+        cfg.window = Duration::from_millis(300);
+        let started = Instant::now();
+        let result = transfer(
+            &provider(&server.base),
+            &cfg,
+            false,
+            &CancelToken::new(),
+            &AtomicU64::new(0),
+            &quiet(),
+            (0.0, 1.0),
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("did not run long enough")
+        );
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn failed_and_cancelled_transfers_still_consume_the_session_allowance() {
+        struct Failing {
+            cancel: CancelToken,
+            cancelled: bool,
+        }
+        impl provider::Provider for Failing {
+            fn name(&self) -> &str {
+                "test"
+            }
+            fn host(&self) -> &str {
+                "local fixture"
+            }
+            fn session(&self, _: &CancelToken) -> Result<Box<dyn provider::Session>, NetError> {
+                Ok(Box::new(Failing {
+                    cancel: self.cancel.clone(),
+                    cancelled: self.cancelled,
+                }))
+            }
+        }
+        impl provider::Session for Failing {
+            fn ping(&mut self) -> Result<Duration, NetError> {
+                Ok(Duration::from_millis(1))
+            }
+            fn download(
+                &mut self,
+                _: u64,
+                progress: &mut dyn FnMut(usize) -> bool,
+            ) -> Result<(), NetError> {
+                progress(65_536);
+                if self.cancelled {
+                    self.cancel.cancel();
+                }
+                Err(NetError::BadResponse(
+                    "fixture failed after transferring data".into(),
+                ))
+            }
+            fn upload(&mut self, _: u64, _: &mut dyn FnMut(usize) -> bool) -> Result<(), NetError> {
+                unreachable!()
+            }
+        }
+        for (cancelled, cap) in [(false, 400 * MB), (false, 65_536), (true, 400 * MB)] {
+            let cancel = CancelToken::new();
+            let provider = Failing {
+                cancel: cancel.clone(),
+                cancelled,
+            };
+            let used = AtomicU64::new(0);
+            let mut cfg = InternetConfig::test();
+            cfg.down_connections = 1;
+            cfg.max_down = cap;
+            cfg.idle_pings = 1;
+            let result = run_internet(&provider, &cfg, PATH, &cancel, &used, &quiet());
+            assert!(result.is_err());
+            assert_eq!(matches!(result, Err(BenchmarkError::Cancelled)), cancelled);
+            assert_eq!(used.load(Ordering::Relaxed), 65_536);
+        }
     }
 
     #[test]

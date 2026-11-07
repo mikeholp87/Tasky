@@ -49,6 +49,7 @@ let lastSaved: Settings = DEFAULT_SETTINGS;
 /** Counts local edits, so a failed save can tell whether newer edits exist. */
 let edits = 0;
 let queue: Promise<void> = Promise.resolve();
+let resetGeneration = 0;
 
 async function save(): Promise<void> {
   const sent = edits;
@@ -65,7 +66,8 @@ async function save(): Promise<void> {
 
 /** One save at a time, in order, so a slow earlier save cannot land last. */
 function persist(): Promise<void> {
-  queue = queue.then(save);
+  const generation = resetGeneration;
+  queue = queue.then(() => (generation === resetGeneration ? save() : undefined));
   return queue;
 }
 
@@ -107,17 +109,23 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   reset: async () => {
     clearTimeout(saveTimer);
     saveTimer = undefined;
-    edits += 1;
+    const sent = ++edits;
+    resetGeneration += 1;
+    set(DEFAULT_SETTINGS);
     if (!isBackendAvailable()) {
       set(DEFAULT_SETTINGS);
       return;
     }
-    try {
-      const fresh = await backend.resetSettings();
-      lastSaved = fresh;
-      set(fresh);
-    } catch (e) {
-      toast.error(toAppError(e).message);
-    }
+    queue = queue.then(async () => {
+      try {
+        const fresh = await backend.resetSettings();
+        lastSaved = fresh;
+        if (edits === sent) set(fresh);
+      } catch (e) {
+        if (edits === sent) set(lastSaved);
+        toast.error(toAppError(e).message);
+      }
+    });
+    await queue;
   },
 }));

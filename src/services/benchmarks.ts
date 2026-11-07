@@ -1,6 +1,6 @@
 /** Benchmark lifecycle: backend events into the store, and the run controls. */
 import { listen } from "@tauri-apps/api/event";
-import { useBenchmarkStore } from "@/stores/benchmarkStore";
+import { isActive, useBenchmarkStore } from "@/stores/benchmarkStore";
 import { toast } from "@/stores/toastStore";
 import type { BenchmarkKind, BenchmarkProfile, BenchmarkResult, BenchmarkStatus } from "@/types";
 import { backend, isBackendAvailable, toAppError } from "./ipc";
@@ -80,9 +80,14 @@ export async function loadDiskTargets(): Promise<void> {
 }
 
 export async function cancelBenchmark(): Promise<void> {
+  const store = useBenchmarkStore.getState();
+  if (!isActive(store.status)) return;
+  const runId = store.status.runId;
+  store.setCancelling(true);
   try {
     await backend.cancelBenchmark();
   } catch (e) {
+    if (useBenchmarkStore.getState().status.runId === runId) store.setCancelling(false);
     toast.error(toAppError(e).message);
   }
 }

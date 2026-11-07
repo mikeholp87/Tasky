@@ -1,6 +1,7 @@
 //! Task Manager backend: application wiring only. Monitoring, platform and
 //! command logic live in their own modules.
 
+mod autostart;
 mod commands;
 mod desktop;
 mod logging;

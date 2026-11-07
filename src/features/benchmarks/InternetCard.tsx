@@ -13,6 +13,7 @@ import type {
   TransferResult,
 } from "@/types";
 import { formatBytes, formatThroughput } from "./format";
+import { previousComparable } from "./compare";
 import {
   EnvironmentFooter,
   Outcome,
@@ -114,15 +115,7 @@ function InternetResultPanel({
   net: InternetResult;
   history: readonly BenchmarkResult[];
 }) {
-  const previous = history
-    .filter(
-      (h) =>
-        h.id !== result.id &&
-        h.kind === "internet" &&
-        h.internet?.host === net.host &&
-        h.startedAtMs < result.startedAtMs,
-    )
-    .sort((a, b) => b.startedAtMs - a.startedAtMs)[0];
+  const previous = previousComparable(history, result);
   const prevDown = previous?.internet?.download?.medianMbps;
   const prevUp = previous?.internet?.upload?.medianMbps;
   return (

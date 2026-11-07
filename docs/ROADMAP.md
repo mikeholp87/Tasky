@@ -20,6 +20,11 @@ Also done: Applications view in the process table (processes grouped by
 program), new-process highlighting (configurable, default 10 s), memory- and
 thread-growth hints in the activity log, and a Diagnose tab in Process Details.
 
+Also available: Linux Startup management and System Information sections for
+GPU utilization and memory, temperature sensors, and battery state/health where
+the operating system exposes them. Live GPU/temperature charts and fan-speed
+monitoring are not implemented.
+
 ## Next
 
 - **Windows: elevation helper.** A narrow, signed helper process for actions
@@ -31,8 +36,8 @@ thread-growth hints in the activity log, and a Diagnose tab in Process Details.
 - **macOS support.** Fill in `platform/macos` (`proc_pidinfo`, `kill`,
   `setpriority`, `IOKit` disk stats) and sign/notarize the bundle.
 - **Automatic updates** with the Tauri updater, once releases are signed.
-- **Startup applications** and **Services** pages (P1 in the gap analysis;
-  Services needs a D-Bus client for systemd).
+- **Services** page (P1 in the gap analysis; needs systemd D-Bus integration).
+- **Windows startup applications** (the current Startup manager uses Linux XDG entries).
 - **File-descriptor / handle growth hints.** Needs counting descriptors for
   selected processes over time; memory and thread growth are already covered.
 - **Wait/blocking analysis** beyond the thread wait channels shown today
@@ -44,8 +49,8 @@ thread-growth hints in the activity log, and a Diagnose tab in Process Details.
   acceptable.
 - **Process history persistence** (opt-in, SQLite, retention 1 h – 30 d) as
   an extra `TickSink`.
-- **GPU, temperatures, fans, battery** via sysinfo's `component`/`gpu`
-  features where reliable.
+- **GPU and temperature history**, first-class Overview cards, and fan speeds
+  where reliable. Basic GPU/sensor readings and battery information already exist.
 - **Docker containers and WSL processes** views.
 
 ## Considered and deferred

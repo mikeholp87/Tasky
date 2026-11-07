@@ -676,6 +676,7 @@ impl RunContext {
                     &cfg,
                     self.network_path(),
                     &self.cancel,
+                    &self.internet_used,
                     reporter,
                 )?;
                 reporter.set_state(BenchmarkState::Finalizing, "Calculating results");
@@ -691,8 +692,6 @@ impl RunContext {
                     warnings
                         .push("A VPN or tunnel looks active; results include its overhead.".into());
                 }
-                self.internet_used
-                    .fetch_add(out.bytes_downloaded + out.bytes_uploaded, Ordering::Relaxed);
                 result.internet = Some(out);
             }
         }

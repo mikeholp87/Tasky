@@ -124,7 +124,8 @@ export const backend = {
   /** Per-process shared-memory accounting; extra reads, so only while it is shown. */
   setMemoryDetail: (enabled: boolean) => call<void>("set_memory_detail", { enabled }),
 
-  getProcessDetails: (pid: number) => call<ProcessDetails>("get_process_details", { pid }),
+  getProcessDetails: (pid: number, startTime?: number) =>
+    call<ProcessDetails>("get_process_details", { pid, startTime: startTime ?? null }),
 
   assessProcessAction: (pid: number, action: ProcessAction) =>
     call<ProtectionAssessment>("assess_process_action", { pid, action }),
@@ -142,11 +143,15 @@ export const backend = {
   listStartupItems: () => call<StartupItem[]>("list_startup_items"),
   setStartupEnabled: (id: string, enabled: boolean) =>
     call<void>("set_startup_enabled", { id, enabled }),
-  getOpenFiles: (pid: number) => call<OpenFileList>("get_open_files", { pid }),
+  getOpenFiles: (pid: number, startTime: number) =>
+    call<OpenFileList>("get_open_files", { pid, startTime }),
   findFileUsers: (path: string) => call<FileUserList>("find_file_users", { path }),
-  getMemoryMap: (pid: number) => call<MemoryMap>("get_memory_map", { pid }),
-  getModules: (pid: number) => call<ModuleInfo[]>("get_modules", { pid }),
-  getThreads: (pid: number) => call<ThreadList>("get_threads", { pid }),
+  getMemoryMap: (pid: number, startTime: number) =>
+    call<MemoryMap>("get_memory_map", { pid, startTime }),
+  getModules: (pid: number, startTime: number) =>
+    call<ModuleInfo[]>("get_modules", { pid, startTime }),
+  getThreads: (pid: number, startTime: number) =>
+    call<ThreadList>("get_threads", { pid, startTime }),
   /** Native file/folder picker; resolves to the chosen path or null if cancelled. */
   pickPath: (directory: boolean) => call<string | null>("pick_path", { directory }),
   getHardwareInfo: () => call<HardwareInfo>("get_hardware_info"),

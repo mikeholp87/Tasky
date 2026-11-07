@@ -365,9 +365,10 @@ pub fn threads(pid: u32) -> AppResult<Vec<RawThread>> {
             tid,
             name: Some(stat.comm),
             state: Some(thread_state(stat.state)),
-            cpu_time_ms: stat.cpu_ticks.saturating_mul(1_000) / ticks,
+            cpu_time_ms: Some(stat.cpu_ticks.saturating_mul(1_000) / ticks),
             priority: Some(stat.nice),
             start_time: boot.map(|b| b + stat.start_ticks / ticks),
+            start_id: Some(stat.start_ticks),
             processor: Some(stat.processor),
             wait_channel,
         });

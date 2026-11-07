@@ -307,6 +307,50 @@ describe("Disk card", () => {
 });
 
 describe("Internet card", () => {
+  it.each(["profile", "method"] as const)(
+    "does not compare runs with a different %s",
+    (difference) => {
+      const previous: BenchmarkResult = {
+        ...NET,
+        id: "earlier",
+        startedAtMs: NET.startedAtMs - 1_000,
+        ...(difference === "profile"
+          ? { profile: "quick" as const }
+          : { method: { ...NET.method, methodId: "old-method" } }),
+        internet: {
+          ...NET.internet!,
+          download: {
+            ...NET.internet!.download!,
+            medianMbps: NET.internet!.download!.medianMbps / 2,
+          },
+        },
+      };
+      useBenchmarkStore.setState({ latest: NET, history: [NET, previous] });
+      render(<BenchmarksPage />);
+      const panel = within(screen.getByRole("region", { name: /latest internet result/i }));
+      expect(panel.queryByText("+100.0%")).not.toBeInTheDocument();
+    },
+  );
+
+  it("compares internet runs with the same profile and method", () => {
+    const previous: BenchmarkResult = {
+      ...NET,
+      id: "earlier",
+      startedAtMs: NET.startedAtMs - 1_000,
+      internet: {
+        ...NET.internet!,
+        download: {
+          ...NET.internet!.download!,
+          medianMbps: NET.internet!.download!.medianMbps / 2,
+        },
+      },
+    };
+    useBenchmarkStore.setState({ latest: NET, history: [NET, previous] });
+    render(<BenchmarksPage />);
+    expect(
+      within(screen.getByRole("region", { name: /latest internet result/i })).getByText("+100.0%"),
+    ).toBeInTheDocument();
+  });
   it("tells the user the host, the data volume and what is not sent before running", async () => {
     render(<BenchmarksPage />);
     const plan = await screen.findByTestId("internet-plan");

@@ -7,10 +7,18 @@ import { InspectBody } from "./InspectBody";
 /** CPU per thread needs two readings, so this is the one tab that polls: only while visible. */
 const POLL_MS = 1_500;
 
-export function ThreadsTab({ pid, linux }: { pid: number; linux: boolean }) {
+export function ThreadsTab({
+  pid,
+  startTime,
+  linux,
+}: {
+  pid: number;
+  startTime: number;
+  linux: boolean;
+}) {
   const { data, error, loading, refresh } = useRemoteData(
-    () => backend.getThreads(pid),
-    `threads:${pid}`,
+    () => backend.getThreads(pid, startTime),
+    `threads:${pid}:${startTime}`,
     POLL_MS,
   );
   const threads = data?.threads ?? [];
@@ -55,7 +63,9 @@ export function ThreadsTab({ pid, linux }: { pid: number; linux: boolean }) {
                 <td className="py-1 pr-3">{t.name ?? "—"}</td>
                 <td className="py-1 pr-3">{t.state ? STATUS_LABEL[t.state] : "—"}</td>
                 <td className="py-1 pr-3 text-right">{formatPercent(t.cpuPercent)}</td>
-                <td className="py-1 pr-3 text-right">{formatDuration(t.cpuTimeMs / 1000)}</td>
+                <td className="py-1 pr-3 text-right">
+                  {t.cpuTimeMs == null ? "—" : formatDuration(t.cpuTimeMs / 1000)}
+                </td>
                 <td className="py-1 pr-3 text-right">{t.priority ?? "—"}</td>
                 <td className="py-1 pr-3 text-right">{t.processor ?? "—"}</td>
                 <td className="py-1 pr-3">

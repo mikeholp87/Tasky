@@ -410,14 +410,16 @@ pub fn threads(pid: u32) -> AppResult<Vec<RawThread>> {
     let mut ok = unsafe { Thread32First(snapshot.0, &mut entry) }.is_ok();
     while ok {
         if entry.th32OwnerProcessID == pid {
-            let (cpu_time_ms, start_time) = thread_times(entry.th32ThreadID);
+            let (cpu_time_ms, start_id) = thread_times(entry.th32ThreadID);
             out.push(RawThread {
                 tid: entry.th32ThreadID,
                 name: None,
                 state: None,
                 cpu_time_ms,
                 priority: Some(entry.tpBasePri + entry.tpDeltaPri),
-                start_time,
+                start_time: start_id
+                    .and_then(|created| (created / 10_000_000).checked_sub(FILETIME_TO_UNIX_SECS)),
+                start_id,
                 processor: None,
                 wait_channel: None,
             });
@@ -431,12 +433,12 @@ pub fn threads(pid: u32) -> AppResult<Vec<RawThread>> {
     Ok(out)
 }
 
-/// CPU time in ms and creation time (unix seconds); zero/`None` when the
+/// CPU time in ms and native FILETIME creation counter; `None` when the
 /// thread cannot be opened (protected process) or has exited.
-fn thread_times(tid: u32) -> (u64, Option<u64>) {
+fn thread_times(tid: u32) -> (Option<u64>, Option<u64>) {
     // SAFETY: plain FFI; the handle is closed by `Owned`.
     let Ok(thread) = (unsafe { OpenThread(THREAD_QUERY_LIMITED_INFORMATION, false, tid) }) else {
-        return (0, None);
+        return (None, None);
     };
     let thread = Owned(thread);
     let (mut created, mut exited, mut kernel, mut user) = (
@@ -449,12 +451,11 @@ fn thread_times(tid: u32) -> (u64, Option<u64>) {
     if unsafe { GetThreadTimes(thread.0, &mut created, &mut exited, &mut kernel, &mut user) }
         .is_err()
     {
-        return (0, None);
+        return (None, None);
     }
     // FILETIME units are 100 ns.
     let cpu_ms = (filetime(kernel) + filetime(user)) / 10_000;
-    let start = (filetime(created) / 10_000_000).checked_sub(FILETIME_TO_UNIX_SECS);
-    (cpu_ms, start)
+    (Some(cpu_ms), Some(filetime(created)))
 }
 
 #[cfg(test)]

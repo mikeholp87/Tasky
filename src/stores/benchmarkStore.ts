@@ -25,6 +25,7 @@ const IDLE: BenchmarkStatus = {
 
 interface BenchmarkState {
   status: BenchmarkStatus;
+  cancelling: boolean;
   /** Saved results, newest first. */
   history: BenchmarkResult[];
   /** Result of the run that just finished; not saved for development builds. */
@@ -39,6 +40,7 @@ interface BenchmarkState {
   diskTargetsError: string | null;
 
   setStatus: (status: BenchmarkStatus) => void;
+  setCancelling: (cancelling: boolean) => void;
   setHistory: (history: BenchmarkResult[]) => void;
   setLatest: (result: BenchmarkResult | null) => void;
   select: (id: string | null) => void;
@@ -48,6 +50,7 @@ interface BenchmarkState {
 
 export const useBenchmarkStore = create<BenchmarkState>((set) => ({
   status: IDLE,
+  cancelling: false,
   history: [],
   latest: null,
   selectedId: null,
@@ -56,7 +59,12 @@ export const useBenchmarkStore = create<BenchmarkState>((set) => ({
   diskTargets: null,
   diskTargetsError: null,
 
-  setStatus: (status) => set({ status }),
+  setStatus: (status) =>
+    set((s) => ({
+      status,
+      cancelling: isActive(status) && s.status.runId === status.runId && s.cancelling,
+    })),
+  setCancelling: (cancelling) => set({ cancelling }),
   setHistory: (history) => set({ history }),
   setLatest: (latest) => set({ latest, selectedId: null }),
   select: (selectedId) => set({ selectedId }),

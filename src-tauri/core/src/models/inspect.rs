@@ -187,7 +187,7 @@ pub struct ThreadInfo {
     /// Share of the whole machine, like the Processes page. `None` on the
     /// first sample, which has no previous reading to compare with.
     pub cpu_percent: Option<f32>,
-    pub cpu_time_ms: u64,
+    pub cpu_time_ms: Option<u64>,
     pub priority: Option<i32>,
     /// Unix seconds.
     pub start_time: Option<u64>,

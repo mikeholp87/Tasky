@@ -9,6 +9,7 @@ import { cn } from "@/lib/cn";
 import { useRemoteData } from "@/hooks/useRemoteData";
 import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
 import { toast } from "@/stores/toastStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { filterItems } from "./logic";
 
 const btn =
@@ -28,6 +29,10 @@ export function StartupPage() {
     setPending((p) => new Set(p).add(id));
     try {
       await backend.setStartupEnabled(id, enabled);
+      const settings = await backend.getSettings();
+      if (settings.startWithOs !== useSettingsStore.getState().startWithOs) {
+        useSettingsStore.getState().update({ startWithOs: settings.startWithOs });
+      }
       toast.success(`${name} will ${enabled ? "" : "no longer "}start at login.`);
     } catch (e) {
       toast.error(toAppError(e).message);

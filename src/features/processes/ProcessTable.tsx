@@ -157,7 +157,7 @@ export function ProcessTable({
           return;
         case "Enter":
           if (current?.group) toggleCollapsed(current.row.pid);
-          else if (current) openProcess(current.row.pid);
+          else if (current) openProcess(current.row.pid, current.row.startTime);
           e.preventDefault();
           return;
         case "Delete":
@@ -343,7 +343,7 @@ interface RowProps {
   offset: number;
   height: number;
   onSelect: (pid: number) => void;
-  onOpen: (pid: number) => void;
+  onOpen: (pid: number, startTime: number) => void;
   onToggle: (pid: number) => void;
 }
 
@@ -379,7 +379,7 @@ const Row = memo(function Row({
       data-group={item.group ? "" : undefined}
       data-run={heat ? runState(row) : undefined}
       onClick={() => onSelect(row.pid)}
-      onDoubleClick={() => (item.group ? onToggle(row.pid) : onOpen(row.pid))}
+      onDoubleClick={() => (item.group ? onToggle(row.pid) : onOpen(row.pid, row.startTime))}
       onContextMenu={() => onSelect(row.pid)}
       className={cn(
         "absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[0.875rem]",

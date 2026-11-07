@@ -3,17 +3,22 @@ import type { Settings } from "@/types";
 import { DEFAULT_SETTINGS, flushSettings, useSettingsStore } from "./settingsStore";
 
 const updateSettings = vi.fn<(s: Settings) => Promise<Settings>>();
+const resetSettings = vi.fn<() => Promise<Settings>>();
 
 vi.mock("@/services/ipc", async (orig) => ({
   ...(await orig<typeof import("@/services/ipc")>()),
   isBackendAvailable: () => true,
-  backend: { updateSettings: (s: Settings) => updateSettings(s) },
+  backend: {
+    updateSettings: (s: Settings) => updateSettings(s),
+    resetSettings: () => resetSettings(),
+  },
 }));
 
 describe("settings store saving", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     updateSettings.mockReset();
+    resetSettings.mockReset().mockResolvedValue(DEFAULT_SETTINGS);
     useSettingsStore.getState().hydrate(DEFAULT_SETTINGS);
   });
   afterEach(() => vi.useRealTimers());
@@ -41,5 +46,59 @@ describe("settings store saving", () => {
 
     expect(useSettingsStore.getState().heatMapping).toBe(false);
     expect(updateSettings).toHaveBeenCalledTimes(2); // saves never overlap
+  });
+
+  it("waits for an in-flight save and discards pre-reset queued saves", async () => {
+    let finish: (settings: Settings) => void = () => {};
+    updateSettings.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    updateSettings.mockImplementation(async (settings) => settings);
+    useSettingsStore.getState().update({ compactTable: true });
+    await vi.advanceTimersByTimeAsync(300);
+    useSettingsStore.getState().update({ heatMapping: false });
+    await vi.advanceTimersByTimeAsync(300);
+    const resetting = useSettingsStore.getState().reset();
+    expect(resetSettings).not.toHaveBeenCalled();
+    finish({ ...DEFAULT_SETTINGS, compactTable: true });
+    await resetting;
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(resetSettings).toHaveBeenCalledTimes(1);
+    expect(useSettingsStore.getState().compactTable).toBe(false);
+    expect(useSettingsStore.getState().heatMapping).toBe(true);
+  });
+
+  it("keeps edits made while Reset is in flight and saves them after defaults", async () => {
+    let finish: (settings: Settings) => void = () => {};
+    resetSettings.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    updateSettings.mockImplementation(async (settings) => settings);
+    useSettingsStore.getState().hydrate({ ...DEFAULT_SETTINGS, compactTable: true });
+    const resetting = useSettingsStore.getState().reset();
+    await vi.advanceTimersByTimeAsync(0);
+    useSettingsStore.getState().update({ heatMapping: false });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(updateSettings).not.toHaveBeenCalled();
+    finish(DEFAULT_SETTINGS);
+    await resetting;
+    await vi.runAllTimersAsync();
+    expect(useSettingsStore.getState().heatMapping).toBe(false);
+    expect(updateSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, heatMapping: false });
+  });
+
+  it("restores persisted settings when Reset fails after discarding a pending edit", async () => {
+    resetSettings.mockRejectedValueOnce(new Error("fixture reset failed"));
+    useSettingsStore.getState().update({ theme: "dark" });
+    await useSettingsStore.getState().reset();
+    await vi.runAllTimersAsync();
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(useSettingsStore.getState().theme).toBe(DEFAULT_SETTINGS.theme);
   });
 });
