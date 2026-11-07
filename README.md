@@ -102,8 +102,21 @@ then capture the page.
 | macOS                                      | Not yet; the architecture has a platform slot for it |
 
 **Linux desktops:** the Linux port is available and compatible with both
-KDE Plasma and GNOME. On GNOME the system tray needs the AppIndicator
-extension. Packages: `.deb`, `.rpm` and AppImage (see Building).
+KDE Plasma and GNOME, on Wayland. Packages: `.deb`, `.rpm` and AppImage (see
+Building).
+
+| Desktop    | Status           | System tray                               | Window position                                                                |
+| ---------- | ---------------- | ----------------------------------------- | ------------------------------------------------------------------------------ |
+| KDE Plasma | Tested (Wayland) | Built in (StatusNotifier)                 | No known limitation                                                            |
+| GNOME      | Tested (Wayland) | Needs the AppIndicator extension          | Size always remembered; position only via XWayland at 100% scaling (see below) |
+| Others     | Not verified     | Needs StatusNotifier/AppIndicator support | Depends on the compositor                                                      |
+
+Without a tray host, closing the window quits the app, and a window that starts
+hidden is shown after 15 s. On GNOME, Wayland apps cannot read or set their own
+position, so Tasky runs through XWayland at 100% scaling on every monitor to
+remember it, and stays on native Wayland with fractional or HiDPI scaling. Set
+`GDK_BACKEND=wayland` (or `x11`) to choose yourself. Details:
+[docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).
 
 ## Install from the Debian APT repository
 
