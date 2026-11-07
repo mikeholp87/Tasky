@@ -1,0 +1,367 @@
+//! Mounting and unmounting external drives, through UDisks2 (`udisksctl`).
+//!
+//! Safety rules, enforced here and not in the UI:
+//! - Only volumes UDisks itself treats as user-managed are ever listed
+//!   (`HintSystem` and `HintIgnore` false, a real file system). System and
+//!   internal partitions are therefore never offered and are refused if a
+//!   caller names them anyway.
+//! - A volume mounted at or below a system path (`/`, `/home`, `/boot`, ...)
+//!   is never touched, whatever UDisks says.
+//! - Mount and unmount re-read the current list and act only on a device that
+//!   is in it, in the right state. The device string is never trusted.
+//! - `udisksctl` runs without a shell, so the device cannot inject arguments.
+//!   UDisks/polkit apply their own permission policy on top.
+
+use std::process::Command;
+
+use crate::errors::{AppError, AppResult};
+use crate::models::Volume;
+
+/// Mount points that belong to the running system. Matches the path itself
+/// and anything below it (`/` only matches exactly).
+const SYSTEM_MOUNTS: &[&str] = &[
+    "/", "/boot", "/efi", "/home", "/usr", "/var", "/etc", "/opt", "/srv", "/root", "/nix",
+];
+
+fn is_system_mount(mount_point: &str) -> bool {
+    SYSTEM_MOUNTS
+        .iter()
+        .any(|p| mount_point == *p || (*p != "/" && mount_point.starts_with(&format!("{p}/"))))
+}
+
+/// What `udisksctl info -b` says about one block device.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Info {
+    system: bool,
+    ignore: bool,
+    usage: String,
+    file_system: String,
+    label: String,
+    size: u64,
+    mount_points: Vec<String>,
+}
+
+/// Reads the fields we need. The block section comes first and its `Size`
+/// is the one wanted; later interfaces repeat the key.
+fn parse_info(text: &str) -> Info {
+    let mut info = Info::default();
+    let mut have_size = false;
+    let mut in_mounts = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        // Values that span several lines are indented under their key.
+        if in_mounts && !trimmed.contains(": ") && !trimmed.ends_with(':') && !trimmed.is_empty() {
+            info.mount_points.push(trimmed.to_string());
+            continue;
+        }
+        in_mounts = false;
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match key {
+            "HintSystem" => info.system = value == "true",
+            "HintIgnore" => info.ignore = value == "true",
+            "IdUsage" => info.usage = value.to_string(),
+            "IdType" => info.file_system = value.to_string(),
+            "IdLabel" => info.label = value.to_string(),
+            "Size" if !have_size => {
+                info.size = value.parse().unwrap_or(0);
+                have_size = true;
+            }
+            "MountPoints" => {
+                in_mounts = true;
+                if !value.is_empty() {
+                    info.mount_points.push(value.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    info
+}
+
+/// The one rule deciding whether a volume may be shown, mounted or unmounted.
+fn manageable(info: &Info) -> bool {
+    !info.system
+        && !info.ignore
+        && info.usage == "filesystem"
+        && !info.file_system.is_empty()
+        && info.file_system != "swap"
+        && !info.mount_points.iter().any(|m| is_system_mount(m))
+}
+
+fn valid_device(device: &str) -> bool {
+    device.len() <= 64
+        && device.strip_prefix("/dev/").is_some_and(|name| {
+            !name.is_empty()
+                && !name.starts_with('.')
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        })
+}
+
+fn udisksctl(args: &[&str]) -> AppResult<String> {
+    let mut command = Command::new("udisksctl");
+    command.args(args).env("LC_ALL", "C");
+    // Never wait on a password prompt; `info` does not take the option.
+    if args.first() != Some(&"info") {
+        command.arg("--no-user-interaction");
+    }
+    let output = command.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            AppError::ActionUnavailable(
+                "Mounting drives needs UDisks. Install the \"udisks2\" package.".into(),
+            )
+        } else {
+            AppError::SystemQueryFailed(format!("Could not run udisksctl: {e}"))
+        }
+    })?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let first = stderr.lines().next().unwrap_or("").trim();
+    Err(if first.contains("busy") {
+        AppError::ActionUnavailable(
+            "The drive is in use. Close any program using it and try again.".into(),
+        )
+    } else if first.contains("Not authorized") || first.contains("not allowed") {
+        AppError::PermissionDenied("Your account is not allowed to do this to that drive.".into())
+    } else {
+        AppError::SystemQueryFailed(first.to_string())
+    })
+}
+
+fn candidates() -> AppResult<Vec<String>> {
+    let output = Command::new("lsblk")
+        .args(["-n", "-r", "-o", "PATH,TYPE"])
+        .env("LC_ALL", "C")
+        .output()
+        .map_err(|e| AppError::SystemQueryFailed(format!("Could not list drives: {e}")))?;
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (path, kind) = line.split_once(' ')?;
+            matches!(kind, "part" | "disk" | "loop").then(|| path.to_string())
+        })
+        .filter(|path| valid_device(path))
+        .collect())
+}
+
+pub fn volumes() -> AppResult<Vec<Volume>> {
+    let mut out = Vec::new();
+    for device in candidates()? {
+        let Ok(text) = udisksctl(&["info", "-b", &device]) else {
+            continue;
+        };
+        let info = parse_info(&text);
+        if !manageable(&info) {
+            continue;
+        }
+        out.push(Volume {
+            device,
+            label: (!info.label.is_empty()).then_some(info.label),
+            file_system: info.file_system,
+            size_bytes: info.size,
+            mount_point: info.mount_points.into_iter().next(),
+        });
+    }
+    out.sort_by(|a, b| a.device.cmp(&b.device));
+    Ok(out)
+}
+
+/// A device that is in the current list; anything else is refused.
+fn find(device: &str) -> AppResult<Volume> {
+    if !valid_device(device) {
+        return Err(AppError::InvalidArgument("That is not a drive.".into()));
+    }
+    volumes()?
+        .into_iter()
+        .find(|v| v.device == device)
+        .ok_or_else(|| {
+            AppError::ActionUnavailable(
+                "That drive can't be managed here. System and internal partitions are never mounted or unmounted from Tasky."
+                    .into(),
+            )
+        })
+}
+
+/// Mounts `device` and returns where it was mounted.
+pub fn mount_volume(device: &str) -> AppResult<Option<String>> {
+    let volume = find(device)?;
+    if volume.mount_point.is_some() {
+        return Err(AppError::ActionUnavailable(
+            "That drive is already mounted.".into(),
+        ));
+    }
+    let out = udisksctl(&["mount", "-b", &volume.device])?;
+    // "Mounted /dev/sdb1 at /run/media/user/LABEL."
+    Ok(out
+        .split_once(" at ")
+        .map(|(_, path)| path.trim().trim_end_matches('.').to_string()))
+}
+
+pub fn unmount_volume(device: &str) -> AppResult<()> {
+    let volume = find(device)?;
+    if volume.mount_point.is_none() {
+        return Err(AppError::ActionUnavailable(
+            "That drive is not mounted.".into(),
+        ));
+    }
+    udisksctl(&["unmount", "-b", &volume.device]).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const USB: &str = "\
+/org/freedesktop/UDisks2/block_devices/sda1:
+  org.freedesktop.UDisks2.Block:
+    HintIgnore:                 false
+    HintSystem:                 false
+    IdLabel:                    BACKUP
+    IdType:                     ext4
+    IdUsage:                    filesystem
+    Size:                       2000397795328
+  org.freedesktop.UDisks2.Filesystem:
+    MountPoints:        /run/media/mikeh/BACKUP
+    Size:               2000397795328
+";
+
+    fn system_partition() -> String {
+        USB.replace(
+            "HintSystem:                 false",
+            "HintSystem:                 true",
+        )
+        .replace("/run/media/mikeh/BACKUP", "/")
+    }
+
+    #[test]
+    fn reads_an_external_drive() {
+        let info = parse_info(USB);
+        assert_eq!(info.file_system, "ext4");
+        assert_eq!(info.label, "BACKUP");
+        assert_eq!(info.size, 2_000_397_795_328);
+        assert_eq!(info.mount_points, ["/run/media/mikeh/BACKUP"]);
+        assert!(manageable(&info));
+    }
+
+    #[test]
+    fn never_offers_system_partitions() {
+        // UDisks marks the internal disk as a system device.
+        assert!(!manageable(&parse_info(&system_partition())));
+        // Even if it did not, a system mount point is enough to refuse.
+        let unmarked = system_partition().replace(
+            "HintSystem:                 true",
+            "HintSystem:                 false",
+        );
+        assert!(!manageable(&parse_info(&unmarked)));
+        for mount in [
+            "/",
+            "/boot/efi",
+            "/home",
+            "/home/mikeh/data",
+            "/var/lib/x",
+            "/usr",
+        ] {
+            assert!(is_system_mount(mount), "{mount}");
+        }
+        assert!(!is_system_mount("/run/media/mikeh/BACKUP"));
+        assert!(!is_system_mount("/mnt/usb"));
+    }
+
+    #[test]
+    fn skips_things_that_are_not_plain_file_systems() {
+        for (from, to) in [
+            (
+                "IdUsage:                    filesystem",
+                "IdUsage:                    crypto",
+            ),
+            (
+                "IdType:                     ext4",
+                "IdType:                     swap",
+            ),
+            (
+                "HintIgnore:                 false",
+                "HintIgnore:                 true",
+            ),
+        ] {
+            assert!(!manageable(&parse_info(&USB.replace(from, to))), "{to}");
+        }
+    }
+
+    #[test]
+    fn an_unmounted_drive_has_no_mount_point() {
+        let text = USB.replace(
+            "MountPoints:        /run/media/mikeh/BACKUP",
+            "MountPoints:",
+        );
+        let info = parse_info(&text);
+        assert!(info.mount_points.is_empty());
+        assert!(manageable(&info));
+    }
+
+    #[test]
+    fn reads_every_mount_point_of_a_multiply_mounted_drive() {
+        let text = USB.replace(
+            "MountPoints:        /run/media/mikeh/BACKUP",
+            "MountPoints:        /run/media/mikeh/BACKUP\n                        /home/mikeh/backup",
+        );
+        let info = parse_info(&text);
+        assert_eq!(info.mount_points.len(), 2);
+        assert!(!manageable(&info), "a mount under /home is a system path");
+    }
+
+    #[test]
+    fn only_plain_device_names_are_accepted() {
+        for ok in [
+            "/dev/sda1",
+            "/dev/nvme0n1p2",
+            "/dev/mmcblk0p1",
+            "/dev/loop0",
+        ] {
+            assert!(valid_device(ok), "{ok}");
+        }
+        for bad in [
+            "sda1",
+            "/dev/",
+            "/dev/../etc/passwd",
+            "/dev/sda1; rm -rf /",
+            "/dev/mapper/root",
+            "/dev/sda1 --foo",
+            "-b",
+            "/dev/.hidden",
+        ] {
+            assert!(!valid_device(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn refuses_unknown_and_malformed_devices_without_running_anything() {
+        assert!(matches!(
+            mount_volume("/dev/../etc"),
+            Err(AppError::InvalidArgument(_))
+        ));
+        assert!(matches!(
+            unmount_volume("not a device"),
+            Err(AppError::InvalidArgument(_))
+        ));
+    }
+
+    /// Needs a desktop session with UDisks: `cargo test -- --ignored lists_real`.
+    #[test]
+    #[ignore]
+    fn lists_real_volumes_and_never_the_system_disk() {
+        let all = volumes().unwrap();
+        println!("{all:#?}");
+        for v in all {
+            assert!(
+                v.mount_point.as_deref().is_none_or(|m| !is_system_mount(m)),
+                "{v:?}"
+            );
+        }
+    }
+}

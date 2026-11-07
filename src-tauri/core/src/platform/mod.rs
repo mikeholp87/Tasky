@@ -95,6 +95,22 @@ pub fn set_startup_enabled(id: &str, enabled: bool) -> crate::errors::AppResult<
     linux_only::set_startup_enabled(id, enabled)
 }
 
+/// External drives the user may mount or unmount. System and internal
+/// partitions are never included. Linux only for now.
+pub fn volumes() -> crate::errors::AppResult<Vec<crate::models::Volume>> {
+    linux_only::volumes()
+}
+
+/// Mounts a listed volume; returns where it was mounted.
+pub fn mount_volume(device: &str) -> crate::errors::AppResult<Option<String>> {
+    linux_only::mount_volume(device)
+}
+
+/// Unmounts a listed volume. Refuses anything `volumes` does not list.
+pub fn unmount_volume(device: &str) -> crate::errors::AppResult<()> {
+    linux_only::unmount_volume(device)
+}
+
 /// Memory figures that sysinfo does not expose but the OS reports reliably.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MemoryExtras {
@@ -263,6 +279,22 @@ mod fallback {
 
     pub fn set_startup_enabled(_id: &str, _enabled: bool) -> crate::errors::AppResult<()> {
         Err(unsupported())
+    }
+
+    pub fn volumes() -> crate::errors::AppResult<Vec<crate::models::Volume>> {
+        Ok(Vec::new())
+    }
+
+    pub fn mount_volume(_device: &str) -> crate::errors::AppResult<Option<String>> {
+        Err(crate::errors::AppError::UnsupportedOperation(
+            "Mounting drives".into(),
+        ))
+    }
+
+    pub fn unmount_volume(_device: &str) -> crate::errors::AppResult<()> {
+        Err(crate::errors::AppError::UnsupportedOperation(
+            "Unmounting drives".into(),
+        ))
     }
 
     fn unsupported() -> crate::errors::AppError {

@@ -13,6 +13,7 @@ mod process;
 mod settings;
 mod startup;
 mod system;
+mod volumes;
 
 pub use activity::*;
 pub use alerts::*;
@@ -26,3 +27,4 @@ pub use process::*;
 pub use settings::*;
 pub use startup::*;
 pub use system::*;
+pub use volumes::*;

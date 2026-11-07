@@ -41,6 +41,7 @@
 | Suspend / resume                      | Suspends every thread (`SuspendThread`); status shown for processes this app suspended | `SIGSTOP` / `SIGCONT`; status read from `/proc`                |
 | Priority                              | Idle … High priority classes (no Real-time)                                            | nice 19 … −10; raising needs `CAP_SYS_NICE`                    |
 | Critical-process detection            | `IsProcessCritical` + verified System32 paths                                          | PID 1, kernel threads                                          |
+| Mount / unmount external drives       | — (not yet)                                                                            | ✓ (UDisks2; external drives only, never system partitions)     |
 | Tray, notifications, autostart        | ✓                                                                                      | ✓ (needs a tray-capable desktop / AppIndicator)                |
 
 ## Known differences and limitations

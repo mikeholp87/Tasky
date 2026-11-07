@@ -33,6 +33,7 @@ import type {
   StartupItem,
   StaticSystemInfo,
   ThreadList,
+  Volume,
 } from "@/types";
 
 export const isBackendAvailable = (): boolean => isTauri();
@@ -98,6 +99,10 @@ export const backend = {
     }),
 
   refreshNow: () => call<void>("refresh_now"),
+
+  listVolumes: () => call<Volume[]>("list_volumes"),
+  mountVolume: (device: string) => call<string | null>("mount_volume", { device }),
+  unmountVolume: (device: string) => call<void>("unmount_volume", { device }),
 
   startBenchmark: (
     kind: BenchmarkKind,

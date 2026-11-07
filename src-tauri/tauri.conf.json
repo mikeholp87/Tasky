@@ -49,7 +49,7 @@
     },
     "linux": {
       "deb": {
-        "recommends": ["libvulkan1", "mesa-vulkan-drivers"],
+        "recommends": ["libvulkan1", "mesa-vulkan-drivers", "udisks2"],
         "desktopTemplate": "linux/taskmanager.desktop"
       },
       "rpm": {

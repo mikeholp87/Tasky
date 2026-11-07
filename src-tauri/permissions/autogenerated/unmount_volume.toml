@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-unmount-volume"
+description = "Enables the unmount_volume command without any pre-configured scope."
+commands.allow = ["unmount_volume"]
+
+[[permission]]
+identifier = "deny-unmount-volume"
+description = "Denies the unmount_volume command without any pre-configured scope."
+commands.deny = ["unmount_volume"]

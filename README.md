@@ -74,6 +74,9 @@ then capture the page.
   - cache and commit charge;
   - disk IOPS and active time;
   - per-interface rates and addresses.
+- **External drives (Linux):** mount and unmount USB sticks, SD cards and
+  external disks from the Storage page. System and internal partitions are
+  never offered and are refused by the backend. Needs UDisks (`udisks2`).
 - **Alerts:** rules such as _"node CPU above 80% for 20 s"_ or _"memory above
   85%"_, evaluated in the background with desktop notifications.
 - **Settings:** theme (system/light/dark), refresh interval

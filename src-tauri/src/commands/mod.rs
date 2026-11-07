@@ -11,3 +11,4 @@ pub mod monitoring;
 pub mod processes;
 pub mod settings;
 mod validate;
+pub mod volumes;

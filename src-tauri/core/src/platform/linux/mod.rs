@@ -7,6 +7,7 @@ mod hardware;
 mod inspect;
 mod net;
 mod system;
+mod volumes;
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -17,6 +18,7 @@ pub use hardware::hardware_info;
 pub use inspect::{find_file_users, memory_map, modules, open_files, sockets, threads};
 pub use net::interface_kind;
 pub use system::os_details;
+pub use volumes::{mount_volume, unmount_volume, volumes};
 
 pub fn startup_items() -> crate::errors::AppResult<Vec<crate::models::StartupItem>> {
     Ok(autostart::list(&autostart::Dirs::from_env()))

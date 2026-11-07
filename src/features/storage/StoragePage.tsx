@@ -6,6 +6,7 @@ import { percentAxis, rateAxis, RATE_MIN_Y } from "@/components/charts/series";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { KeyValueList, Unavailable } from "@/components/ui/KeyValueList";
 import { Meter } from "@/components/ui/Meter";
+import { RemovableDrives } from "./RemovableDrives";
 import { diskHistory } from "@/stores/deviceHistory";
 import { useMetricsStore } from "@/stores/metricsStore";
 import type { DiskSnapshot } from "@/types";
@@ -28,6 +29,7 @@ export function StoragePage() {
   return (
     <>
       <PageHeader title="Storage" description="Drives, capacity and activity." />
+      {disks && <RemovableDrives />}
       {!disks ? (
         <ConnectionNotice />
       ) : disks.length === 0 ? (

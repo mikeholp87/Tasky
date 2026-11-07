@@ -67,6 +67,7 @@ export type { OpenFileList } from "./generated/OpenFileList";
 export type { SocketEntry } from "./generated/SocketEntry";
 export type { SocketList } from "./generated/SocketList";
 export type { StartupItem } from "./generated/StartupItem";
+export type { Volume } from "./generated/Volume";
 export type { StartupScope } from "./generated/StartupScope";
 export type { ThreadInfo } from "./generated/ThreadInfo";
 export type { ThreadList } from "./generated/ThreadList";

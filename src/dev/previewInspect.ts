@@ -258,9 +258,38 @@ const STARTUP_ITEMS: StartupItem[] = [
 
 const NOT_HANDLED = Symbol("not handled");
 
+const VOLUMES = [
+  {
+    device: "/dev/sdb1",
+    label: "BACKUP",
+    fileSystem: "exfat",
+    sizeBytes: 1_000_204_886_016,
+    mountPoint: "/run/media/alice/BACKUP" as string | null,
+  },
+  {
+    device: "/dev/sdc1",
+    label: null,
+    fileSystem: "vfat",
+    sizeBytes: 32_017_047_552,
+    mountPoint: null as string | null,
+  },
+];
+
 /** Returns the stub reply for an inspection command, or `NOT_HANDLED`. */
 export function inspectPreview(cmd: string, args: unknown): unknown {
   switch (cmd) {
+    case "list_volumes":
+      return VOLUMES.map((v) => ({ ...v }));
+    case "mount_volume": {
+      const v = VOLUMES.find((x) => x.device === (args as { device: string }).device);
+      if (v) v.mountPoint = `/run/media/alice/${v.label ?? "disk"}`;
+      return v?.mountPoint ?? null;
+    }
+    case "unmount_volume": {
+      const v = VOLUMES.find((x) => x.device === (args as { device: string }).device);
+      if (v) v.mountPoint = null;
+      return null;
+    }
     case "list_startup_items":
       return STARTUP_ITEMS.map((i) => ({ ...i }));
     case "set_startup_enabled": {
