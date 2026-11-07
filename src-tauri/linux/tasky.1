@@ -1,0 +1,70 @@
+.TH TASKY 1 "November 2026" "Tasky 0.1.0" "User Commands"
+.SH NAME
+tasky \- task manager and system monitor
+.SH SYNOPSIS
+.B tasky
+.SH DESCRIPTION
+.B Tasky
+shows what the computer is doing in real time: processes, CPU, memory, storage
+and network.
+It can end, suspend, resume or reprioritize processes, watch for resource
+alerts, and run CPU, GPU, disk and internet benchmarks.
+All monitoring stays on the machine.
+The only network use is the internet benchmark, which runs only after you
+confirm it.
+.PP
+Tasky has no command-line options.
+Starting it a second time shows the window of the instance that is already
+running.
+Closing the window keeps Tasky running in the system tray when the desktop
+provides one; use the tray menu to quit.
+.SH ENVIRONMENT
+.TP
+.B GDK_BACKEND
+Selects the GTK display backend,
+.B wayland
+or
+.BR x11 .
+On GNOME under Wayland, Tasky runs through XWayland when every monitor uses
+100% scaling, so that the window position can be remembered.
+Setting this variable overrides that choice.
+.SH FILES
+.TP
+.I ~/.config/io.github.mikeholp87.taskmanager/settings.json
+Settings.
+A settings file that cannot be read is kept as
+.I settings.json.invalid
+and defaults are used.
+.TP
+.I ~/.local/share/io.github.mikeholp87.taskmanager/
+Benchmark history and the
+.I logs/
+directory.
+Command lines and environments are never logged.
+.TP
+.I ~/.config/autostart/
+Login entry created by the "start with the OS" setting.
+.PP
+The directories above follow
+.B XDG_CONFIG_HOME
+and
+.B XDG_DATA_HOME
+when those are set.
+.SH NOTES
+Raising a process's priority needs the
+.B CAP_SYS_NICE
+capability.
+Without a system tray host (GNOME needs the AppIndicator extension), closing
+the window quits Tasky.
+.SH SEE ALSO
+.BR kill (1),
+.BR renice (1),
+.BR top (1),
+.BR ps (1)
+.PP
+Project page and documentation:
+.UR https://github.com/mikeholp87/Tasky
+.UE
+.SH AUTHORS
+Tasky contributors.
+Licensed under the MIT License.

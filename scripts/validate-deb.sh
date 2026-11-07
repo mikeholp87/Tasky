@@ -30,6 +30,7 @@ trap 'rm -rf "$root"' EXIT
 dpkg-deb --extract "$deb" "$root"
 [[ -x $root/usr/bin/tasky ]]
 [[ -s $root/usr/share/icons/hicolor/128x128/apps/tasky.png ]]
+[[ -s $root/usr/share/man/man1/tasky.1 ]]
 desktop=$root/usr/share/applications/Tasky.desktop
 [[ -s $desktop ]]
 desktop-file-validate "$desktop"

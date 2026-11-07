@@ -2,5 +2,14 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Tasky",
   "identifier": "io.github.mikeholp87.taskmanager",
-  "mainBinaryName": "tasky"
+  "mainBinaryName": "tasky",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/man/man1/tasky.1": "linux/tasky.1"
+        }
+      }
+    }
+  }
 }
