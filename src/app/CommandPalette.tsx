@@ -47,7 +47,7 @@ export function CommandPalette() {
       });
     }
     list.push(
-      ...ROUTES.map((r) => ({
+      ...ROUTES.filter((r) => !r.contextual).map((r) => ({
         id: `go-${r.id}`,
         label: `Go to ${r.label}`,
         run: () => navigate(r.id),
@@ -62,6 +62,12 @@ export function CommandPalette() {
     const needle = q.toLowerCase();
     return list.filter((c) => c.id === "search" || c.label.toLowerCase().includes(needle));
   }, [query, paused, navigate]);
+
+  useEffect(() => {
+    const command = commands[active];
+    if (open && command)
+      document.getElementById(`cmd-${command.id}`)?.scrollIntoView({ block: "nearest" });
+  }, [active, commands, open]);
 
   const close = () => {
     setOpen(false);

@@ -79,9 +79,9 @@ export function SettingsPage() {
           <Toggle
             label="Minimize to tray"
             description={
-              "Closing the window keeps Task Manager running in the system tray, so alerts still work." +
+              "Closing the window keeps Tasky running in the system tray, so alerts still work." +
               (noTrayHost
-                ? " GNOME shows no tray by default; without the AppIndicator extension, closing the window quits Task Manager."
+                ? " GNOME shows no tray by default; without the AppIndicator extension, closing the window quits Tasky."
                 : "")
             }
             checked={s.minimizeToTray}
@@ -318,10 +318,10 @@ function BenchmarkSection() {
   const set = (patch: Partial<BenchmarkSettings>) => update({ benchmark: { ...b, ...patch } });
   const adapters = useBenchmarkStore((s) => s.capabilities?.gpuAdapters ?? NO_ADAPTERS);
   const locations = useBenchmarkStore((s) => s.capabilities?.diskLocations ?? NO_LOCATIONS);
-  const capabilitiesLoaded = useBenchmarkStore((s) => s.capabilities !== null);
+  const mounts = useMetricsStore((s) => s.tick?.disks.map((d) => d.mountPoint).join("\n"));
   useEffect(() => {
-    if (!capabilitiesLoaded) void loadBenchmarkData();
-  }, [capabilitiesLoaded]);
+    void loadBenchmarkData();
+  }, [mounts]);
   const workerOptions = Array.from({ length: Math.min(logical, 256) }, (_, i) => i + 1);
 
   return (

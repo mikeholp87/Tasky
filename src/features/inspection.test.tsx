@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { makeProcessRow, makeTick, STATIC_INFO } from "@/test/fixtures";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { useUiStore } from "@/stores/uiStore";
+import { DEFAULT_SETTINGS, useSettingsStore } from "@/stores/settingsStore";
 import type { FileUserList, SocketList, StartupItem } from "@/types";
 import { PortsPage } from "./ports/PortsPage";
 import { FileFinderPage } from "./file-finder/FileFinderPage";
@@ -17,6 +18,7 @@ const ipc = vi.hoisted(() => ({
   pickPath: vi.fn(),
   listStartupItems: vi.fn(),
   setStartupEnabled: vi.fn(),
+  getSettings: vi.fn(),
   getModules: vi.fn(),
   getThreads: vi.fn(),
 }));
@@ -77,6 +79,8 @@ beforeEach(() => {
   ipc.pickPath.mockResolvedValue(fileUsers.resolvedPath);
   ipc.listStartupItems.mockResolvedValue([startup]);
   ipc.setStartupEnabled.mockResolvedValue(undefined);
+  ipc.getSettings.mockResolvedValue(DEFAULT_SETTINGS);
+  useSettingsStore.setState(DEFAULT_SETTINGS);
   ipc.getModules.mockResolvedValue([
     {
       name: "kernel32.dll",
@@ -136,6 +140,7 @@ describe("Windows diagnostic flows", () => {
     await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
     expect(toggle).not.toBeDisabled();
     expect(ipc.listStartupItems).toHaveBeenCalledTimes(2);
+    expect(ipc.getSettings).toHaveBeenCalledOnce();
   });
 
   it("loads only the open inspection tab with its process identity", async () => {

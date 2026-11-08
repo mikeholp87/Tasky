@@ -1,7 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BenchmarkEvent, BenchmarkRequest, PreflightReport } from "@/types";
+import { useMetricsStore } from "@/stores/metricsStore";
+import { makeTick } from "@/test/fixtures";
 
 const backend = vi.hoisted(() => ({
   getBenchmarkCapabilities: vi.fn(),
@@ -64,6 +66,7 @@ let emit: (event: BenchmarkEvent) => void = () => {};
 describe("BenchmarksPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useMetricsStore.setState({ tick: null });
     useBenchmarkStore.setState({ run: null, launch: null, view: { name: "home" }, history: [] });
     backend.getBenchmarkCapabilities.mockResolvedValue({
       methodVersion: "1.0.0",
@@ -95,6 +98,41 @@ describe("BenchmarksPage", () => {
       expect(screen.getByRole("button", { name: `Run ${name} test` })).toBeEnabled();
     }
     await waitFor(() => expect(backend.listBenchmarkHistory).toHaveBeenCalled());
+    expect(backend.startBenchmark).not.toHaveBeenCalled();
+  });
+
+  it("refreshes benchmark targets when drives connect and disconnect without starting a run", async () => {
+    useMetricsStore.setState({ tick: makeTick() });
+    render(<BenchmarksPage />);
+    await waitFor(() => expect(backend.getBenchmarkCapabilities).toHaveBeenCalledTimes(1));
+    act(() =>
+      useMetricsStore.setState({
+        tick: makeTick([], {
+          disks: [
+            {
+              name: "USB",
+              mountPoint: "E:\\",
+              fileSystem: "exFAT",
+              kind: "ssd",
+              removable: true,
+              readOnly: false,
+              totalBytes: 1000,
+              availableBytes: 500,
+              usedBytes: 500,
+              usedPercent: 50,
+              readBytesPerSec: 0,
+              writeBytesPerSec: 0,
+              readOpsPerSec: 0,
+              writeOpsPerSec: 0,
+              activePercent: 0,
+            },
+          ],
+        }),
+      }),
+    );
+    await waitFor(() => expect(backend.getBenchmarkCapabilities).toHaveBeenCalledTimes(2));
+    act(() => useMetricsStore.setState({ tick: makeTick() }));
+    await waitFor(() => expect(backend.getBenchmarkCapabilities).toHaveBeenCalledTimes(3));
     expect(backend.startBenchmark).not.toHaveBeenCalled();
   });
 

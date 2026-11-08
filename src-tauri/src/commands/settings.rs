@@ -11,8 +11,14 @@ use tm_core::monitoring::engine::MAX_HISTORY_POINTS;
 use crate::state::AppState;
 
 #[tauri::command]
-pub fn get_settings(state: State<'_, AppState>) -> Settings {
-    state.settings.get()
+pub fn get_settings<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> AppResult<Settings> {
+    let _guard = state.settings.operation();
+    let mut settings = state.settings.get();
+    settings.start_with_os = read_autostart(&app)?;
+    Ok(settings)
 }
 
 /// Validates, applies and persists new settings. Side effects that can fail
@@ -25,7 +31,9 @@ pub fn update_settings<R: Runtime>(
     settings: Settings,
 ) -> AppResult<Settings> {
     settings.validate()?;
-    let previous = state.settings.get();
+    let _guard = state.settings.operation();
+    let mut previous = state.settings.get();
+    previous.start_with_os = read_autostart(&app)?;
     let saved = save_with_autostart(
         &previous,
         settings,
@@ -43,7 +51,9 @@ pub fn reset_settings<R: Runtime>(
     state: State<'_, AppState>,
 ) -> AppResult<Settings> {
     let defaults = Settings::default();
-    let previous = state.settings.get();
+    let _guard = state.settings.operation();
+    let mut previous = state.settings.get();
+    previous.start_with_os = read_autostart(&app)?;
     let saved = save_with_autostart(
         &previous,
         defaults,
@@ -127,6 +137,12 @@ fn set_autostart<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> AppResult<()>
             if enabled { "enable" } else { "disable" }
         ))
     })
+}
+
+fn read_autostart<R: Runtime>(app: &AppHandle<R>) -> AppResult<bool> {
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| AppError::SystemQueryFailed(format!("Could not read the login setting: {e}")))
 }
 
 #[cfg(test)]

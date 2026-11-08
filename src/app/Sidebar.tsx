@@ -26,7 +26,8 @@ export const Sidebar = memo(function Sidebar() {
   const navigate = useUiStore((s) => s.navigate);
   const groups = (["main", "resources", "tools"] as const).map((g) => ({
     id: g,
-    items: ROUTES.filter((r) => r.group === g),
+    // A contextual page shows only while it is open, as the current location.
+    items: ROUTES.filter((r) => r.group === g && (!r.contextual || r.id === route)),
   }));
 
   return (
@@ -36,7 +37,7 @@ export const Sidebar = memo(function Sidebar() {
     >
       <div className="flex h-14 items-center gap-2.5 px-4">
         <LogoMark />
-        <span className="text-[1.0625rem] font-semibold tracking-tight">Task Manager</span>
+        <span className="text-[1.0625rem] font-semibold tracking-tight">Tasky</span>
       </div>
       <div className="flex-1 overflow-y-auto px-2 pb-3">
         {groups.map((group) => (

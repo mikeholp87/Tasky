@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { loadBenchmarkData } from "@/services/benchmarks";
+import { useMetricsStore } from "@/stores/metricsStore";
 import { isBackendAvailable } from "@/services/ipc";
 import { isTerminal, latestByKind, useBenchmarkStore } from "@/stores/benchmarkStore";
 import { formatTimestamp } from "@/utils/format";
@@ -62,6 +63,7 @@ function Home() {
 }
 
 export function BenchmarksPage() {
+  const mounts = useMetricsStore((s) => s.tick?.disks.map((d) => d.mountPoint).join("\n"));
   const view = useBenchmarkStore((s) => s.view);
   const run = useBenchmarkStore((s) => s.run);
   const requestLaunch = useBenchmarkStore((s) => s.requestLaunch);
@@ -70,7 +72,7 @@ export function BenchmarksPage() {
 
   useEffect(() => {
     void loadBenchmarkData();
-  }, []);
+  }, [mounts]);
 
   if (!isBackendAvailable()) {
     return (

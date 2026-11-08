@@ -1,3 +1,4 @@
+import type { Volume, ServiceAction, ServiceInfo, ServiceScope } from "@/types";
 /**
  * The only module that talks to the Rust backend. Components and stores call
  * these typed wrappers; they never use `invoke` directly.
@@ -98,6 +99,13 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 }
 
 export const backend = {
+  listServices: (scope: ServiceScope) => call<ServiceInfo[]>("list_services", { scope }),
+  controlService: (scope: ServiceScope, unit: string, action: ServiceAction) =>
+    call<void>("control_service", { scope, unit, action }),
+  listVolumes: () => call<Volume[]>("list_volumes"),
+  mountVolume: (device: string) => call<string | null>("mount_volume", { device }),
+  unmountVolume: (device: string) => call<void>("unmount_volume", { device }),
+  powerOffVolume: (device: string) => call<void>("power_off_volume", { device }),
   getStaticInfo: () => call<StaticSystemInfo>("get_static_info"),
 
   getHistory: (seconds: number) => call<HistoryPoint[]>("get_history", { seconds }),

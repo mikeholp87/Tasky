@@ -1,4 +1,13 @@
-import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick, Network, Server } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Network,
+  Server,
+} from "lucide-react";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { TimeSeriesChart } from "@/components/charts/TimeSeriesChart";
@@ -28,7 +37,7 @@ import { levelLabel, usageLevel } from "@/utils/levels";
 import { uptimeSeconds } from "@/utils/system";
 
 const CHART_SECONDS = 60;
-const CHART_HEIGHT = 96;
+const CHART_HEIGHT = 72;
 
 export function OverviewPage() {
   const ready = useMetricsStore((s) => s.tick !== null);
@@ -81,20 +90,19 @@ function CpuCard() {
     ? `${info.physicalCoreCount ?? "?"} cores · ${info.logicalCoreCount} threads`
     : undefined;
   return (
-    <Card>
+    <Card className="flex flex-col">
       <CardHeader
         title="CPU"
         icon={<Cpu size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("cpu")} label="CPU details" />}
       />
-      <div className="space-y-3 px-4 pb-4 pt-2">
+      <div className="flex flex-1 flex-col gap-3 px-4 pb-4 pt-2">
         <BigValue
           value={formatPercent(cpu.usagePercent)}
           sub={[cores, formatFrequency(cpu.frequencyMhz)].filter(Boolean).join(" · ")}
           warning={levelLabel(usageLevel(cpu.usagePercent), "CPU")}
         />
         <CoreStrip perCore={cpu.perCore} height={44} fill />
-        <Meter percent={cpu.usagePercent} label="CPU usage" color="--res-cpu" />
         <TimeSeriesChart
           series={CPU_SERIES}
           seconds={CHART_SECONDS}
@@ -105,7 +113,7 @@ function CpuCard() {
           ariaLabel={`CPU usage over the last minute, currently ${formatPercent(cpu.usagePercent)}`}
         />
         {cpu.loadAverage && (
-          <p className="num text-fg-muted">
+          <p className="num mt-auto text-fg-muted">
             Load average {cpu.loadAverage.one.toFixed(2)} · {cpu.loadAverage.five.toFixed(2)} ·{" "}
             {cpu.loadAverage.fifteen.toFixed(2)}
           </p>
@@ -121,19 +129,13 @@ function MemoryCard() {
   if (!mem) return null;
   const swapPct = mem.swapTotalBytes > 0 ? (mem.swapUsedBytes / mem.swapTotalBytes) * 100 : 0;
   return (
-    <Card>
+    <Card className="flex flex-col">
       <CardHeader
         title="Memory"
-        icon={<MemoryStick size={14} aria-hidden />}
-        action={
-          <DetailsLink
-            onClick={() => navigate("memory")}
-            label="Explain memory usage"
-            text="Explain usage →"
-          />
-        }
+        icon={<MemoryStick size="0.875rem" aria-hidden />}
+        action={<DetailsLink onClick={() => navigate("memory")} label="Memory details" />}
       />
-      <div className="space-y-3 px-4 pb-4 pt-2">
+      <div className="flex flex-1 flex-col gap-3 px-4 pb-4 pt-2">
         <BigValue
           value={`${formatBytes(mem.usedBytes)} / ${formatBytes(mem.totalBytes)}`}
           sub={formatPercent(mem.usedPercent)}
@@ -149,7 +151,7 @@ function MemoryCard() {
           sparkline
           ariaLabel={`Memory usage over the last minute, currently ${formatPercent(mem.usedPercent)}`}
         />
-        <div className="flex items-center justify-between gap-4 text-fg-muted">
+        <div className="mt-auto flex items-center justify-between gap-4 text-fg-muted">
           <span>Swap</span>
           <span className="num">
             {mem.swapTotalBytes > 0
@@ -215,13 +217,13 @@ function NetworkCard() {
   const rx = point.netRx;
   const tx = point.netTx;
   return (
-    <Card>
+    <Card className="flex flex-col">
       <CardHeader
         title="Network"
         icon={<Network size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("network")} label="Network details" />}
       />
-      <div className="space-y-3 px-4 pb-4 pt-2">
+      <div className="flex flex-1 flex-col gap-3 px-4 pb-4 pt-2">
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
           <span className="num flex items-center gap-1 text-2xl font-semibold">
             <ArrowDown size="1.125rem" className="text-[var(--res-net)]" aria-label="Download" />
@@ -274,40 +276,28 @@ function SystemCard() {
         icon={<Server size="0.875rem" aria-hidden />}
         action={<DetailsLink onClick={() => navigate("system")} label="System information" />}
       />
-      <div className="grid gap-x-10 gap-y-1.5 px-4 pb-4 pt-3 md:grid-cols-2">
-        <KeyValueList
-          items={[
-            {
-              label: "Operating system",
-              value: info.distribution ?? info.longOsVersion ?? info.osName ?? "—",
-            },
-            { label: "Kernel", value: info.kernelVersion ?? "—" },
-            { label: "Hostname", value: info.hostname ?? "—" },
-            { label: "Architecture", value: info.architecture },
-          ]}
-        />
-        <KeyValueList
-          items={[
-            { label: "Uptime", value: formatDuration(uptimeSeconds(info.bootTimeSecs, now)) },
-            { label: "Boot time", value: formatTimestamp(bootMs) },
-            { label: "Processor", value: info.cpuBrand || "—" },
-            { label: "Installed RAM", value: formatBytes(info.totalMemoryBytes) },
-          ]}
-        />
-      </div>
+      <dl className="flex flex-wrap gap-x-8 gap-y-1.5 px-4 pb-4 pt-3">
+        {[
+          ["Operating system", info.distribution ?? info.longOsVersion ?? info.osName ?? "—"],
+          ["Kernel", info.kernelVersion ?? "—"],
+          ["Hostname", info.hostname ?? "—"],
+          ["Architecture", info.architecture],
+          ["Processor", info.cpuBrand || "—"],
+          ["Installed RAM", formatBytes(info.totalMemoryBytes)],
+          ["Uptime", formatDuration(uptimeSeconds(info.bootTimeSecs, now))],
+          ["Boot time", formatTimestamp(bootMs)],
+        ].map(([label, value]) => (
+          <div key={label} className="flex gap-2">
+            <dt className="text-fg-muted">{label}</dt>
+            <dd className="num selectable font-medium">{value}</dd>
+          </div>
+        ))}
+      </dl>
     </Card>
   );
 }
 
-function DetailsLink({
-  onClick,
-  label,
-  text = "Details →",
-}: {
-  onClick: () => void;
-  label: string;
-  text?: string;
-}) {
+function DetailsLink({ onClick, label }: { onClick: () => void; label: string }) {
   return (
     <button
       type="button"
@@ -315,7 +305,8 @@ function DetailsLink({
       aria-label={label}
       className="flex items-center gap-0.5 rounded-md py-0.5 pl-2 pr-1 text-[0.8125rem] text-fg-muted hover:bg-surface-2 hover:text-fg"
     >
-      {text}
+      Details
+      <ChevronRight size="0.875rem" aria-hidden />
     </button>
   );
 }

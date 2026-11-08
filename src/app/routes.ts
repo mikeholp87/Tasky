@@ -1,6 +1,7 @@
 import {
   Activity,
   Bell,
+  Cog,
   Cpu,
   FileSearch,
   FolderSearch,
@@ -29,6 +30,7 @@ export type RouteId =
   | "network"
   | "process-details"
   | "ports"
+  | "services"
   | "startup"
   | "file-finder"
   | "activity"
@@ -43,6 +45,11 @@ export interface RouteDef {
   icon: LucideIcon;
   /** Group used to visually separate sidebar sections. */
   group: "main" | "resources" | "tools";
+  /**
+   * Needs context (a chosen process), so it is reached from the page that
+   * provides it and is not a standing menu entry.
+   */
+  contextual?: boolean;
 }
 
 export const ROUTES: readonly RouteDef[] = [
@@ -53,8 +60,15 @@ export const ROUTES: readonly RouteDef[] = [
   { id: "memory", label: "Memory", icon: MemoryStick, group: "resources" },
   { id: "storage", label: "Storage", icon: HardDrive, group: "resources" },
   { id: "network", label: "Network", icon: Network, group: "resources" },
-  { id: "process-details", label: "Process Details", icon: FileSearch, group: "tools" },
+  {
+    id: "process-details",
+    label: "Process Details",
+    icon: FileSearch,
+    group: "tools",
+    contextual: true,
+  },
   { id: "ports", label: "Ports", icon: Plug, group: "tools" },
+  { id: "services", label: "Services", icon: Cog, group: "tools" },
   { id: "startup", label: "Startup", icon: Rocket, group: "tools" },
   { id: "file-finder", label: "Find File Users", icon: FolderSearch, group: "tools" },
   { id: "activity", label: "Activity", icon: ScrollText, group: "tools" },

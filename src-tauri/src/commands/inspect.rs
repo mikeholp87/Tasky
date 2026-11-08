@@ -6,7 +6,7 @@ use super::blocking::run as blocking;
 use std::sync::Arc;
 use std::time::Instant;
 
-use tauri::{AppHandle, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_dialog::DialogExt;
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::{
@@ -50,6 +50,8 @@ pub async fn set_startup_enabled(app: AppHandle, id: String, enabled: bool) -> A
                 item.name.escape_debug()
             ),
         )?;
+        let state = app.state::<AppState>();
+        let _guard = state.settings.operation();
         platform::set_startup_enabled(&id, enabled)
     })
     .await

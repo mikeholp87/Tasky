@@ -8,7 +8,7 @@ import {
   formatPercent,
   formatTimestamp,
 } from "@/utils/format";
-import { type ColumnId, type ProcessContext, memoryOf, runtimeSecs } from "./logic";
+import { type ColumnId, type ProcessContext, displayName, memoryOf, runtimeSecs } from "./logic";
 
 export const STATUS_LABEL: Record<ProcessState, string> = {
   running: "Running",
@@ -36,7 +36,7 @@ export function cellContent(column: ColumnId, row: ProcessRow, ctx: ProcessConte
   if (row.restricted && RESTRICTED_COLUMNS.has(column)) return NOT_AVAILABLE;
   switch (column) {
     case "name":
-      return row.name;
+      return displayName(row);
     case "pid":
       return row.pid;
     case "status":
@@ -82,7 +82,7 @@ export function cellTitle(column: ColumnId, row: ProcessRow): string | undefined
   switch (column) {
     case "user":
       return row.user == null
-        ? "Owner unavailable: the operating system restricts this information for processes of other accounts unless Task Manager runs with administrator/root rights."
+        ? "Owner unavailable: the operating system restricts this information for processes of other accounts unless Tasky runs with administrator/root rights."
         : undefined;
     case "exe":
       return row.exe ?? undefined;

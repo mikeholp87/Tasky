@@ -7,7 +7,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{PoisonError, RwLock};
+use std::sync::{Mutex, MutexGuard, PoisonError, RwLock};
 
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::Settings;
@@ -17,6 +17,7 @@ const FILE_NAME: &str = "settings.json";
 pub struct SettingsStore {
     path: Option<PathBuf>,
     current: RwLock<Settings>,
+    operation: Mutex<()>,
 }
 
 impl SettingsStore {
@@ -26,6 +27,7 @@ impl SettingsStore {
         Self {
             path,
             current: RwLock::new(current),
+            operation: Mutex::new(()),
         }
     }
 
@@ -34,6 +36,13 @@ impl SettingsStore {
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    /// Keep OS registration, persistence and runtime changes in one order.
+    pub fn operation(&self) -> MutexGuard<'_, ()> {
+        self.operation
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Validates, persists and stores `next`. Returns the stored settings.

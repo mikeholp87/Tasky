@@ -4,14 +4,21 @@
  * process is shown as that process. Pure functions, unit-tested.
  */
 import type { ProcessRow } from "@/types";
-import { memoryOf } from "./logic";
+import { baseName, displayName, memoryOf } from "./logic";
 import type { TableItem } from "./tree";
 
 export const GROUP_MEMORY_NOTE =
   "Sum of each process's memory. Linux uses proportional memory where available; Windows uses resident memory, so shared pages may be counted more than once.";
 
-function baseName(path: string): string {
-  return path.split(/[\\/]/).pop() || path;
+/**
+ * Group label. Members that share one process name are labelled by it (an
+ * executable such as ".../versions/2.1.318" says nothing); otherwise the
+ * executable's file name is the common thread.
+ */
+function groupLabel(members: readonly ProcessRow[]): string {
+  const first = members[0] as ProcessRow;
+  if (members.every((r) => r.name === first.name)) return displayName(first);
+  return first.exe ? baseName(first.exe) : first.name;
 }
 
 const keyOf = (row: ProcessRow): string => row.exe ?? row.name;
@@ -38,7 +45,7 @@ function summarize(members: readonly ProcessRow[], id: number, key: string): Pro
     ...first,
     pid: id,
     parentPid: null,
-    name: `${first.exe ? baseName(first.exe) : first.name} (${members.length})`,
+    name: `${groupLabel(members)} (${members.length})`,
     status: members.some((r) => r.status === "running") ? "running" : first.status,
     cpuPercent: sum((r) => r.cpuPercent),
     memoryBytes: sum((r) => r.memoryBytes),

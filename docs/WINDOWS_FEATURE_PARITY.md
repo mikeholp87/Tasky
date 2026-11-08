@@ -1,5 +1,35 @@
 # Windows feature parity with linux-port
 
+## Latest feature port — 2026-11-08
+
+Source: `linux-port` at `ae97bd6` (Services and drive power-off).
+Applied to the local `windows-app` branch, retaining the Windows benchmark
+implementation, memory diagnostics, startup policies and process-control audit
+fixes.
+
+| New source feature                         | Windows implementation                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Services page                              | Native Service Control Manager enumeration; search, state filters, startup policy, PID navigation, start/stop/restart and native confirmation. Critical, protected and unreadable service configurations cannot be controlled. Windows uses the System scope.                                                        |
+| External-drive mount/unmount and power-off | Volume GUID identities, free drive-letter assignment, exclusive lock before dismount, and Windows PnP safe eject. USB storage and removable SD/MMC media only; every partition on the Windows system disk is excluded. Eject requires every volume on the physical disk to be unmounted and respects Windows vetoes. |
+| Immediate storage updates                  | Refresh free space each tick and re-enumerate when the Windows drive-letter mask changes. Refresh benchmark targets when mounted drives change.                                                                                                                                                                      |
+| Overview and process-table refinements     | Compact aligned resource cards, clearer details links, quieter row styling, improved executable/group labels, and Tasky branding. Windows resident-memory accounting remains accurately described.                                                                                                                   |
+| Contextual process navigation              | Process Details appears in navigation only while open, and is omitted from global jump choices. Explicit process creation times remain attached to navigation.                                                                                                                                                       |
+| Pressure accessibility                     | CPU/memory pressure is described in words as well as colour.                                                                                                                                                                                                                                                         |
+| Reliability fixes                          | Independent alert episodes per process lifetime/mount, monotonic duration timing, ordered settings reset/save, serialized backend settings transactions, and OS autostart state readback.                                                                                                                            |
+
+Services retain normal Windows access checks; Tasky does not elevate itself.
+Drive-letter changes can require administrator rights. Busy drives are refused;
+there is no force-unmount path. Windows offers **Eject**, since physical USB power
+switching depends on the device. Actual service transitions and removable-drive
+mount/unmount/eject require a manual hardware check; automated native tests only
+enumerate resources and verify that protected services are refused.
+
+Linux packaging/release workflows, GNOME window rules and the independent Linux
+benchmark implementation are platform-specific and are not substituted into the
+Windows app.
+
+## Earlier diagnostics port
+
 Compared on 2026-11-06 against
 [`linux-port` at `7def4ae`](https://github.com/mikeholp87/Tasky/tree/7def4ae).
 The GitHub repository was renamed from `task-manager` to `Tasky`.
@@ -63,7 +93,7 @@ commit-pressure and kernel-pool diagnostics remain on the Memory page.
   and activity remain bounded in memory for the running session, matching the
   source branch; benchmark results retain their existing local persistence.
 
-Services management, logged-in-user management, persistent application history,
+At the earlier source revision, services management, logged-in-user management, persistent application history,
 thread control and full Windows handle enumeration were backlog items on
 linux-port, not implemented features to port.
 

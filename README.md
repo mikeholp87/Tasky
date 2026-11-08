@@ -1,4 +1,4 @@
-# Task Manager
+# Tasky
 
 A fast, private, cross-platform task manager and system monitor for Windows
 and Linux. It shows what your computer is doing in real time (processes, CPU,
@@ -26,6 +26,10 @@ and validation, is documented in [docs/WINDOWS_FEATURE_PARITY.md](docs/WINDOWS_F
   highlights, a bounded event timeline and potential memory/thread growth hints.
 - **Startup and system details:** reversible Windows Run/Startup-folder controls,
   richer hardware sections, optional live GPU/sensor readings and saved view choices.
+- **Windows services:** search services, inspect state/startup policy and owning
+  processes, and start/stop/restart with native confirmation and critical-service protection.
+- **External drives:** mount, unmount and safely eject USB/removable storage,
+  with live storage updates and Windows access/busy-drive checks.
 
 - **Overview:** CPU, memory, storage, network and system cards with live
   60-second graphs.
@@ -48,7 +52,7 @@ and validation, is documented in [docs/WINDOWS_FEATURE_PARITY.md](docs/WINDOWS_F
     itself.
 - **Performance:** large CPU, memory, disk and network graphs over
   60 s / 5 min / 15 min / 1 h.
-- **Memory diagnostics:** use **Explain usage** on Overview or open Memory to
+- **Memory diagnostics:** use **Details** on the Overview memory card or open Memory to
   rank app/executable groups by RAM or recent growth, inspect individual
   processes, and understand cache, commit pressure and Windows kernel pools.
 - **CPU, Memory, Storage, Network pages:**

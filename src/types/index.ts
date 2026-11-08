@@ -109,3 +109,11 @@ export type { MachineInfo } from "./generated/MachineInfo";
 export type { GpuSnapshot } from "./generated/GpuSnapshot";
 export type { InterfaceKind } from "./generated/InterfaceKind";
 export type { SensorReading } from "./generated/SensorReading";
+
+export type { Volume } from "./generated/Volume";
+
+export type { ServiceAction } from "./generated/ServiceAction";
+
+export type { ServiceInfo } from "./generated/ServiceInfo";
+
+export type { ServiceScope } from "./generated/ServiceScope";

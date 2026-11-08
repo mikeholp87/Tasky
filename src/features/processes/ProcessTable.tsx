@@ -30,9 +30,9 @@ import {
 } from "./logic";
 import type { TableItem } from "./tree";
 
-/** Red/green execution state: row marker and status-cell tint. */
+/** Execution state: a coloured row edge, plus a status-cell tint only for problem states. */
 const RUN_COLOR: Record<RunState, { bar: string; bg?: string; fg?: string }> = {
-  active: { bar: "var(--ok)", bg: "var(--ok-soft)", fg: "var(--ok)" },
+  active: { bar: "var(--ok)" },
   idle: { bar: "transparent" },
   problem: { bar: "var(--crit)", bg: "var(--crit-soft)", fg: "var(--crit)" },
 };
@@ -91,7 +91,9 @@ export function ProcessTable({
   const heat = useSettingsStore((s) => s.heatMapping);
   const highlightSecs = useSettingsStore((s) => s.newProcessSeconds);
   const rootPx = useRootPx();
-  const rowHeight = scaled(compact ? 26 : 32, rootPx);
+  // Rows scale with the type size, but stop at 18px root so a big window
+  // keeps showing many processes instead of fewer, taller rows.
+  const rowHeight = scaled(compact ? 26 : 32, Math.min(rootPx, 18));
 
   const template = useMemo(
     () => visibleColumns.map((c) => `${scaled(columnWidth(widths, c), rootPx)}px`).join(" "),
@@ -168,7 +170,7 @@ export function ProcessTable({
           return;
         case "Enter":
           if (current?.group) toggleCollapsed(current.row.pid);
-          else if (current) openProcess(current.row.pid);
+          else if (current) openProcess(current.row.pid, current.row.startTime);
           e.preventDefault();
           return;
         case "Delete":
@@ -281,7 +283,10 @@ const HeaderRow = memo(function HeaderRow({
             key={id}
             role="columnheader"
             aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
-            className="relative flex min-w-0"
+            className={cn(
+              "flex min-w-0",
+              id === "name" ? "sticky left-0 z-[1] bg-surface-2" : "relative",
+            )}
           >
             <button
               type="button"
@@ -354,7 +359,7 @@ interface RowProps {
   offset: number;
   height: number;
   onSelect: (pid: number) => void;
-  onOpen: (pid: number) => void;
+  onOpen: (pid: number, startTime: number) => void;
   onToggle: (pid: number) => void;
 }
 
@@ -390,10 +395,10 @@ const Row = memo(function Row({
       data-group={item.group ? "" : undefined}
       data-run={heat ? runState(row) : undefined}
       onClick={() => onSelect(row.pid)}
-      onDoubleClick={() => (item.group ? onToggle(row.pid) : onOpen(row.pid))}
+      onDoubleClick={() => (item.group ? onToggle(row.pid) : onOpen(row.pid, row.startTime))}
       onContextMenu={() => onSelect(row.pid)}
       className={cn(
-        "absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[0.875rem]",
+        "group absolute left-0 top-0 grid w-full items-center border-b border-border/60 text-[0.875rem]",
         selected ? "bg-accent-soft" : isNew ? "bg-accent-soft/40" : "hover:bg-surface-2",
         item.group && "font-medium",
       )}
@@ -422,6 +427,22 @@ const Row = memo(function Row({
               "flex h-full min-w-0 items-center px-2",
               col.align === "right" && "num justify-end",
               id === "name" && "font-medium",
+              // Stay in view while the other columns scroll sideways. Needs an
+              // opaque background that matches the row's state.
+              id === "name" &&
+                cn(
+                  "sticky left-0 z-[1]",
+                  selected
+                    ? "bg-accent-soft"
+                    : isNew
+                      ? "bg-[color-mix(in_srgb,var(--accent-soft)_40%,var(--surface))]"
+                      : "bg-surface group-hover:bg-surface-2",
+                ),
+              // Zero activity recedes so real disk I/O stands out.
+              ((id === "diskRead" && row.diskReadPerSec <= 0) ||
+                (id === "diskWrite" && row.diskWritePerSec <= 0)) &&
+                !row.restricted &&
+                "text-fg-subtle",
               (id === "exe" || id === "cmd") &&
                 "selectable font-mono text-[0.8125rem] text-fg-muted",
             )}

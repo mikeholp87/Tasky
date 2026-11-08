@@ -366,3 +366,44 @@ mod fallback {
         crate::errors::AppError::UnsupportedOperation("Startup items".into())
     }
 }
+
+/// External-drive and service operations use the native backend on Windows.
+#[cfg(windows)]
+pub use windows::{
+    control_service, mount_volume, power_off_volume, services, unmount_volume, volumes,
+};
+#[cfg(not(windows))]
+mod management_fallback {
+    use crate::{
+        errors::{AppError, AppResult},
+        models::{ServiceAction, ServiceInfo, ServiceScope, Volume},
+    };
+    fn unsupported() -> AppError {
+        AppError::UnsupportedOperation("Drive and service management".into())
+    }
+    pub fn volumes() -> AppResult<Vec<Volume>> {
+        Err(unsupported())
+    }
+    pub fn mount_volume(_: &str) -> AppResult<Option<String>> {
+        Err(unsupported())
+    }
+    pub fn unmount_volume(_: &str) -> AppResult<()> {
+        Err(unsupported())
+    }
+    pub fn power_off_volume(_: &str) -> AppResult<()> {
+        Err(unsupported())
+    }
+    pub fn services(_: ServiceScope) -> AppResult<Vec<ServiceInfo>> {
+        Err(unsupported())
+    }
+    pub fn control_service(
+        _: ServiceScope,
+        _: &str,
+        _: ServiceAction,
+        _: &dyn Fn(&ServiceInfo) -> AppResult<()>,
+    ) -> AppResult<()> {
+        Err(unsupported())
+    }
+}
+#[cfg(not(windows))]
+pub use management_fallback::*;
