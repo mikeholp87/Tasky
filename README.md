@@ -188,6 +188,28 @@ maintenance details.
 Platform differences are documented in
 [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).
 
+### Release notes
+
+**0.1.2** (current)
+
+- **External drives:** mount and unmount USB sticks, SD cards and external
+  disks from the Storage page. System and internal partitions are never
+  offered or touched. Needs `udisks2`, which the package recommends.
+- **Storage updates in real time:** plugged-in drives appear on the next tick,
+  and unplugged ones disappear within about a second (it used to take up to
+  30 s). The disk benchmark's drive list follows along.
+- **Design pass:** a calmer Overview, denser process table, a pinned Name
+  column when scrolling sideways, and an always-visible CPU core strip.
+
+**0.1.1**
+
+- The app is now named Tasky throughout the interface.
+- Process names cut off by Linux's 15-character limit are restored, and
+  grouped processes are labelled by name instead of a version number.
+- Fixes for process identity (PID reuse), alert durations, settings reset
+  races, autostart state and internet benchmark cancellation.
+- A `tasky(1)` man page.
+
 ## Technology
 
 | Layer         | Choice                                                  |
