@@ -95,6 +95,24 @@ pub fn set_startup_enabled(id: &str, enabled: bool) -> crate::errors::AppResult<
     linux_only::set_startup_enabled(id, enabled)
 }
 
+/// systemd services of one scope. Linux only.
+pub fn services(
+    scope: crate::models::ServiceScope,
+) -> crate::errors::AppResult<Vec<crate::models::ServiceInfo>> {
+    linux_only::services(scope)
+}
+
+/// Starts, stops or restarts a listed service. `confirm` is asked with the
+/// real service before anything runs; protected services are refused.
+pub fn control_service(
+    scope: crate::models::ServiceScope,
+    unit: &str,
+    action: crate::models::ServiceAction,
+    confirm: &dyn Fn(&crate::models::ServiceInfo) -> crate::errors::AppResult<()>,
+) -> crate::errors::AppResult<()> {
+    linux_only::control_service(scope, unit, action, confirm)
+}
+
 /// External drives the user may mount or unmount. System and internal
 /// partitions are never included. Linux only for now.
 pub fn volumes() -> crate::errors::AppResult<Vec<crate::models::Volume>> {
@@ -104,6 +122,11 @@ pub fn volumes() -> crate::errors::AppResult<Vec<crate::models::Volume>> {
 /// Mounts a listed volume; returns where it was mounted.
 pub fn mount_volume(device: &str) -> crate::errors::AppResult<Option<String>> {
     linux_only::mount_volume(device)
+}
+
+/// Powers off the drive holding an unmounted, listed volume.
+pub fn power_off_volume(device: &str) -> crate::errors::AppResult<()> {
+    linux_only::power_off_volume(device)
 }
 
 /// Unmounts a listed volume. Refuses anything `volumes` does not list.
@@ -281,6 +304,25 @@ mod fallback {
         Err(unsupported())
     }
 
+    pub fn services(
+        _scope: crate::models::ServiceScope,
+    ) -> crate::errors::AppResult<Vec<crate::models::ServiceInfo>> {
+        Err(crate::errors::AppError::UnsupportedOperation(
+            "Services".into(),
+        ))
+    }
+
+    pub fn control_service(
+        _scope: crate::models::ServiceScope,
+        _unit: &str,
+        _action: crate::models::ServiceAction,
+        _confirm: &dyn Fn(&crate::models::ServiceInfo) -> crate::errors::AppResult<()>,
+    ) -> crate::errors::AppResult<()> {
+        Err(crate::errors::AppError::UnsupportedOperation(
+            "Services".into(),
+        ))
+    }
+
     pub fn volumes() -> crate::errors::AppResult<Vec<crate::models::Volume>> {
         Ok(Vec::new())
     }
@@ -288,6 +330,12 @@ mod fallback {
     pub fn mount_volume(_device: &str) -> crate::errors::AppResult<Option<String>> {
         Err(crate::errors::AppError::UnsupportedOperation(
             "Mounting drives".into(),
+        ))
+    }
+
+    pub fn power_off_volume(_device: &str) -> crate::errors::AppResult<()> {
+        Err(crate::errors::AppError::UnsupportedOperation(
+            "Powering off drives".into(),
         ))
     }
 

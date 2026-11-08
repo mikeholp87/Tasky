@@ -14,4 +14,8 @@ device: string, label: string | null, fileSystem: string, sizeBytes: number,
 /**
  * Where it is mounted now; `None` when it is not mounted.
  */
-mountPoint: string | null, };
+mountPoint: string | null, 
+/**
+ * The drive can be powered off once every volume on it is unmounted.
+ */
+canPowerOff: boolean, };

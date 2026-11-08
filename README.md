@@ -75,8 +75,14 @@ then capture the page.
   - disk IOPS and active time;
   - per-interface rates and addresses.
 - **External drives (Linux):** mount and unmount USB sticks, SD cards and
-  external disks from the Storage page. System and internal partitions are
-  never offered and are refused by the backend. Needs UDisks (`udisks2`).
+  external disks from the Storage page, and power a drive off once it is
+  unmounted. System and internal partitions are never offered and are refused
+  by the backend. Needs UDisks (`udisks2`).
+- **Services (Linux, systemd):** see every service, its state and main process,
+  and start, stop or restart it. System-critical services (systemd, D-Bus,
+  networking, the display manager and similar) are shown but locked. Stop and
+  restart ask first, and changes to system services use your desktop's own
+  authorization prompt.
 - **Alerts:** rules such as _"node CPU above 80% for 20 s"_ or _"memory above
   85%"_, evaluated in the background with desktop notifications.
 - **Settings:** theme (system/light/dark), refresh interval

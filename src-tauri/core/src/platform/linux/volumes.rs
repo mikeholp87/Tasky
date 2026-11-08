@@ -38,6 +38,8 @@ struct Info {
     file_system: String,
     label: String,
     size: u64,
+    /// UDisks object path of the physical drive; empty or `/` when none.
+    drive: String,
     mount_points: Vec<String>,
 }
 
@@ -65,6 +67,7 @@ fn parse_info(text: &str) -> Info {
             "IdUsage" => info.usage = value.to_string(),
             "IdType" => info.file_system = value.to_string(),
             "IdLabel" => info.label = value.to_string(),
+            "Drive" => info.drive = value.trim_matches('\'').to_string(),
             "Size" if !have_size => {
                 info.size = value.parse().unwrap_or(0);
                 have_size = true;
@@ -150,8 +153,22 @@ fn candidates() -> AppResult<Vec<String>> {
         .collect())
 }
 
+/// Whether UDisks says this drive can be powered off.
+fn drive_can_power_off(drive: &str) -> bool {
+    if drive.is_empty() || drive == "/" {
+        return false;
+    }
+    udisksctl(&["info", "-p", drive])
+        .map(|text| {
+            text.lines()
+                .any(|l| l.trim().replace(' ', "") == "CanPowerOff:true")
+        })
+        .unwrap_or(false)
+}
+
 pub fn volumes() -> AppResult<Vec<Volume>> {
     let mut out = Vec::new();
+    let mut power: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     for device in candidates()? {
         let Ok(text) = udisksctl(&["info", "-b", &device]) else {
             continue;
@@ -160,12 +177,16 @@ pub fn volumes() -> AppResult<Vec<Volume>> {
         if !manageable(&info) {
             continue;
         }
+        let can_power_off = *power
+            .entry(info.drive.clone())
+            .or_insert_with(|| drive_can_power_off(&info.drive));
         out.push(Volume {
             device,
             label: (!info.label.is_empty()).then_some(info.label),
             file_system: info.file_system,
             size_bytes: info.size,
             mount_point: info.mount_points.into_iter().next(),
+            can_power_off,
         });
     }
     out.sort_by(|a, b| a.device.cmp(&b.device));
@@ -201,6 +222,83 @@ pub fn mount_volume(device: &str) -> AppResult<Option<String>> {
     Ok(out
         .split_once(" at ")
         .map(|(_, path)| path.trim().trim_end_matches('.').to_string()))
+}
+
+/// One block device and where the kernel says it is mounted.
+#[derive(Debug, PartialEq, Eq)]
+struct BlockRow {
+    path: String,
+    parent: Option<String>,
+    mounted: bool,
+}
+
+/// Reads `lsblk -J -o PATH,PKNAME,MOUNTPOINTS` (a flat list of devices).
+fn parse_block_rows(json: &str) -> Vec<BlockRow> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    value["blockdevices"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|d| {
+            Some(BlockRow {
+                path: d["path"].as_str()?.to_string(),
+                parent: d["pkname"].as_str().map(|p| format!("/dev/{p}")),
+                mounted: d["mountpoints"]
+                    .as_array()
+                    .is_some_and(|m| m.iter().any(|p| p.as_str().is_some())),
+            })
+        })
+        .collect()
+}
+
+/// The whole-disk device for `device`, and whether anything on that disk is
+/// still mounted (the disk itself or any partition, system ones included).
+fn disk_of(rows: &[BlockRow], device: &str) -> (String, bool) {
+    let disk = rows
+        .iter()
+        .find(|r| r.path == device)
+        .and_then(|r| r.parent.clone())
+        .unwrap_or_else(|| device.to_string());
+    let busy = rows
+        .iter()
+        .any(|r| (r.path == disk || r.parent.as_deref() == Some(disk.as_str())) && r.mounted);
+    (disk, busy)
+}
+
+/// Powers off the drive holding `device`, after all of its volumes are
+/// unmounted. The drive vanishes until it is plugged in again.
+pub fn power_off_volume(device: &str) -> AppResult<()> {
+    let volume = find(device)?;
+    if volume.mount_point.is_some() {
+        return Err(AppError::ActionUnavailable(
+            "Unmount the drive before powering it off.".into(),
+        ));
+    }
+    if !volume.can_power_off {
+        return Err(AppError::ActionUnavailable(
+            "This drive can't be powered off from here.".into(),
+        ));
+    }
+    let output = Command::new("lsblk")
+        .args(["-J", "-o", "PATH,PKNAME,MOUNTPOINTS"])
+        .env("LC_ALL", "C")
+        .output()
+        .map_err(|e| AppError::SystemQueryFailed(format!("Could not list drives: {e}")))?;
+    let (disk, busy) = disk_of(
+        &parse_block_rows(&String::from_utf8_lossy(&output.stdout)),
+        &volume.device,
+    );
+    if busy {
+        return Err(AppError::ActionUnavailable(
+            "Another volume on this drive is still mounted. Unmount it first.".into(),
+        ));
+    }
+    if !valid_device(&disk) {
+        return Err(AppError::InvalidArgument("That is not a drive.".into()));
+    }
+    udisksctl(&["power-off", "-b", &disk]).map(|_| ())
 }
 
 pub fn unmount_volume(device: &str) -> AppResult<()> {
@@ -313,6 +411,37 @@ mod tests {
         let info = parse_info(&text);
         assert_eq!(info.mount_points.len(), 2);
         assert!(!manageable(&info), "a mount under /home is a system path");
+    }
+
+    #[test]
+    fn power_off_waits_for_every_volume_on_the_disk() {
+        let rows = parse_block_rows(
+            r#"{"blockdevices":[
+              {"path":"/dev/sdb","pkname":null,"mountpoints":[null]},
+              {"path":"/dev/sdb1","pkname":"sdb","mountpoints":[null]},
+              {"path":"/dev/sdb2","pkname":"sdb","mountpoints":["/run/media/a/DATA"]},
+              {"path":"/dev/sdc","pkname":null,"mountpoints":[null]},
+              {"path":"/dev/sdc1","pkname":"sdc","mountpoints":[null]}
+            ]}"#,
+        );
+        // A sibling partition is still mounted, so sdb1 cannot be powered off yet.
+        assert_eq!(disk_of(&rows, "/dev/sdb1"), ("/dev/sdb".to_string(), true));
+        // sdc has nothing mounted.
+        assert_eq!(disk_of(&rows, "/dev/sdc1"), ("/dev/sdc".to_string(), false));
+        // A volume that is the whole disk is its own drive.
+        assert_eq!(disk_of(&rows, "/dev/sdb"), ("/dev/sdb".to_string(), true));
+    }
+
+    #[test]
+    fn reads_the_drive_object_path() {
+        let text = USB.replace(
+            "HintIgnore:",
+            "Drive:                      '/org/freedesktop/UDisks2/drives/Seagate_X'\n    HintIgnore:",
+        );
+        assert_eq!(
+            parse_info(&text).drive,
+            "/org/freedesktop/UDisks2/drives/Seagate_X"
+        );
     }
 
     #[test]

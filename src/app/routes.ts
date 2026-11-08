@@ -1,6 +1,7 @@
 import {
   Activity,
   Bell,
+  Cog,
   Cpu,
   FileSearch,
   FolderSearch,
@@ -29,6 +30,7 @@ export type RouteId =
   | "network"
   | "process-details"
   | "ports"
+  | "services"
   | "startup"
   | "file-finder"
   | "activity"
@@ -66,6 +68,7 @@ export const ROUTES: readonly RouteDef[] = [
     contextual: true,
   },
   { id: "ports", label: "Ports", icon: Plug, group: "tools" },
+  { id: "services", label: "Services", icon: Cog, group: "tools" },
   { id: "startup", label: "Startup", icon: Rocket, group: "tools" },
   { id: "file-finder", label: "Find File Users", icon: FolderSearch, group: "tools" },
   { id: "activity", label: "Activity", icon: ScrollText, group: "tools" },

@@ -130,9 +130,12 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::services::list_services,
+            commands::services::control_service,
             commands::volumes::list_volumes,
             commands::volumes::mount_volume,
             commands::volumes::unmount_volume,
+            commands::volumes::power_off_volume,
             commands::monitoring::get_static_info,
             commands::monitoring::subscribe_metrics,
             commands::monitoring::get_history,

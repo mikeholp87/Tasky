@@ -33,6 +33,9 @@ import type {
   StartupItem,
   StaticSystemInfo,
   ThreadList,
+  ServiceAction,
+  ServiceInfo,
+  ServiceScope,
   Volume,
 } from "@/types";
 
@@ -103,6 +106,11 @@ export const backend = {
   listVolumes: () => call<Volume[]>("list_volumes"),
   mountVolume: (device: string) => call<string | null>("mount_volume", { device }),
   unmountVolume: (device: string) => call<void>("unmount_volume", { device }),
+  powerOffVolume: (device: string) => call<void>("power_off_volume", { device }),
+
+  listServices: (scope: ServiceScope) => call<ServiceInfo[]>("list_services", { scope }),
+  controlService: (scope: ServiceScope, unit: string, action: ServiceAction) =>
+    call<void>("control_service", { scope, unit, action }),
 
   startBenchmark: (
     kind: BenchmarkKind,

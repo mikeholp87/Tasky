@@ -15,4 +15,6 @@ pub struct Volume {
     pub size_bytes: u64,
     /// Where it is mounted now; `None` when it is not mounted.
     pub mount_point: Option<String>,
+    /// The drive can be powered off once every volume on it is unmounted.
+    pub can_power_off: bool,
 }

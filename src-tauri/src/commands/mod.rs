@@ -9,6 +9,7 @@ pub mod export;
 pub mod inspect;
 pub mod monitoring;
 pub mod processes;
+pub mod services;
 pub mod settings;
 mod validate;
 pub mod volumes;

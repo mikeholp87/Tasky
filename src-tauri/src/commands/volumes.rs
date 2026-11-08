@@ -18,6 +18,12 @@ pub async fn mount_volume(device: String) -> AppResult<Option<String>> {
     blocking(move || platform::mount_volume(&device)).await
 }
 
+/// Powers off the drive holding an unmounted, listed volume.
+#[tauri::command]
+pub async fn power_off_volume(device: String) -> AppResult<()> {
+    blocking(move || platform::power_off_volume(&device)).await
+}
+
 /// Unmounts a listed drive. Refused for system and internal partitions.
 #[tauri::command]
 pub async fn unmount_volume(device: String) -> AppResult<()> {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-power-off-volume"
+description = "Enables the power_off_volume command without any pre-configured scope."
+commands.allow = ["power_off_volume"]
+
+[[permission]]
+identifier = "deny-power-off-volume"
+description = "Denies the power_off_volume command without any pre-configured scope."
+commands.deny = ["power_off_volume"]

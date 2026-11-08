@@ -265,6 +265,7 @@ const VOLUMES = [
     fileSystem: "exfat",
     sizeBytes: 1_000_204_886_016,
     mountPoint: "/run/media/alice/BACKUP" as string | null,
+    canPowerOff: true,
   },
   {
     device: "/dev/sdc1",
@@ -272,12 +273,57 @@ const VOLUMES = [
     fileSystem: "vfat",
     sizeBytes: 32_017_047_552,
     mountPoint: null as string | null,
+    canPowerOff: true,
   },
 ];
+
+const SERVICES = [
+  ["cups.service", "CUPS Scheduler", "active", "running", "enabled", 812, false],
+  ["bluetooth.service", "Bluetooth service", "active", "running", "enabled", 980, false],
+  [
+    "docker.service",
+    "Docker Application Container Engine",
+    "inactive",
+    "dead",
+    "disabled",
+    null,
+    false,
+  ],
+  ["geoclue.service", "Location Lookup Service", "failed", "failed", "static", null, false],
+  ["NetworkManager.service", "Network Manager", "active", "running", "enabled", 1099, true],
+  ["ssh.service", "OpenBSD Secure Shell server", "inactive", "dead", "enabled", null, false],
+  ["systemd-logind.service", "User Login Management", "active", "running", "static", 601, true],
+].map(([unit, description, activeState, subState, startup, mainPid, protectedUnit]) => ({
+  unit,
+  description,
+  activeState,
+  subState,
+  startup,
+  mainPid,
+  protected: protectedUnit,
+}));
 
 /** Returns the stub reply for an inspection command, or `NOT_HANDLED`. */
 export function inspectPreview(cmd: string, args: unknown): unknown {
   switch (cmd) {
+    case "list_services":
+      return SERVICES.map((v) => ({ ...v }));
+    case "control_service": {
+      const { unit, action } = args as { unit: string; action: string };
+      const svc = SERVICES.find((x) => x.unit === unit);
+      if (svc && !svc.protected) {
+        const on = action !== "stop";
+        svc.activeState = on ? "active" : "inactive";
+        svc.subState = on ? "running" : "dead";
+        svc.mainPid = on ? 4242 : null;
+      }
+      return null;
+    }
+    case "power_off_volume": {
+      const i = VOLUMES.findIndex((x) => x.device === (args as { device: string }).device);
+      if (i >= 0) VOLUMES.splice(i, 1);
+      return null;
+    }
     case "list_volumes":
       return VOLUMES.map((v) => ({ ...v }));
     case "mount_volume": {

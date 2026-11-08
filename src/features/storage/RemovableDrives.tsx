@@ -11,6 +11,9 @@ import { formatBytes } from "@/utils/format";
 /** Drives plugged in but not mounted do not change the mount table, so poll slowly. */
 const POLL_MS = 5000;
 
+const btn =
+  "h-8 rounded-md border border-border px-3 text-fg-muted hover:text-fg disabled:opacity-50";
+
 const nameOf = (v: Volume) => v.label ?? v.device;
 
 /**
@@ -26,12 +29,17 @@ export function RemovableDrives() {
   const { data, refresh } = useRemoteData(() => backend.listVolumes(), mounts ?? "", POLL_MS);
   const volumes = data ?? [];
 
-  const act = async (v: Volume) => {
+  const act = async (v: Volume, what: "mount" | "unmount" | "powerOff") => {
     setBusy(v.device);
     try {
-      if (v.mountPoint) {
+      if (what === "unmount") {
         await backend.unmountVolume(v.device);
-        toast.success(`Unmounted ${nameOf(v)}. It is safe to unplug.`);
+        toast.success(
+          `Unmounted ${nameOf(v)}. ${v.canPowerOff ? "You can power it off now." : "It is safe to unplug."}`,
+        );
+      } else if (what === "powerOff") {
+        await backend.powerOffVolume(v.device);
+        toast.success(`Powered off ${nameOf(v)}. You can unplug it.`);
       } else {
         const at = await backend.mountVolume(v.device);
         toast.success(at ? `Mounted ${nameOf(v)} at ${at}` : `Mounted ${nameOf(v)}`);
@@ -59,21 +67,34 @@ export function RemovableDrives() {
                 {v.mountPoint && <span className="selectable">{v.mountPoint}</span>}
               </div>
             </div>
-            <button
-              type="button"
-              disabled={busy !== null}
-              onClick={() => void act(v)}
-              aria-label={`${v.mountPoint ? "Unmount" : "Mount"} ${nameOf(v)}`}
-              className="h-8 shrink-0 rounded-md border border-border px-3 text-fg-muted hover:text-fg disabled:opacity-50"
-            >
-              {busy === v.device
-                ? v.mountPoint
-                  ? "Unmounting…"
-                  : "Mounting…"
-                : v.mountPoint
-                  ? "Unmount"
-                  : "Mount"}
-            </button>
+            <div className="flex shrink-0 gap-2">
+              {!v.mountPoint && v.canPowerOff && (
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => void act(v, "powerOff")}
+                  aria-label={`Power off ${nameOf(v)}`}
+                  className={btn}
+                >
+                  {busy === v.device ? "Working…" : "Power off"}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => void act(v, v.mountPoint ? "unmount" : "mount")}
+                aria-label={`${v.mountPoint ? "Unmount" : "Mount"} ${nameOf(v)}`}
+                className={btn}
+              >
+                {busy === v.device
+                  ? v.mountPoint
+                    ? "Unmounting…"
+                    : "Mounting…"
+                  : v.mountPoint
+                    ? "Unmount"
+                    : "Mount"}
+              </button>
+            </div>
           </li>
         ))}
       </ul>

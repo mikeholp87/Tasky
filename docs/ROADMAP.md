@@ -25,6 +25,10 @@ GPU utilization and memory, temperature sensors, and battery state/health where
 the operating system exposes them. Live GPU/temperature charts and fan-speed
 monitoring are not implemented.
 
+Also available on Linux: a Services page (systemd, with critical services
+locked and confirmation before stop or restart) and mounting, unmounting and
+powering off external drives.
+
 ## Next
 
 - **Windows: elevation helper.** A narrow, signed helper process for actions
@@ -36,7 +40,6 @@ monitoring are not implemented.
 - **macOS support.** Fill in `platform/macos` (`proc_pidinfo`, `kill`,
   `setpriority`, `IOKit` disk stats) and sign/notarize the bundle.
 - **Automatic updates** with the Tauri updater, once releases are signed.
-- **Services** page (P1 in the gap analysis; needs systemd D-Bus integration).
 - **Windows startup applications** (the current Startup manager uses Linux XDG entries).
 - **File-descriptor / handle growth hints.** Needs counting descriptors for
   selected processes over time; memory and thread growth are already covered.
