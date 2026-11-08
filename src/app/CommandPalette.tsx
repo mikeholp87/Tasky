@@ -47,7 +47,7 @@ export function CommandPalette() {
       });
     }
     list.push(
-      ...ROUTES.map((r) => ({
+      ...ROUTES.filter((r) => !r.contextual).map((r) => ({
         id: `go-${r.id}`,
         label: `Go to ${r.label}`,
         run: () => navigate(r.id),

@@ -26,7 +26,8 @@ export const Sidebar = memo(function Sidebar() {
   const navigate = useUiStore((s) => s.navigate);
   const groups = (["main", "resources", "tools"] as const).map((g) => ({
     id: g,
-    items: ROUTES.filter((r) => r.group === g),
+    // A contextual page shows only while it is open, as the current location.
+    items: ROUTES.filter((r) => r.group === g && (!r.contextual || r.id === route)),
   }));
 
   return (

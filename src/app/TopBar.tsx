@@ -1,11 +1,11 @@
-import { Pause, Play, RefreshCw } from "lucide-react";
+import { OctagonAlert, Pause, Play, RefreshCw, TriangleAlert } from "lucide-react";
 import { memo } from "react";
 import { cn } from "@/lib/cn";
 import { CoreStrip } from "@/components/ui/CoreStrip";
 import { refreshNow, togglePaused } from "@/services/monitoring";
 import { useMetricsStore } from "@/stores/metricsStore";
 import { formatBytesPerSecond, formatPercent, NOT_AVAILABLE } from "@/utils/format";
-import { usageLevel } from "@/utils/levels";
+import { levelLabel, usageLevel } from "@/utils/levels";
 
 /** Persistent system summary and monitoring controls. */
 export const TopBar = memo(function TopBar() {
@@ -46,8 +46,11 @@ function SummaryItem({
   children?: React.ReactNode;
 }) {
   const level = usageLevel(value);
+  // Colour alone must not carry the warning: add a shape and a spoken label.
+  const note = levelLabel(level, label);
+  const Alert = level === "critical" ? OctagonAlert : TriangleAlert;
   return (
-    <div className="flex items-baseline gap-2">
+    <div className="flex items-baseline gap-2" title={note ?? undefined}>
       <span className="text-fg-subtle">{label}</span>
       <span
         className={cn(
@@ -58,6 +61,16 @@ function SummaryItem({
       >
         {formatPercent(value)}
       </span>
+      {note && (
+        <>
+          <Alert
+            size="0.875rem"
+            aria-hidden
+            className={cn("self-center", level === "critical" ? "text-crit" : "text-warn")}
+          />
+          <span className="sr-only">{note}</span>
+        </>
+      )}
       {children}
     </div>
   );
