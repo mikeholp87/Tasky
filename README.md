@@ -196,7 +196,14 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.3** (current)
+**0.1.4** (current)
+
+- Fixed the login entry written by "Start with the OS" when Tasky had been
+  upgraded or rebuilt while running. It could point at a path ending in
+  "(deleted)" and never start. If you enabled it before, delete
+  `~/.config/autostart/Tasky.desktop` and turn the setting on again.
+
+**0.1.3**
 
 - **Services (Linux, systemd):** see every service and its state, and start,
   stop or restart it. System-critical services are shown but locked. Stop and
