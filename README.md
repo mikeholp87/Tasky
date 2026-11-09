@@ -196,7 +196,18 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.2** (current)
+**0.1.3** (current)
+
+- **Services (Linux, systemd):** see every service and its state, and start,
+  stop or restart it. System-critical services are shown but locked. Stop and
+  restart ask first.
+- **Power off drives:** after unmounting an external drive, power it off from
+  the Storage page before unplugging it.
+- **Process Details** now appears in the sidebar only while a process is
+  open, and the top bar shows an icon, not only a color, when CPU or memory is
+  high.
+
+**0.1.2**
 
 - **External drives:** mount and unmount USB sticks, SD cards and external
   disks from the Storage page. System and internal partitions are never
