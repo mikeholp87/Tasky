@@ -66,13 +66,29 @@ pub fn set<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> AppResult<()> {
         .env()
         .appimage
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::current_exe().ok())
+        .or_else(|| std::env::current_exe().ok().map(running_exe))
         .ok_or_else(|| {
             AppError::SystemQueryFailed("the application executable could not be located".into())
         })?;
     let text = linux_entry(&app.package_info().name, &exe)?;
     tm_core::filesystem::write_private_atomic(&directory.join(entry_id(app)), text.as_bytes())
         .map_err(|e| AppError::SystemQueryFailed(format!("could not save the login entry: {e}")))
+}
+
+/// The kernel reports `/proc/self/exe` with " (deleted)" appended once the file
+/// has been replaced while the app runs (a rebuild or an upgrade). The new file
+/// at the original path is what should start at login, so use that.
+#[cfg(target_os = "linux")]
+fn running_exe(path: std::path::PathBuf) -> std::path::PathBuf {
+    if !path.exists()
+        && let Some(original) = path.to_str().and_then(|p| p.strip_suffix(" (deleted)"))
+    {
+        let original = std::path::PathBuf::from(original);
+        if original.exists() {
+            return original;
+        }
+    }
+    path
 }
 
 #[cfg(target_os = "linux")]
@@ -102,6 +118,26 @@ fn linux_entry(name: &str, exe: &std::path::Path) -> AppResult<String> {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_replaced_executable_keeps_its_original_path() {
+        let dir = std::env::temp_dir().join(format!("tasky-exe-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("tasky");
+        std::fs::write(&exe, b"").unwrap();
+        let deleted = dir.join("tasky (deleted)");
+        // The original exists again (rebuilt or upgraded): use it.
+        assert_eq!(running_exe(deleted.clone()), exe);
+        // A normal path is untouched.
+        assert_eq!(running_exe(exe.clone()), exe);
+        // Nothing to fall back to: leave the path alone.
+        std::fs::remove_file(&exe).unwrap();
+        assert_eq!(running_exe(deleted.clone()), deleted);
+        // A file that really is named "... (deleted)" is respected.
+        std::fs::write(&deleted, b"").unwrap();
+        assert_eq!(running_exe(deleted.clone()), deleted);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn login_entry_quotes_executable_and_escapes_desktop_field_codes() {
