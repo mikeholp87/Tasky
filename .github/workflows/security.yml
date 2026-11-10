@@ -27,9 +27,9 @@ jobs:
       - name: Audit npm lockfile without running package scripts
         run: npm audit --package-lock-only --audit-level=moderate
       - name: Install pinned local auditors
-        run: |
-          cargo install --locked --version 0.22.2 cargo-audit
-          cargo install --locked --version 0.20.2 cargo-deny
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-audit@0.22.2,cargo-deny@0.20.2
       - name: RustSec (including visible maintenance and unsoundness warnings)
         working-directory: src-tauri
         run: cargo audit

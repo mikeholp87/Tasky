@@ -17,5 +17,5 @@ and coordinate a fix before disclosure. No guaranteed response SLA is currently
 published; an acknowledgement or fix date should not be assumed.
 
 See [the application security model](docs/SECURITY.md),
-[audit findings](docs/SECURITY_AUDIT.md), and
+[2026-11-03 audit findings](docs/archive/security-2026-11-03/SECURITY_AUDIT.md), and
 [release checklist](docs/SECURITY_CHECKLIST.md).

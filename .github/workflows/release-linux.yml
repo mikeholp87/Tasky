@@ -19,7 +19,13 @@ jobs:
       - name: Check release version
         env:
           TAG: ${{ github.ref_name }}
-        run: test "${TAG#v}" = "$(jq -r .version src-tauri/tauri.conf.json)"
+        run: |
+          version=${TAG#v}
+          test "$version" = "$(jq -r .version src-tauri/tauri.conf.json)"
+          test "$version" = "$(jq -r .version package.json)"
+          grep -qx "version = \"$version\"" src-tauri/Cargo.toml
+          grep -qx "version = \"$version\"" src-tauri/core/Cargo.toml
+          head -n 1 src-tauri/linux/tasky.1 | grep -qF "\"Tasky $version\""
       - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev desktop-file-utils
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -27,9 +33,21 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
+          components: clippy
           toolchain: 1.96.0
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          workspaces: src-tauri
       - run: npm ci
-      - run: npx tauri build --bundles deb --config src-tauri/tauri.linux.conf.json
+      - name: Verify before publishing
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+          cd src-tauri
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --locked
+      - run: npx tauri build --bundles deb --config src-tauri/tauri.linux.conf.json -- --locked
       - name: Validate package and checksum
         run: |
           mapfile -t packages < <(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print)
@@ -90,6 +108,15 @@ jobs:
           APTLY_PASSPHRASE_FILE: ${{ runner.temp }}/aptly-passphrase
         run: |
           scripts/publish-apt.sh Tasky.deb "$GITHUB_REF_NAME" public
+      - name: Remove signing key from runner
+        if: always()
+        env:
+          APTLY_KEY_ID: ${{ vars.APTLY_KEY_ID || secrets.APTLY_KEY_ID }}
+        run: |
+          rm -f "$RUNNER_TEMP/aptly-passphrase"
+          if [ -n "$APTLY_KEY_ID" ] && gpg --batch --list-secret-keys "$APTLY_KEY_ID" >/dev/null 2>&1; then
+            gpg --batch --yes --delete-secret-keys "$APTLY_KEY_ID"
+          fi
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: public

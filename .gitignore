@@ -25,6 +25,8 @@ dist-ssr
 
 # Rust / Tauri
 src-tauri/target
+# ts-rs default output when its export dir isn't configured
+src-tauri/core/bindings
 coverage
 playwright-report
 test-results

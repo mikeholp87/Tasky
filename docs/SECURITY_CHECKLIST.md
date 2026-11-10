@@ -21,7 +21,7 @@
 - [ ] Linux production build/package and interactive controls tested unprivileged.
 - [ ] Real GPU tests run on supported hardware without claiming fake-device tests validate drivers.
 - [ ] Installers signed where supported; checksums generated and release provenance retained.
-- [ ] Review SECURITY_AUDIT.md remaining risks; do not describe unresolved checks as passed.
+- [ ] Review [SECURITY_AUDIT.md](archive/security-2026-11-03/SECURITY_AUDIT.md) remaining risks; do not describe unresolved checks as passed.
 
 The audit validation results are recorded separately. This reusable checklist
 is deliberately unchecked: it must be completed for each release.

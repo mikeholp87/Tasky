@@ -1,7 +1,7 @@
 # Benchmarks
 
 What the Benchmarks page measures, how, and what the numbers do and do not
-mean. Implementation plan: [`LINUX_BENCHMARK_IMPLEMENTATION.md`](LINUX_BENCHMARK_IMPLEMENTATION.md).
+mean. Implementation plan: [`LINUX_BENCHMARK_IMPLEMENTATION.md`](archive/plans/LINUX_BENCHMARK_IMPLEMENTATION.md).
 Validation data: [`LINUX_BENCHMARK_VALIDATION.md`](LINUX_BENCHMARK_VALIDATION.md).
 
 **Status:** the CPU, GPU, disk and internet benchmarks exist. The full system

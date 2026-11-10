@@ -86,13 +86,15 @@ Releases.
    revocation certificate.
 
 5. Commit the desired application version, push it, create the matching
-   annotated tag (for example `git tag -a v0.1.0 -m 'Release v0.1.0'`), and
-   push that tag. The release fails if the tag differs from the Tauri version.
+   annotated tag (for example `git tag -a vX.Y.Z -m 'Release vX.Y.Z'`), and
+   push that tag. The release fails if the tag differs from the version in
+   `src-tauri/tauri.conf.json`, `package.json`, both `Cargo.toml` files or the
+   `tasky(1)` man page.
 
 The signing job imports the key only after the protected environment grants
 access, verifies the complete fingerprint, builds the repository, and checks
-both `InRelease` and `Release.gpg` signatures before uploading the Pages
-artifact. A separate job deploys that verified artifact with only Pages
+both `InRelease` and `Release.gpg` signatures. It then deletes the secret key
+from the runner keyring and uploads the Pages artifact. A separate job deploys that verified artifact with only Pages
 permissions.
 
 ## Local package checks
@@ -101,7 +103,7 @@ After building the Linux package with
 `npx tauri build --bundles deb --config src-tauri/tauri.linux.conf.json`, run:
 
 ```sh
-scripts/validate-deb.sh src-tauri/target/release/bundle/deb/Tasky_0.1.0_amd64.deb
+scripts/validate-deb.sh src-tauri/target/release/bundle/deb/Tasky_X.Y.Z_amd64.deb
 ```
 
 The CI and release workflows also install and remove the package in a clean

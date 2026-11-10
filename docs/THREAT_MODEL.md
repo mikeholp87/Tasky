@@ -1,6 +1,6 @@
 # Threat model
 
-Audit date: 2026-11-03. Baseline: SECURITY_BASELINE.md. This is a normal-user
+Audit date: 2026-11-03. Baseline: [SECURITY_BASELINE.md](archive/security-2026-11-03/SECURITY_BASELINE.md). This is a normal-user
 desktop application, not a privileged broker. A WebView compromise grants
 access to permitted commands, not unrestricted OS authority.
 
@@ -72,4 +72,4 @@ during the audit must be revalidated before release.
   account is outside the protection of WebView ACLs. No claim of protection
   against root, Administrator, kernel or GPU-driver compromise is made.
 
-See SECURITY_AUDIT.md for severity, evidence and unresolved release checks.
+See [SECURITY_AUDIT.md](archive/security-2026-11-03/SECURITY_AUDIT.md) for severity, evidence and unresolved release checks.

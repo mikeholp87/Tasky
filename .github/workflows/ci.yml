@@ -66,20 +66,22 @@ jobs:
 
       - name: Generated TypeScript types are up to date
         shell: bash
-        run: git diff --exit-code -- src/types/generated
+        run: |
+          git status --porcelain -- src/types/generated
+          test -z "$(git status --porcelain -- src/types/generated)"
 
   bundle:
     name: Bundle (${{ matrix.os }})
     needs: check
-    # Validate Debian packaging on pull requests; build every bundle manually.
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && matrix.os == 'ubuntu-22.04')
     strategy:
       fail-fast: false
       matrix:
+        # Pull requests validate Debian packaging only; a manual run builds every bundle.
+        # `matrix` is not available in a job-level `if:`, so the OS list is chosen here.
         # Linux bundles are built on the oldest supported base so the
         # binary's glibc requirement (2.35) is met by Debian 12, Ubuntu 22.04
         # and newer. Building on a newer distro would raise that floor.
-        os: [windows-latest, ubuntu-22.04]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-22.04"]') || fromJSON('["windows-latest", "ubuntu-22.04"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -102,9 +104,9 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
-      - run: npx tauri build --config src-tauri/tauri.linux.conf.json
+      - run: npx tauri build --config src-tauri/tauri.linux.conf.json -- --locked
         if: runner.os == 'Linux'
-      - run: npx tauri build
+      - run: npx tauri build -- --locked
         if: runner.os == 'Windows'
       - name: Validate Debian package
         if: runner.os == 'Linux'

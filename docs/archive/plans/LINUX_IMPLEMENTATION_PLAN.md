@@ -2,7 +2,7 @@
 
 Written 2026-11-03 after inspecting the repository on the target machine.
 It records what already existed, what was missing, and what this pass
-changes. Results are in [`LINUX_PORT_REPORT.md`](LINUX_PORT_REPORT.md).
+changes. Its results report, `LINUX_PORT_REPORT.md`, was never committed.
 
 ## 1. Existing architecture
 
@@ -157,7 +157,7 @@ Test the app under the native KDE Wayland session and under XWayland
 The repository contained **no** benchmark code (CPU, GPU, disk or internet), so
 there was nothing to port and building a benchmark suite was kept out of this
 pass. A shared CPU benchmark was added afterwards; see
-[`BENCHMARKS.md`](BENCHMARKS.md) and
+[`BENCHMARKS.md`](../../BENCHMARKS.md) and
 [`LINUX_BENCHMARK_IMPLEMENTATION.md`](LINUX_BENCHMARK_IMPLEMENTATION.md).
 
 ## 19. Permissions

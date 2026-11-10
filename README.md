@@ -57,7 +57,7 @@ then capture the page.
   - End, force end, suspend, resume, change priority, copy details, open file
     location.
   - Confirmation dialogs with escalating warnings.
-  - Server-side protection for critical system processes and for Task Manager
+  - Server-side protection for critical system processes and for Tasky
     itself.
 - **Benchmarks:** a repeatable CPU benchmark (single-core and multi-core:
   integer, floating point, SHA-256, compression) and a GPU compute benchmark
@@ -104,14 +104,16 @@ then capture the page.
 
 ## Supported operating systems
 
-| OS                                         | Status                                               |
-| ------------------------------------------ | ---------------------------------------------------- |
-| Windows 11 (x64)                           | Supported (primary)                                  |
-| Debian / Ubuntu and other mainstream Linux | Supported; works on KDE Plasma and GNOME             |
-| macOS                                      | Not yet; the architecture has a platform slot for it |
+| OS                                 | Status                                               |
+| ---------------------------------- | ---------------------------------------------------- |
+| Windows 11 (x64)                   | Supported (primary)                                  |
+| Debian 12+ / Ubuntu 22.04+ (amd64) | Supported; works on KDE Plasma and GNOME             |
+| Other Linux distributions          | Not tested; build from source                        |
+| macOS                              | Not yet; the architecture has a platform slot for it |
 
 **Linux desktops:** the Linux port is available and compatible with both
-KDE Plasma and GNOME, on Wayland. Packages: `.deb`, `.rpm` and AppImage (see
+KDE Plasma and GNOME, on Wayland. Release builds ship a `.deb` only (APT
+repository and GitHub Releases); `.rpm` and AppImage can be built locally (see
 Building).
 
 | Desktop    | Status           | System tray                               | Window position                                                                |
@@ -252,7 +254,8 @@ Platform differences are documented in
 Prerequisites:
 
 - Node.js 20+ (developed with 24).
-- Rust stable (1.90+), via [rustup](https://rustup.rs).
+- Rust via [rustup](https://rustup.rs); `rust-toolchain.toml` pins the
+  version CI uses (minimum supported: 1.90).
 - **Windows:** Microsoft C++ Build Tools ("Desktop development with C++")
   and the WebView2 runtime, which ships with Windows 11.
 - **Linux:**
@@ -272,7 +275,8 @@ npm run tauri dev
 ## Building
 
 ```sh
-npm run tauri build
+npm run tauri build                                              # Windows
+npm run tauri build -- --config src-tauri/tauri.linux.conf.json  # Linux (Tasky name and man page)
 ```
 
 | Platform | Output (`src-tauri/target/release/bundle/`)   |
@@ -280,7 +284,8 @@ npm run tauri build
 | Windows  | `msi/` (WiX) and `nsis/` (per-user installer) |
 | Linux    | `deb/`, `rpm/` and `appimage/`                |
 
-Build each platform on that platform; CI builds both. To build only the
+Build each platform on that platform. Only the `.deb` is published; `.rpm`
+and AppImage are local builds and are not tested by CI. To build only the
 executable, without installers: `npx tauri build --no-bundle`.
 
 ## Testing and checks
@@ -331,8 +336,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 - Protection rules run in Rust on every request. The UI cannot bypass them.
 - The app is unprivileged. It never elevates itself; denied operations say
   so clearly.
-- Tauri capabilities are limited to `core:default`. Plugins are used from Rust
-  only.
+- The Tauri capability for the local main window allows only event
+  listening and the app's own commands. Plugins are used from Rust only.
 - Command lines are never logged, and are excluded from exports unless you
   opt in.
 

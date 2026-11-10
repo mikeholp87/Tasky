@@ -29,6 +29,16 @@
       content="Tasky overview page in the dark theme showing CPU, memory, storage and network cards"
     />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Tasky: a private system monitor and task manager" />
+    <meta
+      name="twitter:description"
+      content="Live CPU, memory, disk and network graphs and a fast process table for Linux and Windows. Free, open source, no telemetry."
+    />
+    <meta name="twitter:image" content="https://mikeholp87.github.io/Tasky/assets/og.png" />
+    <meta
+      name="twitter:image:alt"
+      content="Tasky overview page in the dark theme showing CPU, memory, storage and network cards"
+    />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -39,7 +49,7 @@
         "operatingSystem": "Debian, Ubuntu, Windows 11",
         "url": "https://mikeholp87.github.io/Tasky/",
         "downloadUrl": "https://github.com/mikeholp87/Tasky/releases/latest",
-        "license": "https://github.com/mikeholp87/Tasky/blob/linux-port/LICENSE",
+        "license": "https://github.com/mikeholp87/Tasky/blob/main/LICENSE",
         "isAccessibleForFree": true,
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@type": "Person", "name": "Mike Holp" }
@@ -130,6 +140,15 @@
       }
       .skip:focus {
         top: 12px;
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
       }
       .wrap {
         width: min(1080px, calc(100% - 40px));
@@ -928,9 +947,7 @@ sudo apt install tasky</code></pre>
               Open an issue on
               <a href="https://github.com/mikeholp87/Tasky/issues">GitHub</a>. For security reports,
               read the
-              <a href="https://github.com/mikeholp87/Tasky/blob/linux-port/docs/SECURITY.md"
-                >security policy</a
-              >
+              <a href="https://github.com/mikeholp87/Tasky/security/policy">security policy</a>
               first.
             </p>
           </details>
@@ -941,17 +958,17 @@ sudo apt install tasky</code></pre>
         <nav aria-label="Footer">
           <a href="https://github.com/mikeholp87/Tasky">GitHub</a>
           <a href="https://github.com/mikeholp87/Tasky/releases/latest">Releases</a>
-          <a href="https://github.com/mikeholp87/Tasky/blob/linux-port/LICENSE">License</a>
-          <a href="https://github.com/mikeholp87/Tasky/blob/linux-port/docs/SECURITY.md"
-            >Security</a
-          >
-          <a href="https://github.com/mikeholp87/Tasky/blob/linux-port/docs/DEBIAN_PACKAGING.md"
+          <a href="https://github.com/mikeholp87/Tasky/blob/main/LICENSE">License</a>
+          <a href="https://github.com/mikeholp87/Tasky/security/policy">Security</a>
+          <a href="https://github.com/mikeholp87/Tasky/blob/main/docs/DEBIAN_PACKAGING.md"
             >Packaging</a
           >
         </nav>
       </footer>
     </div>
+    <p id="copy-status" class="visually-hidden" role="status" aria-live="polite"></p>
     <script>
+      var copyStatus = document.getElementById("copy-status");
       document.querySelectorAll(".codebox").forEach(function (box) {
         var code = box.querySelector("code");
         if (!code || !navigator.clipboard) return;
@@ -963,8 +980,10 @@ sudo apt install tasky</code></pre>
         button.addEventListener("click", function () {
           navigator.clipboard.writeText(code.textContent).then(function () {
             button.textContent = "Copied";
+            copyStatus.textContent = "Commands copied to clipboard";
             setTimeout(function () {
               button.textContent = "Copy";
+              copyStatus.textContent = "";
             }, 1800);
           });
         });

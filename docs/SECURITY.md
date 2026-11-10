@@ -1,6 +1,6 @@
 # Application security model
 
-Task Manager treats the WebView and all OS-provided text as untrusted. It runs
+Tasky treats the WebView and all OS-provided text as untrusted. It runs
 as the normal user and respects OS permission failures. Never run the GUI as
 root/Administrator to make a feature work. No elevation broker, shell runner,
 service-control command or arbitrary memory/file/HTTP command is provided.
@@ -37,7 +37,7 @@ The UI also explains unsaved-work and suspension risks.
 Residual limitations: selected start times currently have one-second
 resolution; Linux setpriority uses a numeric PID; Windows WM_CLOSE has an HWND
 reuse interval, and thread enumeration is not atomic. These are documented
-in SECURITY_AUDIT.md rather than described as fully race-free.
+in the [2026-11-03 audit](archive/security-2026-11-03/SECURITY_AUDIT.md) rather than described as fully race-free.
 
 ## Files and local history
 
@@ -98,5 +98,5 @@ policy even when the application does not initiate HTTP traffic.
 No auto-updater is configured. Distributed artifacts still require trustworthy
 signing/checksums and protected release credentials; a successful local bundle
 is not signed provenance. Dependency policies, advisories and CI controls are
-in SUPPLY_CHAIN_SECURITY.md. Remaining risks and exact validation status are
-in SECURITY_AUDIT.md. For private reporting, see the repository SECURITY.md.
+in [SUPPLY_CHAIN_SECURITY.md](SUPPLY_CHAIN_SECURITY.md). Remaining risks and exact validation
+status are in the [2026-11-03 audit](archive/security-2026-11-03/SECURITY_AUDIT.md). For private reporting, see the repository [SECURITY.md](../SECURITY.md).

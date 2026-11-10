@@ -14,7 +14,7 @@ palette, light/dark/system themes.
 Ports view with port-conflict diagnosis, Find Process Using File, per-process
 Open Files, Modules, Memory Map and Threads tabs, and the Activity timeline
 (starts/exits, CPU spikes, memory jumps, alerts, actions, benchmarks). See
-`FEATURE_GAP_ANALYSIS.md` for the research and scoring behind them.
+[`FEATURE_GAP_ANALYSIS.md`](archive/plans/FEATURE_GAP_ANALYSIS.md) for the research and scoring behind them.
 
 Also done: Applications view in the process table (processes grouped by
 program), new-process highlighting (configurable, default 10 s), memory- and

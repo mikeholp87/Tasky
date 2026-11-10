@@ -1,6 +1,6 @@
 # Architecture
 
-Task Manager is a Tauri 2 desktop app. A Rust backend samples the operating
+Tasky is a Tauri 2 desktop app. A Rust backend samples the operating
 system; a React frontend renders what it is sent. This document explains how
 the pieces fit and why they are shaped this way.
 
