@@ -198,7 +198,25 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.4** (current)
+**0.1.5** (current)
+
+- **Safer process actions:** menus, the Ports page and Process Details links
+  act only on the exact process you picked, never on a new one that reused
+  its PID. Suspending or ending your desktop session now warns first.
+- **Drives:** unmounting and powering off ask first, and power-off refuses
+  unless it can confirm nothing on the drive (including LUKS/LVM volumes) is
+  still mounted. A dead network mount no longer freezes the metrics; network
+  mounts are no longer listed.
+- **Services:** desktop-session services are locked; stopping SSH, PipeWire
+  and similar shows a warning.
+- **Reliability:** a page error no longer blanks the window, settings changes
+  can't overwrite each other, and a crashing benchmark reports "Failed"
+  instead of closing Tasky.
+- **Keyboard and screen readers:** the selected process is announced,
+  Shift+F10 opens its menu, columns resize with the arrow keys, and view
+  switches support arrow keys.
+
+**0.1.4**
 
 - Fixed the login entry written by "Start with the OS" when Tasky had been
   upgraded or rebuilt while running. It could point at a path ending in
