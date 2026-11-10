@@ -54,12 +54,27 @@ const LINUX_SYSTEM: &[&str] = &[
     "gdm3",
     "sddm",
     "lightdm",
+];
+
+/// Display servers, compositors and session managers. They run as the
+/// logged-in user, so the root-only daemon rule never sees them, yet ending
+/// one ends the session and suspending one freezes the screen, leaving no
+/// way to click Resume. (`gnome-session-b` is the 15-character kernel name.)
+const LINUX_SESSION: &[&str] = &[
+    "systemd",
     "Xorg",
     "Xwayland",
     "gnome-shell",
+    "gnome-session-b",
+    "gnome-session-binary",
+    "mutter",
     "plasmashell",
+    "ksmserver",
     "kwin_wayland",
     "kwin_x11",
+    "sway",
+    "Hyprland",
+    "weston",
 ];
 
 pub fn assess(
@@ -74,6 +89,15 @@ pub fn assess(
         a.add(
             ProtectionLevel::Blocked,
             "This is Tasky itself. Close the window or use Quit instead.",
+        );
+    } else if facts.parent_pid == Some(facts.self_pid)
+        && facts.name.starts_with("WebKit")
+        && disruptive
+    {
+        // Other children (e.g. a file manager opened from Tasky) stay manageable.
+        a.add(
+            ProtectionLevel::Blocked,
+            "This is part of Tasky: it draws the Tasky window or fetches for it. Quit Tasky instead.",
         );
     }
 
@@ -177,6 +201,17 @@ fn assess_unix(facts: &ProcessFacts<'_>, action: ProcessAction, a: &mut Protecti
         a.add(
             ProtectionLevel::Blocked,
             "This process has already exited. It is a zombie: only its entry in the process table remains, and it disappears once its parent process collects its exit status. Signals have no effect on it; ending or restarting the parent process removes it.",
+        );
+        return;
+    }
+    if LINUX_SESSION.contains(&facts.name) {
+        a.add(
+            ProtectionLevel::Warning,
+            if matches!(action, ProcessAction::Suspend) {
+                "This runs your desktop session. Suspending it freezes the screen and input, so you may not be able to resume it."
+            } else {
+                "This runs your desktop session. Ending it may log you out and close every open app."
+            },
         );
         return;
     }
@@ -377,6 +412,64 @@ mod tests {
         assert_eq!(
             level(Platform::Linux, &flagged, ProcessAction::Terminate),
             ProtectionLevel::Blocked
+        );
+    }
+
+    #[test]
+    fn user_owned_desktop_session_is_warned_about() {
+        let shell = ProcessFacts {
+            pid: 2100,
+            parent_pid: Some(1900),
+            name: "gnome-shell",
+            user: Some("alice"),
+            self_pid: 4242,
+            ..Default::default()
+        };
+        let suspend = assess(Platform::Linux, &shell, ProcessAction::Suspend);
+        assert_eq!(suspend.level, ProtectionLevel::Warning);
+        assert!(
+            suspend
+                .reasons
+                .iter()
+                .any(|r| r.contains("freezes the screen"))
+        );
+        assert_eq!(
+            level(Platform::Linux, &shell, ProcessAction::Terminate),
+            ProtectionLevel::Warning
+        );
+        assert_eq!(
+            level(Platform::Linux, &shell, ProcessAction::Resume),
+            ProtectionLevel::Allowed
+        );
+    }
+
+    #[test]
+    fn taskys_own_helpers_are_blocked() {
+        let webview = ProcessFacts {
+            pid: 4300,
+            parent_pid: Some(4242),
+            name: "WebKitWebProcess",
+            user: Some("alice"),
+            self_pid: 4242,
+            ..Default::default()
+        };
+        for action in [
+            ProcessAction::Suspend,
+            ProcessAction::Terminate,
+            ProcessAction::ForceKill,
+        ] {
+            assert_eq!(
+                level(Platform::Linux, &webview, action),
+                ProtectionLevel::Blocked
+            );
+        }
+        let opened_app = ProcessFacts {
+            name: "nautilus",
+            ..webview
+        };
+        assert_eq!(
+            level(Platform::Linux, &opened_app, ProcessAction::Terminate),
+            ProtectionLevel::Allowed
         );
     }
 

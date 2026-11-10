@@ -10,6 +10,8 @@ export interface PortRow {
   remote: string | null;
   state: TcpState | null;
   pid: number | null;
+  /** Owner's start time; with `pid` it identifies the exact process. */
+  startTime: number | null;
   processName: string | null;
   /** Accepting connections (TCP LISTEN) or bound and waiting (UDP). */
   listening: boolean;
@@ -54,6 +56,7 @@ export function toRows(sockets: readonly SocketEntry[]): PortRow[] {
       remote: c.remoteAddress != null ? endpoint(c.remoteAddress, c.remotePort) : null,
       state: c.state,
       pid: s.pid,
+      startTime: s.startTime,
       processName: s.processName,
       listening: tcp ? c.state === "listen" : true,
     };
@@ -93,6 +96,7 @@ export function filterRows(rows: readonly PortRow[], view: PortView, query: stri
 
 export interface PortOwner {
   pid: number | null;
+  startTime: number | null;
   name: string | null;
   /** Distinct "protocol address" listeners of this process on the port. */
   listeners: string[];
@@ -108,7 +112,12 @@ export function portOwners(rows: readonly PortRow[], port: number): PortOwner[] 
   for (const r of rows) {
     if (r.port !== port || !r.listening) continue;
     const key = r.pid == null ? "unknown" : String(r.pid);
-    const owner = owners.get(key) ?? { pid: r.pid, name: r.processName, listeners: [] };
+    const owner = owners.get(key) ?? {
+      pid: r.pid,
+      startTime: r.startTime,
+      name: r.processName,
+      listeners: [],
+    };
     owner.listeners.push(`${PROTOCOL_LABEL[r.protocol]} ${endpoint(r.address, null)}`);
     owners.set(key, owner);
   }

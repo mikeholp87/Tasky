@@ -26,7 +26,9 @@ export function RemovableDrives() {
   // A drive being mounted or unmounted changes the mount table within a tick.
   const mounts = useMetricsStore((s) => s.tick?.disks.map((d) => d.mountPoint).join("\n"));
   // Drive management is optional (e.g. UDisks missing): an error shows nothing.
-  const { data, refresh } = useRemoteData(() => backend.listVolumes(), mounts ?? "", POLL_MS);
+  const { data, refresh } = useRemoteData(() => backend.listVolumes(), mounts ?? "", POLL_MS, {
+    keepPreviousData: true,
+  });
   const volumes = data ?? [];
 
   const act = async (v: Volume, what: "mount" | "unmount" | "powerOff") => {

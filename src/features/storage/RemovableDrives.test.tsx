@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
-import type { Volume } from "@/types";
+import { useMetricsStore } from "@/stores/metricsStore";
+import type { MetricsTick, Volume } from "@/types";
 import { RemovableDrives } from "./RemovableDrives";
 
 const api = vi.hoisted(() => ({
@@ -28,6 +29,7 @@ const unmounted: Volume = { ...mounted, device: "/dev/sdc1", label: null, mountP
 
 beforeEach(() => {
   Object.values(api).forEach((m) => m.mockReset());
+  useMetricsStore.setState({ tick: null });
 });
 
 it("shows nothing when there are no external drives", async () => {
@@ -54,6 +56,19 @@ it("passes the device to the backend and reloads the list", async () => {
   await userEvent.click(await screen.findByRole("button", { name: "Unmount BACKUP" }));
   expect(api.unmountVolume).toHaveBeenCalledWith("/dev/sdb1");
   await waitFor(() => expect(api.listVolumes).toHaveBeenCalledTimes(2));
+});
+
+it("keeps the list on screen while reloading after the mount table changes", async () => {
+  api.listVolumes.mockResolvedValueOnce([unmounted]).mockReturnValueOnce(new Promise(() => {}));
+  render(<RemovableDrives />);
+  await screen.findByRole("button", { name: "Mount /dev/sdc1" });
+  act(() =>
+    useMetricsStore.setState({
+      tick: { disks: [{ mountPoint: "/run/media/a/NEW" }] } as unknown as MetricsTick,
+    }),
+  );
+  await waitFor(() => expect(api.listVolumes).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole("button", { name: "Mount /dev/sdc1" })).toBeInTheDocument();
 });
 
 it("offers Power off only for an unmounted drive that supports it", async () => {

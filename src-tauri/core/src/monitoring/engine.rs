@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -26,6 +26,7 @@ use crate::monitoring::alerts::AlertEvaluator;
 use crate::monitoring::collector::{Collector, unix_millis};
 use crate::monitoring::history::RingBuffer;
 use crate::monitoring::process_history::ProcessHistory;
+use crate::sync_util::{lock, read, write};
 
 /// One hour of history at the fastest (500 ms) interval.
 pub const MAX_HISTORY_POINTS: usize = 7_200;
@@ -41,8 +42,9 @@ pub trait TickSink: Send + Sync {
         true
     }
 
-    /// `json` is present whenever [`TickSink::wants_json`] returned true.
-    fn deliver(&self, tick: &MetricsTick, json: Option<&str>) -> bool;
+    /// `json` is present whenever [`TickSink::wants_json`] returned true. It is
+    /// owned so a single interested sink can forward it without copying.
+    fn deliver(&self, tick: &MetricsTick, json: Option<String>) -> bool;
 }
 
 enum Control {
@@ -61,7 +63,7 @@ struct Shared {
     /// Windows has no documented per-process "suspended" status, so the
     /// engine reports the state it caused.
     suspended: Mutex<HashSet<(u32, u64)>>,
-    alert_rules: RwLock<Vec<AlertRule>>,
+    alert_rules: RwLock<Arc<[AlertRule]>>,
     /// Linux kernel threads are dropped from ticks unless enabled: they are
     /// often over half of all rows and cannot be acted on.
     include_kernel_threads: AtomicBool,
@@ -71,16 +73,6 @@ struct Shared {
     activity_log: Mutex<ActivityLog>,
     activity_config: RwLock<ActivityConfig>,
     sinks: Mutex<HashMap<String, Arc<dyn TickSink>>>,
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(PoisonError::into_inner)
-}
-fn read<T>(l: &RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {
-    l.read().unwrap_or_else(PoisonError::into_inner)
-}
-fn write<T>(l: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
-    l.write().unwrap_or_else(PoisonError::into_inner)
 }
 
 pub struct Engine {
@@ -133,7 +125,7 @@ impl Engine {
             history: RwLock::new(RingBuffer::new(MAX_HISTORY_POINTS)),
             process_history: RwLock::new(ProcessHistory::default()),
             suspended: Mutex::new(HashSet::new()),
-            alert_rules: RwLock::new(Vec::new()),
+            alert_rules: RwLock::new(Arc::from([])),
             include_kernel_threads: AtomicBool::new(false),
             memory_detail: AtomicBool::new(false),
             alert_log: Mutex::new(RingBuffer::new(ALERT_LOG_LEN)),
@@ -242,7 +234,7 @@ impl Engine {
 
     /// Replaces the alert rules; takes effect on the next tick.
     pub fn set_alert_rules(&self, rules: Vec<AlertRule>) {
-        *write(&self.shared.alert_rules) = rules;
+        *write(&self.shared.alert_rules) = rules.into();
     }
 
     /// Recently fired alerts, newest last.
@@ -353,7 +345,7 @@ impl Worker {
         }
         apply_suspended(shared, &mut sample.processes);
 
-        let rules = read(&shared.alert_rules).clone();
+        let rules = Arc::clone(&read(&shared.alert_rules));
         sample.alerts = self.alerts.evaluate(&rules, &sample);
         if !sample.alerts.is_empty() {
             let mut log = lock(&shared.alert_log);
@@ -399,7 +391,9 @@ impl Worker {
             .iter()
             .map(|(k, s)| (k.clone(), Arc::clone(s)))
             .collect();
-        let json = if sinks.iter().any(|(_, s)| s.wants_json()) {
+        let wants: Vec<bool> = sinks.iter().map(|(_, s)| s.wants_json()).collect();
+        let mut json_sinks_left = wants.iter().filter(|w| **w).count();
+        let mut json = if json_sinks_left > 0 {
             match serde_json::to_string(&*sample) {
                 Ok(json) => {
                     self.last_payload = u32::try_from(json.len()).unwrap_or(u32::MAX);
@@ -413,18 +407,23 @@ impl Worker {
         } else {
             None
         };
-        let dead: Vec<String> = sinks
-            .into_iter()
-            .filter(|(_, sink)| {
-                let payload = if sink.wants_json() {
-                    json.as_deref()
+        let mut dead: Vec<String> = Vec::new();
+        for ((key, sink), wants) in sinks.into_iter().zip(wants) {
+            let payload = if wants {
+                json_sinks_left -= 1;
+                // The last interested sink takes the string itself.
+                if json_sinks_left == 0 {
+                    json.take()
                 } else {
-                    None
-                };
-                !sink.deliver(&sample, payload)
-            })
-            .map(|(k, _)| k)
-            .collect();
+                    json.clone()
+                }
+            } else {
+                None
+            };
+            if !sink.deliver(&sample, payload) {
+                dead.push(key);
+            }
+        }
         if !dead.is_empty() {
             let mut map = lock(&shared.sinks);
             for key in dead {
@@ -484,9 +483,9 @@ mod tests {
         fn wants_json(&self) -> bool {
             self.wants_json.load(Ordering::SeqCst)
         }
-        fn deliver(&self, tick: &MetricsTick, json: Option<&str>) -> bool {
+        fn deliver(&self, tick: &MetricsTick, json: Option<String>) -> bool {
             self.count.fetch_add(1, Ordering::SeqCst);
-            *self.last_json.lock().unwrap() = json.map(str::to_owned);
+            *self.last_json.lock().unwrap() = json;
             self.alerts
                 .lock()
                 .unwrap()
@@ -581,6 +580,30 @@ mod tests {
         engine.refresh_now().unwrap();
         assert!(wait_for(|| sink.count.load(Ordering::SeqCst) == 1));
         assert!(sink.last_json.lock().unwrap().is_none());
+        engine.shutdown();
+    }
+
+    #[test]
+    fn every_sink_that_wants_json_gets_it() {
+        let engine = engine(true);
+        let (a, b, hidden) = (
+            CountingSink::new(true),
+            CountingSink::new(true),
+            CountingSink::new(false),
+        );
+        engine.subscribe("a".into(), a.clone());
+        engine.subscribe("b".into(), b.clone());
+        engine.subscribe("hidden".into(), hidden.clone());
+        engine.refresh_now().unwrap();
+        assert!(wait_for(|| {
+            [&a, &b, &hidden]
+                .iter()
+                .all(|s| s.count.load(Ordering::SeqCst) == 1)
+        }));
+        let json = a.last_json.lock().unwrap().clone();
+        assert!(json.is_some());
+        assert_eq!(*b.last_json.lock().unwrap(), json);
+        assert!(hidden.last_json.lock().unwrap().is_none());
         engine.shutdown();
     }
 

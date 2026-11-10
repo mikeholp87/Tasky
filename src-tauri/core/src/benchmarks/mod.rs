@@ -1,7 +1,7 @@
 //! The benchmark suite: shared, cross-platform algorithms and orchestration.
 //! Only `platform` contains OS-specific code.
 //!
-//! See `docs/LINUX_BENCHMARK_IMPLEMENTATION.md` for the method definitions.
+//! See `docs/archive/plans/LINUX_BENCHMARK_IMPLEMENTATION.md` for the method definitions.
 
 pub mod cancel;
 pub mod coordinator;

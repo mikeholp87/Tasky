@@ -113,6 +113,12 @@ pub fn control_service(
     linux_only::control_service(scope, unit, action, confirm)
 }
 
+/// Why stopping or restarting a (not protected) service needs extra thought,
+/// for the confirmation text.
+pub fn service_caution(unit: &str) -> Option<&'static str> {
+    linux_only::service_caution(unit)
+}
+
 /// External drives the user may mount or unmount. System and internal
 /// partitions are never included. Linux only for now.
 pub fn volumes() -> crate::errors::AppResult<Vec<crate::models::Volume>> {
@@ -185,7 +191,71 @@ pub fn connections(pid: u32) -> Option<Vec<crate::models::Connection>> {
 
 /// Every TCP/UDP socket with its owning process.
 pub fn sockets() -> crate::errors::AppResult<crate::models::SocketList> {
-    imp::sockets()
+    let mut list = imp::sockets()?;
+    let mut owners: Vec<u32> = list.sockets.iter().filter_map(|s| s.pid).collect();
+    owners.sort_unstable();
+    owners.dedup();
+    let starts = start_times(&owners);
+    for socket in &mut list.sockets {
+        socket.start_time = socket.pid.and_then(|p| starts.get(&p).copied());
+    }
+    Ok(list)
+}
+
+/// Start times (as in `ProcessRow::start_time`) of the given processes, read
+/// in one query. Processes that exited or report no start time are absent.
+fn start_times(pids: &[u32]) -> std::collections::HashMap<u32, u64> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+    if pids.is_empty() {
+        return std::collections::HashMap::new();
+    }
+    let Ok(mut system) = System::new() else {
+        return std::collections::HashMap::new();
+    };
+    let ids: Vec<Pid> = pids.iter().map(|&p| Pid::from_u32(p)).collect();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&ids),
+        true,
+        ProcessRefreshKind::nothing().without_tasks(),
+    );
+    system
+        .processes()
+        .iter()
+        .filter(|(_, p)| p.start_time() > 0)
+        .map(|(pid, p)| (pid.as_u32(), p.start_time()))
+        .collect()
+}
+
+/// Runs `read` on `pid` only while it is still the instance that started at
+/// `start_time` (seconds since the epoch, as in `ProcessRow`), so a reused
+/// PID never answers for the process the user picked. Reads only that PID.
+pub fn with_process<T>(
+    pid: u32,
+    start_time: u64,
+    kind: sysinfo::ProcessRefreshKind,
+    read: impl FnOnce(&sysinfo::Process) -> T,
+) -> crate::errors::AppResult<T> {
+    use sysinfo::{Pid, ProcessesToUpdate, System};
+    let mut system =
+        System::new().map_err(|e| crate::errors::AppError::SystemQueryFailed(e.to_string()))?;
+    let id = Pid::from_u32(pid);
+    system.refresh_processes_specifics(ProcessesToUpdate::Some(&[id]), true, kind);
+    system
+        .process(id)
+        .filter(|p| p.start_time() == start_time)
+        .map(read)
+        .ok_or(crate::errors::AppError::ProcessNotFound(pid))
+}
+
+/// Fails with `ProcessNotFound` unless `pid` is still the instance that
+/// started at `start_time`.
+pub fn verify_identity(pid: u32, start_time: u64) -> crate::errors::AppResult<()> {
+    with_process(
+        pid,
+        start_time,
+        sysinfo::ProcessRefreshKind::nothing().without_tasks(),
+        |_| (),
+    )
 }
 
 /// Files, directories and other objects `pid` holds open.
@@ -323,6 +393,10 @@ mod fallback {
         ))
     }
 
+    pub fn service_caution(_unit: &str) -> Option<&'static str> {
+        None
+    }
+
     pub fn volumes() -> crate::errors::AppResult<Vec<crate::models::Volume>> {
         Ok(Vec::new())
     }
@@ -347,5 +421,27 @@ mod fallback {
 
     fn unsupported() -> crate::errors::AppError {
         crate::errors::AppError::UnsupportedOperation("Startup items".into())
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    #[test]
+    fn sockets_carry_the_owner_start_time_and_it_verifies() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let me = std::process::id();
+        let mine = super::sockets()
+            .unwrap()
+            .sockets
+            .into_iter()
+            .find(|s| s.connection.local_port == port && s.pid == Some(me))
+            .expect("own listener is listed with its owner");
+        let start = mine.start_time.expect("owner start time");
+        super::verify_identity(me, start).unwrap();
+        assert!(matches!(
+            super::verify_identity(me, start + 1),
+            Err(crate::errors::AppError::ProcessNotFound(_))
+        ));
     }
 }

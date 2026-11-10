@@ -133,13 +133,43 @@ pub fn prefer_x11_on_gnome_wayland() {}
 /// after login the shell may not have started its tray yet.
 const TRAY_WAIT_SECS: u64 = 15;
 
+/// Last answer of [`tray_host_available`] and when it was given (Unix ms).
+static TRAY_HOST: AtomicBool = AtomicBool::new(false);
+static TRAY_HOST_CHECKED_MS: AtomicU64 = AtomicU64::new(0);
+const TRAY_RECHECK_MS: u64 = 30_000;
+
 /// Whether something on this desktop shows tray icons: an owner of the
 /// StatusNotifier watcher name, which KDE, Xfce and GNOME's AppIndicator
 /// extension all provide. Stock GNOME does not, so a window hidden "to the
 /// tray" there could never be brought back. If the bus cannot be asked, the
 /// answer is no: the safe failure is a window that stays visible.
-#[cfg(target_os = "linux")]
+///
+/// Asks the session bus (up to 500 ms); use [`tray_host_cached`] on the main thread.
 pub fn tray_host_available() -> bool {
+    let available = query_tray_host();
+    TRAY_HOST.store(available, Ordering::Relaxed);
+    TRAY_HOST_CHECKED_MS.store(tm_core::monitoring::unix_millis().max(1), Ordering::Relaxed);
+    available
+}
+
+/// [`tray_host_available`] as of the last check, without waiting on the bus.
+/// A stale answer is refreshed in the background for the next caller; before
+/// the first check completes the answer is no.
+pub fn tray_host_cached() -> bool {
+    let now = tm_core::monitoring::unix_millis();
+    let last = TRAY_HOST_CHECKED_MS.load(Ordering::Relaxed);
+    if now.saturating_sub(last) >= TRAY_RECHECK_MS
+        && TRAY_HOST_CHECKED_MS
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    {
+        std::thread::spawn(tray_host_available);
+    }
+    TRAY_HOST.load(Ordering::Relaxed)
+}
+
+#[cfg(target_os = "linux")]
+fn query_tray_host() -> bool {
     use gio::glib::{ToVariant, VariantTy};
 
     let ask = || -> Result<bool, gio::glib::Error> {
@@ -162,7 +192,7 @@ pub fn tray_host_available() -> bool {
 
 /// Other platforms always have a tray or taskbar to come back from.
 #[cfg(not(target_os = "linux"))]
-pub fn tray_host_available() -> bool {
+fn query_tray_host() -> bool {
     true
 }
 
@@ -289,7 +319,7 @@ impl<R: Runtime> TickSink for DesktopSink<R> {
         false
     }
 
-    fn deliver(&self, tick: &MetricsTick, _json: Option<&str>) -> bool {
+    fn deliver(&self, tick: &MetricsTick, _json: Option<String>) -> bool {
         let last = self.last_tray_update.load(Ordering::Relaxed);
         if tick.timestamp_ms.saturating_sub(last) >= TRAY_UPDATE_MS {
             self.last_tray_update

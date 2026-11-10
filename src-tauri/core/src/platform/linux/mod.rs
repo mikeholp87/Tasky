@@ -8,6 +8,7 @@ mod inspect;
 mod net;
 mod services;
 mod system;
+mod tool;
 mod volumes;
 
 use std::collections::HashMap;
@@ -18,7 +19,7 @@ pub use control::{is_critical, perform_action, system_root};
 pub use hardware::hardware_info;
 pub use inspect::{find_file_users, memory_map, modules, open_files, sockets, threads};
 pub use net::interface_kind;
-pub use services::{control_service, services};
+pub use services::{control_service, service_caution, services};
 pub use system::os_details;
 pub use volumes::{mount_volume, power_off_volume, unmount_volume, volumes};
 

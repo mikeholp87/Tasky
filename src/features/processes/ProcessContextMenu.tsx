@@ -65,8 +65,11 @@ export function ProcessContextMenu({
   children: ReactElement;
 }) {
   const openProcess = useUiStore((s) => s.openProcess);
-  const [pid, setPid] = useState<number | null>(null);
-  const row = pid == null ? undefined : find(pid);
+  const [target, setTarget] = useState<{ pid: number; startTime: number } | null>(null);
+  // Re-resolved each tick, but only while the PID still belongs to the process
+  // that was right-clicked; a reused PID must never receive the action.
+  const live = target == null ? undefined : find(target.pid);
+  const row = live?.startTime === target?.startTime ? live : undefined;
   const suspended = row?.status === "stopped";
   return (
     <ContextMenu.Root>
@@ -75,12 +78,14 @@ export function ProcessContextMenu({
         onContextMenu={(e) => {
           const cell = (e.target as HTMLElement).closest<HTMLElement>("[data-pid]");
           // Not on a process row (header, summary row): no menu.
-          if (!cell || cell.dataset.group !== undefined) {
-            setPid(null);
+          const opened =
+            cell && cell.dataset.group === undefined ? find(Number(cell.dataset.pid)) : undefined;
+          if (!opened) {
+            setTarget(null);
             e.preventDefault();
             return;
           }
-          setPid(Number(cell.dataset.pid));
+          setTarget({ pid: opened.pid, startTime: opened.startTime });
         }}
       >
         {children}

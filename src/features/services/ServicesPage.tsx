@@ -1,5 +1,5 @@
 import { CircleAlert, CircleCheck, CircleMinus, Lock, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { SearchBox } from "@/components/SearchBox";
@@ -49,20 +49,23 @@ export function ServicesPage() {
   );
   const failed = data?.filter((s) => s.activeState === "failed").length ?? 0;
 
-  async function act(s: ServiceInfo, action: ServiceAction) {
-    setPending(s.unit);
-    try {
-      await backend.controlService(scope, s.unit, action);
-      toast.success(`${DONE[action]} ${s.unit}…`);
-    } catch (e) {
-      const err = toAppError(e);
-      // Declining the confirmation is a choice, not an error.
-      if (err.kind !== "operationCancelled") toast.error(err.message);
-    } finally {
-      setPending(null);
-      refresh();
-    }
-  }
+  const act = useCallback(
+    async (s: ServiceInfo, action: ServiceAction) => {
+      setPending(s.unit);
+      try {
+        await backend.controlService(scope, s.unit, action);
+        toast.success(`${DONE[action]} ${s.unit}…`);
+      } catch (e) {
+        const err = toAppError(e);
+        // Declining the confirmation is a choice, not an error.
+        if (err.kind !== "operationCancelled") toast.error(err.message);
+      } finally {
+        setPending(null);
+        refresh();
+      }
+    },
+    [scope, refresh],
+  );
 
   return (
     <>
@@ -155,8 +158,8 @@ export function ServicesPage() {
                   key={s.unit}
                   service={s}
                   busy={pending === s.unit}
-                  onAct={(a) => void act(s, a)}
-                  onOpen={() => s.mainPid != null && openProcess(s.mainPid)}
+                  onAct={act}
+                  onOpen={openProcess}
                 />
               ))}
             </tbody>
@@ -188,17 +191,25 @@ function StateBadge({ service }: { service: ServiceInfo }) {
   );
 }
 
-function Row({
-  service: s,
-  busy,
-  onAct,
-  onOpen,
-}: {
+interface RowProps {
   service: ServiceInfo;
   busy: boolean;
-  onAct: (action: ServiceAction) => void;
-  onOpen: () => void;
-}) {
+  onAct: (service: ServiceInfo, action: ServiceAction) => Promise<void>;
+  onOpen: (pid: number) => void;
+}
+
+/** Every poll delivers new service objects; compare their values instead. */
+function sameRowProps(prev: RowProps, next: RowProps): boolean {
+  if (prev.busy !== next.busy || prev.onAct !== next.onAct || prev.onOpen !== next.onOpen) {
+    return false;
+  }
+  const a = prev.service;
+  const b = next.service;
+  return (Object.keys(b) as (keyof ServiceInfo)[]).every((k) => a[k] === b[k]);
+}
+
+const Row = memo(function Row({ service: s, busy, onAct: act, onOpen }: RowProps) {
+  const onAct = (action: ServiceAction) => void act(s, action);
   const running = s.activeState === "active" || s.activeState === "activating";
   return (
     <tr className="border-t border-border/60 hover:bg-surface-2">
@@ -216,7 +227,7 @@ function Row({
         {s.mainPid != null ? (
           <button
             type="button"
-            onClick={onOpen}
+            onClick={() => s.mainPid != null && onOpen(s.mainPid)}
             aria-label={`Open process ${s.mainPid} of ${s.unit}`}
             className="text-accent underline"
           >
@@ -276,4 +287,4 @@ function Row({
       </td>
     </tr>
   );
-}
+}, sameRowProps);

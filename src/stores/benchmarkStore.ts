@@ -60,10 +60,14 @@ export const useBenchmarkStore = create<BenchmarkState>((set) => ({
   diskTargetsError: null,
 
   setStatus: (status) =>
-    set((s) => ({
-      status,
-      cancelling: isActive(status) && s.status.runId === status.runId && s.cancelling,
-    })),
+    set((s) =>
+      isOutdated(s.status, status)
+        ? s
+        : {
+            status,
+            cancelling: isActive(status) && s.status.runId === status.runId && s.cancelling,
+          },
+    ),
   setCancelling: (cancelling) => set({ cancelling }),
   setHistory: (history) => set({ history }),
   setLatest: (latest) => set({ latest, selectedId: null }),
@@ -75,6 +79,16 @@ export const useBenchmarkStore = create<BenchmarkState>((set) => ({
 /** Whether a run is in progress (owns the benchmark lock). */
 export function isActive(status: BenchmarkStatus): boolean {
   return !["idle", "completed", "cancelled", "failed"].includes(status.state);
+}
+
+/**
+ * Command replies (start, get status) can arrive after newer progress events
+ * for the same run; such a snapshot would move progress backwards.
+ */
+function isOutdated(current: BenchmarkStatus, next: BenchmarkStatus): boolean {
+  if (next.runId === null || next.runId !== current.runId) return false;
+  if (!isActive(current)) return isActive(next);
+  return next.elapsedMs < current.elapsedMs || next.fraction < current.fraction;
 }
 
 /**

@@ -5,10 +5,11 @@
 //! is moved aside rather than silently overwritten.
 
 use std::path::{Path, PathBuf};
-use std::sync::{PoisonError, RwLock};
+use std::sync::RwLock;
 
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::Settings;
+use tm_core::sync_util::{read, write};
 
 const FILE_NAME: &str = "settings.json";
 
@@ -28,26 +29,49 @@ impl SettingsStore {
     }
 
     pub fn get(&self) -> Settings {
-        self.current
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        read(&self.current).clone()
     }
 
-    /// Validates, persists and stores `next`. Returns the stored settings.
-    pub fn save(&self, next: Settings) -> AppResult<Settings> {
-        let enabled = next.start_with_os;
-        self.save_with_autostart(next, || Ok(enabled), |_| Ok(()))
-    }
-
-    pub fn save_with_autostart(
+    /// Applies `change` to the current settings, then validates, persists and
+    /// stores the result, all under one write lock so concurrent updates are
+    /// never lost. `then` sees the stored settings before the lock is
+    /// released, so runtime effects are applied in the order saves happen.
+    pub fn update(
         &self,
+        change: impl FnOnce(&mut Settings),
+        then: impl FnOnce(&Settings),
+    ) -> AppResult<Settings> {
+        let mut current = write(&self.current);
+        let mut next = current.clone();
+        change(&mut next);
+        let enabled = next.start_with_os;
+        self.commit(&mut current, next, || Ok(enabled), |_| Ok(()), then)
+    }
+
+    /// [`update`](Self::update), also applying `start_with_os` to the real
+    /// login entry. Rolls autostart back if persistence fails.
+    pub fn update_with_autostart(
+        &self,
+        change: impl FnOnce(&mut Settings),
+        read_autostart: impl FnOnce() -> AppResult<bool>,
+        set_autostart: impl FnMut(bool) -> AppResult<()>,
+        then: impl FnOnce(&Settings),
+    ) -> AppResult<Settings> {
+        let mut current = write(&self.current);
+        let mut next = current.clone();
+        change(&mut next);
+        self.commit(&mut current, next, read_autostart, set_autostart, then)
+    }
+
+    fn commit(
+        &self,
+        current: &mut Settings,
         next: Settings,
         read_autostart: impl FnOnce() -> AppResult<bool>,
         mut set_autostart: impl FnMut(bool) -> AppResult<()>,
+        then: impl FnOnce(&Settings),
     ) -> AppResult<Settings> {
         next.validate()?;
-        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
         let previous_autostart = read_autostart()?;
         let changed = previous_autostart != next.start_with_os;
         if changed {
@@ -64,6 +88,7 @@ impl SettingsStore {
             return Err(error);
         }
         *current = next.clone();
+        then(&next);
         Ok(next)
     }
 }
@@ -109,7 +134,48 @@ mod tests {
 
     fn save(store: &SettingsStore, next: Settings) -> AppResult<Settings> {
         let previous = store.get().start_with_os;
-        store.save_with_autostart(next, || Ok(previous), |_| Ok(()))
+        store.update_with_autostart(|s| *s = next, || Ok(previous), |_| Ok(()), |_| {})
+    }
+
+    #[test]
+    fn concurrent_updates_are_not_lost_and_effects_follow_save_order() {
+        let store = std::sync::Arc::new(SettingsStore::load(None));
+        let applied = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let threads: Vec<_> = (0..8)
+            .map(|i| {
+                let (store, applied) = (store.clone(), applied.clone());
+                std::thread::spawn(move || {
+                    store
+                        .update(
+                            |s| {
+                                let n = s.new_process_seconds;
+                                std::thread::yield_now();
+                                s.new_process_seconds = n + 1;
+                                s.show_kernel_threads = i % 2 == 0;
+                            },
+                            |saved| applied.lock().unwrap().push(saved.new_process_seconds),
+                        )
+                        .unwrap();
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let start = Settings::default().new_process_seconds;
+        assert_eq!(store.get().new_process_seconds, start + 8);
+        let applied = applied.lock().unwrap();
+        assert_eq!(*applied, (start + 1..=start + 8).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_rejected_update_changes_nothing_and_skips_effects() {
+        let store = SettingsStore::load(None);
+        let mut ran = false;
+        let result = store.update(|s| s.refresh_interval_ms = 7, |_| ran = true);
+        assert!(result.is_err());
+        assert!(!ran);
+        assert_eq!(store.get(), Settings::default());
     }
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -177,13 +243,14 @@ mod tests {
             start_with_os: true,
             ..Settings::default()
         };
-        let result = store.save_with_autostart(
-            next,
+        let result = store.update_with_autostart(
+            |s| *s = next,
             || Ok(enabled.get()),
             |value| {
                 enabled.set(value);
                 Ok(())
             },
+            |_| {},
         );
         assert!(result.is_err());
         assert!(!enabled.get());
@@ -196,13 +263,14 @@ mod tests {
         let store = SettingsStore::load(None);
         let enabled = std::cell::Cell::new(true);
         store
-            .save_with_autostart(
-                Settings::default(),
+            .update_with_autostart(
+                |s| *s = Settings::default(),
                 || Ok(enabled.get()),
                 |value| {
                     enabled.set(value);
                     Ok(())
                 },
+                |_| {},
             )
             .unwrap();
         assert!(!enabled.get());

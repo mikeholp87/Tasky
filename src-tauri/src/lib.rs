@@ -12,6 +12,7 @@ mod state;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use tauri::webview::PageLoadEvent;
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
 use tm_core::benchmarks::coordinator::Coordinator;
@@ -25,7 +26,7 @@ use crate::state::AppState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     desktop::prefer_x11_on_gnome_wayland();
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Must be registered first: a second launch focuses the running
         // instance instead of starting another engine and window.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -37,11 +38,14 @@ pub fn run() {
                 .on_navigation(|_, url| security::navigation_allowed(url))
                 .build(),
         )
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
+        .plugin(tauri_plugin_dialog::init());
+    // Linux writes its own XDG login entry (see `autostart`).
+    #[cfg(not(target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        None,
+    ));
+    let app = builder
         // Restored manually below, only when "Remember window position" is on.
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -77,6 +81,8 @@ pub fn run() {
 
             let tray = desktop::build_tray(app.handle())?;
             app.manage(tray);
+            // The first check runs in the background; closing must never wait on it.
+            desktop::tray_host_cached();
             engine.subscribe(
                 "desktop".into(),
                 Arc::new(DesktopSink::new(app.handle().clone(), notifications)),
@@ -100,6 +106,15 @@ pub fn run() {
             }
             Ok(())
         })
+        .on_page_load(|webview, payload| {
+            // A reloaded page starts with no Memory view open; its new
+            // requests for memory detail arrive after this event.
+            if payload.event() == PageLoadEvent::Started
+                && let Some(state) = webview.try_state::<AppState>()
+            {
+                state.engine.set_memory_detail(false);
+            }
+        })
         .on_window_event(|window, event| {
             if window.label() != MAIN_WINDOW {
                 return;
@@ -112,12 +127,16 @@ pub fn run() {
                 // Close hides to the tray only when there is a tray to restore
                 // it from; otherwise closing quits, as it would without the setting.
                 WindowEvent::CloseRequested { api, .. }
-                    if state.settings.get().minimize_to_tray && desktop::tray_host_available() =>
+                    if state.settings.get().minimize_to_tray && desktop::tray_host_cached() =>
                 {
                     api.prevent_close();
                     hide_main_window(app);
                 }
                 WindowEvent::Resized(_) | WindowEvent::Focused(_) => {
+                    // Keeps the tray answer fresh for a later close request.
+                    if matches!(event, WindowEvent::Focused(true)) {
+                        desktop::tray_host_cached();
+                    }
                     let visible = window.is_visible().unwrap_or(true)
                         && !window.is_minimized().unwrap_or(false);
                     let was = state.visibility.get();

@@ -30,10 +30,13 @@ pub async fn control_service(
             } else {
                 "Restart"
             };
+            let caution = platform::service_caution(&service.unit)
+                .map(|why| format!("\n{why}"))
+                .unwrap_or_default();
             super::confirm::confirm(
                 &app,
                 &format!(
-                    "{verb} {}?\n{}\nPrograms that depend on it may stop working.",
+                    "{verb} {}?\n{}\nPrograms that depend on it may stop working.{caution}",
                     service.unit, service.description
                 ),
             )

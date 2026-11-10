@@ -9,7 +9,7 @@
 //! few KB; switch to SQLite if history ever needs querying or much more depth.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
@@ -56,6 +56,7 @@ impl HistoryStore {
         self.lock().clone()
     }
 
+    #[cfg(test)]
     pub fn get(&self, id: &str) -> Option<BenchmarkResult> {
         self.lock().iter().find(|r| r.id == id).cloned()
     }
@@ -82,7 +83,7 @@ impl HistoryStore {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<BenchmarkResult>> {
-        self.results.lock().unwrap_or_else(PoisonError::into_inner)
+        crate::sync_util::lock(&self.results)
     }
 
     fn persist(&self, results: &[BenchmarkResult]) -> AppResult<()> {

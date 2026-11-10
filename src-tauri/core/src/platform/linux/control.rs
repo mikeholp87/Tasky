@@ -12,7 +12,7 @@ pub fn perform_action(
 ) -> AppResult<()> {
     use crate::models::ProcessAction;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+    use sysinfo::{ProcessRefreshKind, ProcessStatus};
     let target = libc::pid_t::try_from(pid)
         .ok()
         .filter(|p| *p > 0)
@@ -24,43 +24,44 @@ pub fn perform_action(
     }
     // SAFETY: a successful pidfd_open returns a new descriptor, owned once.
     let fd = unsafe { OwnedFd::from_raw_fd(raw as i32) };
-    let mut system = System::new().map_err(|_| AppError::EngineUnavailable)?;
-    let id = Pid::from_u32(pid);
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[id]),
-        true,
-        ProcessRefreshKind::nothing(),
-    );
-    if system
-        .process(id)
-        .is_none_or(|p| p.start_time() != start_time)
-    {
-        return Err(AppError::ProcessNotFound(pid));
-    }
+    let stopped = crate::platform::with_process(
+        pid,
+        start_time,
+        ProcessRefreshKind::nothing().without_tasks(),
+        |p| matches!(p.status(), ProcessStatus::Stop | ProcessStatus::Tracing),
+    )?;
     let sig = match action {
         ProcessAction::Terminate => libc::SIGTERM,
         ProcessAction::ForceKill => libc::SIGKILL,
         ProcessAction::Suspend => libc::SIGSTOP,
         ProcessAction::Resume => libc::SIGCONT,
         // shortcut: Linux has no pidfd priority API; the live check narrows,
-        // but cannot eliminate, the setpriority PID race. See SECURITY_AUDIT.
+        // but cannot eliminate, the setpriority PID race. See docs/archive/security-2026-11-03/SECURITY_AUDIT.md.
         ProcessAction::SetPriority { priority } => return set_priority(pid, priority),
     };
-    // SAFETY: fd is live; null siginfo and zero flags request an ordinary signal.
-    let rc = unsafe {
-        libc::syscall(
-            libc::SYS_pidfd_send_signal,
-            fd.as_raw_fd(),
-            sig,
-            std::ptr::null::<libc::siginfo_t>(),
-            0,
-        )
+    let send = |sig: libc::c_int| {
+        // SAFETY: fd is live; null siginfo and zero flags request an ordinary signal.
+        let rc = unsafe {
+            libc::syscall(
+                libc::SYS_pidfd_send_signal,
+                fd.as_raw_fd(),
+                sig,
+                std::ptr::null::<libc::siginfo_t>(),
+                0,
+            )
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(errno_error(pid, "signal"))
+        }
     };
-    if rc == 0 {
-        Ok(())
-    } else {
-        Err(errno_error(pid, "signal"))
+    send(sig)?;
+    // A stopped process only acts on SIGTERM once it is continued.
+    if sig == libc::SIGTERM && stopped {
+        send(libc::SIGCONT)?;
     }
+    Ok(())
 }
 
 /// Raising priority (negative nice) requires CAP_SYS_NICE; the kernel's

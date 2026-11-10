@@ -18,7 +18,7 @@ vi.mock("@/services/ipc", async (importOriginal) => {
 });
 
 // Imported after the mock is registered.
-const { requestAction, useActionStore } = await import("./actions");
+const { confirmPending, requestAction, useActionStore } = await import("./actions");
 
 const row: ProcessRow = { ...(mockProcesses(1, 1_800_000_000)[0] as ProcessRow), name: "node" };
 const allowed: ProtectionAssessment = { level: "allowed", reasons: [] };
@@ -96,6 +96,41 @@ describe("process action flow", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(backend.performProcessAction).toHaveBeenCalledTimes(1);
     expect(useToastStore.getState().toasts[0]?.message).toBe("Done.");
+  });
+
+  it("ignores new requests while an action is running", async () => {
+    backend.assessProcessAction.mockResolvedValue(allowed);
+    await requestAction(row, { type: "terminate" });
+    let finish: (v: { message: string }) => void = () => {};
+    backend.performProcessAction.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const confirming = confirmPending();
+    await requestAction(row, { type: "forceKill" });
+    expect(backend.assessProcessAction).toHaveBeenCalledTimes(1);
+    finish({ message: "Done." });
+    await confirming;
+    expect(useActionStore.getState()).toMatchObject({ pending: null, busy: false });
+  });
+
+  it("opens only the newest request's dialog when assessments overlap", async () => {
+    let first: (a: ProtectionAssessment) => void = () => {};
+    backend.assessProcessAction
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            first = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(allowed);
+    const older = requestAction(row, { type: "terminate" });
+    await requestAction(row, { type: "forceKill" });
+    first(allowed);
+    await older;
+    expect(useActionStore.getState().pending?.action).toEqual({ type: "forceKill" });
   });
 
   it("offers force end when a graceful close is impossible", async () => {

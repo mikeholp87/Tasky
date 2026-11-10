@@ -19,8 +19,8 @@ struct Capture {
 }
 
 impl TickSink for Capture {
-    fn deliver(&self, tick: &MetricsTick, json: Option<&str>) -> bool {
-        let bytes = json.map_or(0, str::len);
+    fn deliver(&self, tick: &MetricsTick, json: Option<String>) -> bool {
+        let bytes = json.map_or(0, |j| j.len());
         if let Ok(mut t) = self.ticks.lock() {
             t.push((tick.engine.poll_duration_ms, bytes, Arc::new(tick.clone())));
         }

@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { backend, toAppError } from "@/services/ipc";
 import { loadDiskTargets, runBenchmark } from "@/services/benchmarks";
@@ -51,8 +51,12 @@ export function DiskCard({
   // Reload when a drive is plugged in or removed (the monitor sees the mount
   // table change within a tick), so the target list is never stale.
   const mounts = useMetricsStore((s) => s.tick?.disks.map((d) => d.mountPoint).join("\n"));
+  const seenMounts = useRef(mounts);
   useEffect(() => {
-    void loadDiskTargets();
+    // The first tick arriving is not a change.
+    const changed = seenMounts.current !== undefined && seenMounts.current !== mounts;
+    seenMounts.current = mounts;
+    void loadDiskTargets({ reload: changed });
   }, [mounts]);
 
   const recommended = targets?.find((t) => t.recommended) ?? targets?.[0];

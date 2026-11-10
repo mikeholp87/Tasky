@@ -1,5 +1,6 @@
 import { Play, Square } from "lucide-react";
 import { Meter } from "@/components/ui/Meter";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { cn } from "@/lib/cn";
 import { cancelBenchmark } from "@/services/benchmarks";
 import { isActive, useBenchmarkStore } from "@/stores/benchmarkStore";
@@ -25,28 +26,15 @@ export function ProfilePicker({
   disabled: boolean;
 }) {
   return (
-    <div
-      role="radiogroup"
-      aria-label="Benchmark profile"
-      className="inline-flex gap-1 rounded-lg bg-surface-2 p-1"
-    >
-      {profiles.map((p) => (
-        <button
-          key={p.id}
-          type="button"
-          role="radio"
-          aria-checked={value === p.id}
-          disabled={disabled}
-          onClick={() => onChange(p.id)}
-          className={cn(
-            "rounded-md px-3 py-1.5 text-fg-muted disabled:opacity-60",
-            value === p.id && "bg-surface text-fg shadow-sm",
-          )}
-        >
-          {p.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      label="Benchmark profile"
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      segments={profiles.map((p) => ({ value: p.id, label: p.label }))}
+      className="inline-flex gap-1 rounded-lg p-1"
+      itemClassName="rounded-md px-3 py-1.5 disabled:opacity-60"
+    />
   );
 }
 

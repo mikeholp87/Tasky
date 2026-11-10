@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Runtime, State, Webview};
+use tauri::{AppHandle, Manager, Runtime, State, Webview};
 
 use crate::desktop::{WindowVisibility, update_pause_label};
 use crate::state::AppState;
@@ -28,12 +28,9 @@ impl TickSink for ChannelSink {
         self.visibility.get()
     }
 
-    fn deliver(&self, _tick: &MetricsTick, json: Option<&str>) -> bool {
+    fn deliver(&self, _tick: &MetricsTick, json: Option<String>) -> bool {
         match json {
-            Some(json) => self
-                .channel
-                .send(InvokeResponseBody::Json(json.to_owned()))
-                .is_ok(),
+            Some(json) => self.channel.send(InvokeResponseBody::Json(json)).is_ok(),
             None => true,
         }
     }
@@ -85,29 +82,31 @@ pub fn get_monitoring_state(state: State<'_, AppState>) -> MonitoringState {
     state.engine.state()
 }
 
+/// Persisting the interval writes the settings file, so this runs off the UI thread.
 #[tauri::command]
-pub fn set_monitoring_state<R: Runtime>(
+pub async fn set_monitoring_state<R: Runtime>(
     app: AppHandle<R>,
-    state: State<'_, AppState>,
     paused: bool,
     interval_ms: u32,
 ) -> AppResult<MonitoringState> {
     let interval_ms = validate_interval(interval_ms)?;
-    let result = state.engine.set_state(MonitoringState {
-        paused,
-        interval_ms,
-    })?;
-    // The interval is a persisted setting; pausing is per session.
-    let mut settings = state.settings.get();
-    if settings.refresh_interval_ms != interval_ms {
-        settings.refresh_interval_ms = interval_ms;
-        let saved = state.settings.save(settings)?;
-        state
-            .engine
-            .set_history_capacity(crate::commands::settings::history_points(&saved));
-    }
-    update_pause_label(&app, paused);
-    Ok(result)
+    super::blocking::run(move || {
+        let state = app.state::<AppState>();
+        let result = state.engine.set_state(MonitoringState {
+            paused,
+            interval_ms,
+        })?;
+        // The interval is a persisted setting; pausing is per session.
+        if state.settings.get().refresh_interval_ms != interval_ms {
+            state.settings.update(
+                |s| s.refresh_interval_ms = interval_ms,
+                |saved| super::settings::apply_runtime(&state, saved),
+            )?;
+        }
+        update_pause_label(&app, paused);
+        Ok(result)
+    })
+    .await
 }
 
 #[tauri::command]

@@ -11,6 +11,14 @@ export interface RemoteData<T> {
   refresh: () => void;
 }
 
+export interface RemoteDataOptions {
+  /**
+   * Keep showing the previous key's data until the new key's arrives, for
+   * keys that mean "reload" rather than "different data".
+   */
+  keepPreviousData?: boolean;
+}
+
 /**
  * Loads data with `fetcher` when the component mounts (and whenever `key`
  * changes), optionally repeating every `pollMs`. Polling stops on unmount, so
@@ -22,6 +30,7 @@ export function useRemoteData<T>(
   fetcher: () => Promise<T>,
   key: string,
   pollMs?: number,
+  { keepPreviousData = false }: RemoteDataOptions = {},
 ): RemoteData<T> {
   const [state, setState] = useState<{ key: string; data: T | null; error: AppError | null }>({
     key,
@@ -69,7 +78,8 @@ export function useRemoteData<T>(
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
   // Results of a previous key are stale for this one.
-  const current = state.key === key ? state : { data: null, error: null };
+  const current =
+    state.key === key ? state : { data: keepPreviousData ? state.data : null, error: null };
   return {
     data: current.data,
     error: current.error,

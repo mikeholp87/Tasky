@@ -14,6 +14,7 @@ import {
 } from "@/components/charts/series";
 import { Card } from "@/components/ui/Card";
 import { KeyValueList, Unavailable } from "@/components/ui/KeyValueList";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { cn } from "@/lib/cn";
 import { useMetricsStore } from "@/stores/metricsStore";
 import type { MetricsTick, StaticSystemInfo } from "@/types";
@@ -171,27 +172,12 @@ export function PerformancePage() {
 
 function RangePicker({ value, onChange }: { value: number; onChange: (s: number) => void }) {
   return (
-    <div
-      role="radiogroup"
-      aria-label="Time range"
-      className="flex gap-0.5 rounded-md bg-surface-2 p-0.5"
-    >
-      {RANGES.map((r) => (
-        <button
-          key={r.seconds}
-          type="button"
-          role="radio"
-          aria-checked={value === r.seconds}
-          onClick={() => onChange(r.seconds)}
-          className={cn(
-            "rounded px-2.5 py-1 text-fg-muted",
-            value === r.seconds && "bg-surface text-fg shadow-sm",
-          )}
-        >
-          {r.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      label="Time range"
+      value={String(value)}
+      onChange={(v) => onChange(Number(v))}
+      segments={RANGES.map((r) => ({ value: String(r.seconds), label: r.label }))}
+    />
   );
 }
 

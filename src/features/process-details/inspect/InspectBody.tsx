@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
+import { outlineButton } from "@/components/ui/button";
 import { isBackendAvailable } from "@/services/ipc";
 import type { AppError } from "@/types";
 
@@ -45,11 +46,7 @@ export function InspectBody({
     <div className="space-y-3 px-4 pb-4 pt-3">
       <div className="flex flex-wrap items-center gap-3">
         {toolbar}
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg"
-        >
+        <button type="button" onClick={onRefresh} className={outlineButton}>
           <RefreshCw size="0.875rem" aria-hidden /> Refresh
         </button>
       </div>

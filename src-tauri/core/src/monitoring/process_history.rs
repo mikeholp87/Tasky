@@ -15,37 +15,47 @@ const MAX_TRACKED_PROCESSES: usize = 4_096;
 /// process's history.
 type Key = (u32, u64);
 
+struct Tracked {
+    points: RingBuffer<ProcessPoint>,
+    /// The `record` call that last saw this process.
+    seen: u64,
+}
+
 #[derive(Default)]
 pub struct ProcessHistory {
-    map: HashMap<Key, RingBuffer<ProcessPoint>>,
+    map: HashMap<Key, Tracked>,
+    generation: u64,
 }
 
 impl ProcessHistory {
     pub fn record(&mut self, t: u64, rows: &[ProcessRow]) {
-        let mut next = HashMap::with_capacity(rows.len().min(MAX_TRACKED_PROCESSES));
+        self.generation += 1;
+        let generation = self.generation;
         for row in rows.iter().take(MAX_TRACKED_PROCESSES) {
-            let key = (row.pid, row.start_time);
-            let mut buf = self
+            let tracked = self
                 .map
-                .remove(&key)
-                .unwrap_or_else(|| RingBuffer::new(PROCESS_HISTORY_POINTS));
-            buf.push(ProcessPoint {
+                .entry((row.pid, row.start_time))
+                .or_insert_with(|| Tracked {
+                    points: RingBuffer::new(PROCESS_HISTORY_POINTS),
+                    seen: generation,
+                });
+            tracked.seen = generation;
+            tracked.points.push(ProcessPoint {
                 t,
                 cpu: row.cpu_percent,
                 memory: row.memory_bytes,
                 read: row.disk_read_per_sec,
                 write: row.disk_write_per_sec,
             });
-            next.insert(key, buf);
         }
         // Anything not seen this tick has exited.
-        self.map = next;
+        self.map.retain(|_, tracked| tracked.seen == generation);
     }
 
     pub fn get(&self, pid: u32, start_time: u64) -> Vec<ProcessPoint> {
         self.map
             .get(&(pid, start_time))
-            .map(|b| b.iter().copied().collect())
+            .map(|tracked| tracked.points.iter().copied().collect())
             .unwrap_or_default()
     }
 }

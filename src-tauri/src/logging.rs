@@ -106,6 +106,8 @@ fn file_appender(dir: &Path) -> Result<BoundedLogs, Box<dyn std::error::Error>> 
         .build(dir)?;
     Ok(BoundedLogs {
         inner,
+        used: log_bytes(dir)?,
+        scanned_day: utc_day(),
         dir: dir.to_owned(),
         max_bytes: MAX_LOG_BYTES,
     })
@@ -117,25 +119,45 @@ struct BoundedLogs {
     inner: RollingFileAppender,
     dir: std::path::PathBuf,
     max_bytes: u64,
+    /// Bytes in log files, counted from disk only at startup and once per
+    /// (UTC) day, when the appender rotates and prunes old files.
+    used: u64,
+    scanned_day: u64,
+}
+
+fn utc_day() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() / 86_400)
+}
+
+fn log_bytes(dir: &Path) -> io::Result<u64> {
+    Ok(std::fs::read_dir(dir)?
+        .filter_map(Result::ok)
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .is_some_and(|n| n.starts_with("taskmanager.") && n.ends_with(".log"))
+        })
+        .filter_map(|e| e.path().symlink_metadata().ok())
+        .filter(|m| m.is_file())
+        .fold(0u64, |sum, m| sum.saturating_add(m.len())))
 }
 
 impl Write for BoundedLogs {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.inner.write(&[])?; // Allow rotation even after reaching the cap.
-        let used = std::fs::read_dir(&self.dir)?
-            .filter_map(Result::ok)
-            .filter(|e| {
-                e.file_name()
-                    .to_str()
-                    .is_some_and(|n| n.starts_with("taskmanager.") && n.ends_with(".log"))
-            })
-            .filter_map(|e| e.path().symlink_metadata().ok())
-            .filter(|m| m.is_file())
-            .fold(0u64, |sum, m| sum.saturating_add(m.len()));
-        if used.saturating_add(bytes.len() as u64) > self.max_bytes {
+        let day = utc_day();
+        if day != self.scanned_day {
+            self.used = log_bytes(&self.dir)?;
+            self.scanned_day = day;
+        }
+        if self.used.saturating_add(bytes.len() as u64) > self.max_bytes {
             return Ok(bytes.len());
         }
-        self.inner.write(bytes)
+        let written = self.inner.write(bytes)?;
+        self.used = self.used.saturating_add(written as u64);
+        Ok(written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -223,6 +245,31 @@ mod tests {
             .map(|e| e.unwrap().metadata().unwrap().len())
             .sum();
         assert_eq!(used, 4);
+        drop(writer);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn disk_usage_is_rescanned_only_when_the_day_changes() {
+        let dir = std::env::temp_dir().join(format!(
+            "tm-log-rescan-{}-{}",
+            std::process::id(),
+            tm_core::monitoring::unix_millis()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let mut writer = file_appender(&dir).unwrap();
+        writer.max_bytes = 100;
+        writer.write_all(b"12345").unwrap();
+        assert_eq!(writer.used, 5);
+        // Space taken behind the writer's back is not seen within the day...
+        std::fs::write(dir.join("taskmanager.old.log"), vec![b'x'; 100]).unwrap();
+        writer.write_all(b"678").unwrap();
+        assert_eq!(writer.used, 8);
+        // ...but is after a day boundary, and further output is discarded.
+        writer.scanned_day = 0;
+        writer.write_all(b"discard").unwrap();
+        writer.flush().unwrap();
+        assert!(writer.used >= 108);
         drop(writer);
         std::fs::remove_dir_all(dir).unwrap();
     }

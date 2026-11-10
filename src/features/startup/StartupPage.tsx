@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { SearchBox } from "@/components/SearchBox";
+import { outlineButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/Card";
 import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
@@ -11,9 +12,6 @@ import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
 import { toast } from "@/stores/toastStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { filterItems } from "./logic";
-
-const btn =
-  "flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50";
 
 export function StartupPage() {
   const [query, setQuery] = useState("");
@@ -52,7 +50,7 @@ export function StartupPage() {
         title="Startup"
         description="Programs that start when you log in. Turning one off hides it; nothing is deleted."
         actions={
-          <button type="button" className={btn} onClick={refresh}>
+          <button type="button" className={outlineButton} onClick={refresh}>
             <RefreshCw size="0.875rem" aria-hidden /> Refresh
           </button>
         }

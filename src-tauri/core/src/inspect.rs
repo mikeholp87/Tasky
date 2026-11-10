@@ -10,7 +10,6 @@ use crate::models::{
     MemoryKindTotal, MemoryMap, MemoryRegion, MemoryRegionKind, ModuleInfo, ProcessState,
     ThreadInfo, ThreadList,
 };
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 /// Numeric-PID reads must not return a replacement process's data.
 pub fn for_process<T>(
@@ -23,22 +22,9 @@ pub fn for_process<T>(
             "The process start time is unavailable, so its identity cannot be verified.".into(),
         ));
     }
-    let mut system = System::new().map_err(|e| AppError::SystemQueryFailed(e.to_string()))?;
-    let mut check = || {
-        system.refresh_processes_specifics(
-            ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
-            true,
-            ProcessRefreshKind::nothing().without_tasks(),
-        );
-        system
-            .process(Pid::from_u32(pid))
-            .filter(|p| p.start_time() == start_time)
-            .map(|_| ())
-            .ok_or(AppError::ProcessNotFound(pid))
-    };
-    check()?;
+    crate::platform::verify_identity(pid, start_time)?;
     let result = read();
-    check()?;
+    crate::platform::verify_identity(pid, start_time)?;
     result
 }
 
@@ -346,6 +332,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_process_that_exits_during_inspection_cannot_return_data() {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
         let mut child = std::process::Command::new("sleep")
             .arg("60")
             .spawn()

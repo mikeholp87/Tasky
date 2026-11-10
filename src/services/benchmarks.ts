@@ -1,5 +1,5 @@
 /** Benchmark lifecycle: backend events into the store, and the run controls. */
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isActive, useBenchmarkStore } from "@/stores/benchmarkStore";
 import { toast } from "@/stores/toastStore";
 import type { BenchmarkKind, BenchmarkProfile, BenchmarkResult, BenchmarkStatus } from "@/types";
@@ -9,6 +9,9 @@ const STATUS_EVENT = "benchmark://status";
 const RESULT_EVENT = "benchmark://result";
 
 let started = false;
+let unlisteners: UnlistenFn[] = [];
+/** Only the newest disk listing is applied when reloads overlap. */
+let diskTargetsRequest = 0;
 
 async function refreshHistory(): Promise<void> {
   try {
@@ -23,11 +26,23 @@ export async function initBenchmarks(): Promise<void> {
   if (started || !isBackendAvailable()) return;
   started = true;
   const store = useBenchmarkStore.getState();
-  await listen<BenchmarkStatus>(STATUS_EVENT, (e) => store.setStatus(e.payload));
-  await listen<BenchmarkResult>(RESULT_EVENT, (e) => {
-    store.setLatest(e.payload);
-    void refreshHistory();
-  });
+  try {
+    unlisteners.push(
+      await listen<BenchmarkStatus>(STATUS_EVENT, (e) => store.setStatus(e.payload)),
+    );
+    unlisteners.push(
+      await listen<BenchmarkResult>(RESULT_EVENT, (e) => {
+        store.setLatest(e.payload);
+        void refreshHistory();
+      }),
+    );
+  } catch (e) {
+    for (const unlisten of unlisteners) unlisten();
+    unlisteners = [];
+    started = false;
+    toast.error(toAppError(e).message);
+    return;
+  }
   try {
     store.setStatus(await backend.getBenchmarkStatus());
   } catch (e) {
@@ -68,14 +83,20 @@ export async function loadGpuAdapters(): Promise<void> {
   }
 }
 
-/** Lists disk locations once; a failure is shown in the Disk card. */
-export async function loadDiskTargets(): Promise<void> {
+/**
+ * Lists disk locations once, or again with `reload` (drives changed); a
+ * failure is shown in the Disk card. The previous list stays up meanwhile.
+ */
+export async function loadDiskTargets({ reload = false } = {}): Promise<void> {
   const store = useBenchmarkStore.getState();
-  if (store.diskTargets !== null || !isBackendAvailable()) return;
+  if ((!reload && store.diskTargets !== null) || !isBackendAvailable()) return;
+  const request = ++diskTargetsRequest;
   try {
-    store.setDiskTargets(await backend.listDiskTargets());
+    const targets = await backend.listDiskTargets();
+    if (request === diskTargetsRequest) store.setDiskTargets(targets);
   } catch (e) {
-    store.setDiskTargets([], toAppError(e).message);
+    if (request !== diskTargetsRequest) return;
+    store.setDiskTargets(useBenchmarkStore.getState().diskTargets ?? [], toAppError(e).message);
   }
 }
 

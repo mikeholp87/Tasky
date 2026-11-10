@@ -1,11 +1,18 @@
+import { useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRemoteData } from "@/hooks/useRemoteData";
+import { scaled, useRootPx } from "@/hooks/useRootPx";
 import { STATUS_LABEL } from "@/features/processes/cells";
 import { backend } from "@/services/ipc";
+import type { ThreadInfo } from "@/types";
 import { formatDuration, formatPercent, formatTimestamp } from "@/utils/format";
 import { InspectBody } from "./InspectBody";
 
 /** CPU per thread needs two readings, so this is the one tab that polls: only while visible. */
 const POLL_MS = 1_500;
+const ROW_HEIGHT = 24;
+const COLUMNS =
+  "grid-cols-[4.5rem_minmax(8rem,1fr)_6rem_4.5rem_6rem_4.5rem_3.5rem_10rem_minmax(8rem,1fr)]";
 
 export function ThreadsTab({
   pid,
@@ -41,42 +48,95 @@ export function ThreadsTab({
           : "Windows does not report thread state or wait reasons through the interfaces this app uses."
       }
     >
-      <div className="max-h-[28rem] overflow-auto">
-        <table className="w-full text-left text-[0.8125rem]">
-          <thead className="sticky top-0 bg-surface text-fg-muted">
-            <tr>
-              <th className="py-1 pr-3 font-medium">TID</th>
-              <th className="py-1 pr-3 font-medium">Name</th>
-              <th className="py-1 pr-3 font-medium">State</th>
-              <th className="py-1 pr-3 text-right font-medium">CPU</th>
-              <th className="py-1 pr-3 text-right font-medium">CPU time</th>
-              <th className="py-1 pr-3 text-right font-medium">Priority</th>
-              <th className="py-1 pr-3 text-right font-medium">Core</th>
-              <th className="py-1 pr-3 font-medium">Started</th>
-              <th className="py-1 font-medium">Waiting in</th>
-            </tr>
-          </thead>
-          <tbody className="num selectable">
-            {threads.map((t) => (
-              <tr key={t.tid} className="border-t border-border/60">
-                <td className="py-1 pr-3 font-mono">{t.tid}</td>
-                <td className="py-1 pr-3">{t.name ?? "—"}</td>
-                <td className="py-1 pr-3">{t.state ? STATUS_LABEL[t.state] : "—"}</td>
-                <td className="py-1 pr-3 text-right">{formatPercent(t.cpuPercent)}</td>
-                <td className="py-1 pr-3 text-right">
-                  {t.cpuTimeMs == null ? "—" : formatDuration(t.cpuTimeMs / 1000)}
-                </td>
-                <td className="py-1 pr-3 text-right">{t.priority ?? "—"}</td>
-                <td className="py-1 pr-3 text-right">{t.processor ?? "—"}</td>
-                <td className="py-1 pr-3">
-                  {t.startTime != null ? formatTimestamp(t.startTime * 1000) : "—"}
-                </td>
-                <td className="py-1 font-mono">{t.waitChannel ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ThreadTable threads={threads} />
     </InspectBody>
+  );
+}
+
+/** Virtualized: some processes run thousands of threads, re-read every poll. */
+function ThreadTable({ threads }: { threads: readonly ThreadInfo[] }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const rowHeight = scaled(ROW_HEIGHT, useRootPx());
+  const virtualizer = useVirtualizer({
+    count: threads.length,
+    getScrollElement: () => scroller.current,
+    estimateSize: () => rowHeight,
+    overscan: 12,
+    getItemKey: (index) => threads[index]?.tid ?? index,
+  });
+  return (
+    <div
+      ref={scroller}
+      role="table"
+      aria-rowcount={threads.length + 1}
+      className="max-h-[28rem] overflow-auto text-[0.8125rem]"
+    >
+      <div
+        role="row"
+        className={`sticky top-0 z-[1] grid ${COLUMNS} gap-3 bg-surface py-1 font-medium text-fg-muted`}
+      >
+        <span role="columnheader">TID</span>
+        <span role="columnheader">Name</span>
+        <span role="columnheader">State</span>
+        <span role="columnheader" className="text-right">
+          CPU
+        </span>
+        <span role="columnheader" className="text-right">
+          CPU time
+        </span>
+        <span role="columnheader" className="text-right">
+          Priority
+        </span>
+        <span role="columnheader" className="text-right">
+          Core
+        </span>
+        <span role="columnheader">Started</span>
+        <span role="columnheader">Waiting in</span>
+      </div>
+      <div
+        className="num selectable"
+        style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+      >
+        {virtualizer.getVirtualItems().map((v) => {
+          const t = threads[v.index];
+          if (!t) return null;
+          return (
+            <div
+              key={v.key}
+              role="row"
+              aria-rowindex={v.index + 2}
+              className={`absolute left-0 grid w-full ${COLUMNS} items-center gap-3 border-t border-border/60`}
+              style={{ top: v.start, height: rowHeight }}
+            >
+              <span role="cell" className="font-mono">
+                {t.tid}
+              </span>
+              <span role="cell" className="truncate">
+                {t.name ?? "—"}
+              </span>
+              <span role="cell">{t.state ? STATUS_LABEL[t.state] : "—"}</span>
+              <span role="cell" className="text-right">
+                {formatPercent(t.cpuPercent)}
+              </span>
+              <span role="cell" className="text-right">
+                {t.cpuTimeMs == null ? "—" : formatDuration(t.cpuTimeMs / 1000)}
+              </span>
+              <span role="cell" className="text-right">
+                {t.priority ?? "—"}
+              </span>
+              <span role="cell" className="text-right">
+                {t.processor ?? "—"}
+              </span>
+              <span role="cell" className="truncate">
+                {t.startTime != null ? formatTimestamp(t.startTime * 1000) : "—"}
+              </span>
+              <span role="cell" className="truncate font-mono" title={t.waitChannel ?? undefined}>
+                {t.waitChannel ?? "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

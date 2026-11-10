@@ -34,15 +34,15 @@ export function useProcessDetails(
   const [result, setResult] = useState<FetchResult | null>(null);
   const [livePoints, setLivePoints] = useState<ProcessPoint[]>([]);
   const requestKey = `${pid}:${nonce}`;
-  const [openedStartTime] = useState(
+  // The start time pins the process instance, so a reused PID is reported as
+  // an exit rather than shown as this process. Without one (the process was
+  // gone before the page opened) there is nothing that can be verified.
+  const [startTime] = useState(
     () =>
       selectedStartTime ??
       useMetricsStore.getState().tick?.processes.find((p) => p.pid === pid)?.startTime,
   );
-
-  // Once details load they pin the process instance, so a reused PID is
-  // reported as an exit rather than shown as this process.
-  const startTime = openedStartTime ?? result?.details?.row.startTime;
+  const missing = useMemo(() => (startTime == null ? notFound(pid) : null), [pid, startTime]);
   const live = useMetricsStore(
     (s) =>
       s.tick?.processes.find(
@@ -51,7 +51,7 @@ export function useProcessDetails(
   );
 
   useEffect(() => {
-    if (!isBackendAvailable()) return;
+    if (!isBackendAvailable() || startTime == null) return;
     let cancelled = false;
     backend
       .getProcessDetails(pid, startTime)
@@ -62,12 +62,7 @@ export function useProcessDetails(
             message: "The process start time is unavailable, so its identity cannot be verified.",
           } satisfies AppError;
         }
-        if (startTime != null && details.row.startTime !== startTime) {
-          throw {
-            kind: "processNotFound",
-            message: `Process ${pid} is no longer running.`,
-          } satisfies AppError;
-        }
+        if (details.row.startTime !== startTime) throw notFound(pid);
         if (!cancelled) setResult({ key: requestKey, details, error: null });
       })
       .catch(
@@ -111,8 +106,12 @@ export function useProcessDetails(
     live,
     details,
     history,
-    loading: isBackendAvailable() && result?.key !== requestKey,
-    error: result?.error ?? null,
+    loading: !missing && isBackendAvailable() && result?.key !== requestKey,
+    error: missing ?? result?.error ?? null,
     refresh,
   };
+}
+
+function notFound(pid: number): AppError {
+  return { kind: "processNotFound", message: `Process ${pid} is no longer running.` };
 }

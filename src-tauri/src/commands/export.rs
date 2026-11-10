@@ -26,8 +26,16 @@ fn failed(e: impl std::fmt::Display) -> AppError {
     AppError::SystemQueryFailed(format!("export failed: {e}"))
 }
 
-/// Asks for a destination and writes `contents`. Returns the saved path, or
-/// `None` if the user cancelled.
+/// Content ready to save: the default file name and a (label, extension) filter.
+type Export = (String, String, (&'static str, &'static str));
+
+/// Asks for a destination and writes the export. Returns the saved path, or
+/// `None` if the user cancelled. The dialog does not hold a worker.
+async fn save<R: Runtime>(app: AppHandle<R>, prepared: Export) -> AppResult<Option<String>> {
+    let (contents, default_name, filter) = prepared;
+    super::blocking::dialog(move || save_with_dialog(&app, &default_name, filter, contents)).await
+}
+
 fn save_with_dialog<R: Runtime>(
     app: &AppHandle<R>,
     default_name: &str,
@@ -68,9 +76,10 @@ pub async fn export_processes<R: Runtime>(
     include_command_lines: bool,
 ) -> AppResult<Option<String>> {
     let engine = Arc::clone(&state.engine);
-    blocking(move || {
+    let confirm_app = app.clone();
+    let prepared = blocking(move || {
         if include_command_lines {
-            super::confirm::confirm(&app, "This export includes process command lines, which may contain passwords or tokens. Continue with this sensitive export?")?;
+            super::confirm::confirm(&confirm_app, "This export includes process command lines, which may contain passwords or tokens. Continue with this sensitive export?")?;
         }
         let tick = engine.latest().ok_or(AppError::EngineUnavailable)?;
         let (contents, ext, label) = match format {
@@ -85,14 +94,14 @@ pub async fn export_processes<R: Runtime>(
                 "JSON",
             ),
         };
-        save_with_dialog(
-            &app,
-            &format!("processes-{}.{ext}", timestamp()),
-            (label, ext),
+        Ok((
             contents,
-        )
+            format!("processes-{}.{ext}", timestamp()),
+            (label, ext),
+        ))
     })
-    .await
+    .await?;
+    save(app, prepared).await
 }
 
 #[tauri::command]
@@ -101,17 +110,17 @@ pub async fn export_system_summary<R: Runtime>(
     state: State<'_, AppState>,
 ) -> AppResult<Option<String>> {
     let engine = Arc::clone(&state.engine);
-    blocking(move || {
+    let prepared = blocking(move || {
         let tick = engine.latest().ok_or(AppError::EngineUnavailable)?;
         let json = export::system_summary_json(engine.static_info(), &tick).map_err(failed)?;
-        save_with_dialog(
-            &app,
-            &format!("system-summary-{}.json", timestamp()),
-            ("JSON", "json"),
+        Ok((
             json,
-        )
+            format!("system-summary-{}.json", timestamp()),
+            ("JSON", "json"),
+        ))
     })
-    .await
+    .await?;
+    save(app, prepared).await
 }
 
 #[derive(Serialize)]
@@ -143,26 +152,27 @@ pub async fn export_diagnostics<R: Runtime>(
     let engine = Arc::clone(&state.engine);
     let settings = state.settings.get();
     let recent_log = state.logging.recent();
-    blocking(move || {
+    let confirm_app = app.clone();
+    let prepared = blocking(move || {
         if include_processes {
             let message = if include_command_lines {
                 "Diagnostics will include process information and command lines, which may contain passwords or tokens, plus hostname, alert rules and recent errors. Continue?"
             } else {
                 "Diagnostics will include process information, hostname, alert rules and recent errors, which may be private. Continue?"
             };
-            super::confirm::confirm(&app, message)?;
+            super::confirm::confirm(&confirm_app, message)?;
         }
         let mut diagnostics = collect_diagnostics(&engine, settings, recent_log);
         diagnostics.apply_privacy(include_processes, include_command_lines);
         let json = serde_json::to_string_pretty(&diagnostics).map_err(failed)?;
-        save_with_dialog(
-            &app,
-            &format!("taskmanager-diagnostics-{}.json", timestamp()),
-            ("JSON", "json"),
+        Ok((
             json,
-        )
+            format!("taskmanager-diagnostics-{}.json", timestamp()),
+            ("JSON", "json"),
+        ))
     })
-    .await
+    .await?;
+    save(app, prepared).await
 }
 
 fn collect_diagnostics(

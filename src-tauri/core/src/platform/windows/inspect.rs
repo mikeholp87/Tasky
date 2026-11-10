@@ -101,6 +101,7 @@ pub fn sockets() -> AppResult<SocketList> {
                 connection,
                 pid,
                 process_name: pid.and_then(|p| names.get(&p).cloned()),
+                start_time: None,
             }
         })
         .collect();

@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::process::Command;
 
+use super::tool::run_tool;
 use crate::errors::{AppError, AppResult};
 use crate::models::{ServiceAction, ServiceInfo, ServiceScope};
 
@@ -37,14 +38,71 @@ const PROTECTED_PREFIXES: &[&str] = &[
     "plymouth",
     "udev",
     "init",
+    // User-scope desktop session: stopping these ends the graphical login.
+    "org.gnome.shell@",
+    "gnome-session",
+    "plasma-",
 ];
 
-fn protected(unit: &str) -> bool {
-    let name = unit
-        .strip_suffix(".service")
+/// Services that may be stopped or restarted (restarting is often the fix),
+/// but whose loss the user should understand first.
+const CAUTIONS: &[(&str, bool, &str)] = &[
+    (
+        "ssh",
+        true,
+        "Remote logins depend on it. Anyone connected over SSH, including you, may be locked out.",
+    ),
+    (
+        "sshd",
+        true,
+        "Remote logins depend on it. Anyone connected over SSH, including you, may be locked out.",
+    ),
+    (
+        "accounts-daemon",
+        true,
+        "The login screen and user settings depend on it.",
+    ),
+    (
+        "pipewire",
+        false,
+        "Sound and screen sharing stop until it runs again.",
+    ),
+    (
+        "wireplumber",
+        false,
+        "Sound and screen sharing stop until it runs again.",
+    ),
+    (
+        "xdg-desktop-portal",
+        false,
+        "File pickers, screen sharing and sandboxed apps depend on it.",
+    ),
+];
+
+fn base_name(unit: &str) -> String {
+    unit.strip_suffix(".service")
         .unwrap_or(unit)
-        .to_ascii_lowercase();
+        .to_ascii_lowercase()
+}
+
+fn protected(unit: &str) -> bool {
+    let name = base_name(unit);
     PROTECTED_PREFIXES.iter().any(|p| name.starts_with(p))
+}
+
+/// Why stopping or restarting `unit` needs extra thought, if it does.
+pub fn service_caution(unit: &str) -> Option<&'static str> {
+    let name = base_name(unit);
+    CAUTIONS
+        .iter()
+        .find(|(n, exact, _)| {
+            if *exact {
+                name == *n
+            } else {
+                name.starts_with(n)
+            }
+        })
+        .map(|(_, _, why)| *why)
 }
 
 fn valid_unit(unit: &str) -> bool {
@@ -63,34 +121,22 @@ fn systemctl(scope: ServiceScope, args: &[&str]) -> AppResult<String> {
     if scope == ServiceScope::User {
         command.arg("--user");
     }
-    let output = command
-        .args(args)
-        .env("LC_ALL", "C")
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                AppError::UnsupportedOperation("Services (systemd is not available)".into())
+    run_tool(
+        command.args(args),
+        || AppError::UnsupportedOperation("Services (systemd is not available)".into()),
+        |first| {
+            if first.contains("Access denied")
+                || first.contains("authentication")
+                || first.contains("Authentication")
+            {
+                AppError::PermissionDenied(
+                    "Not authorized. Approve the system prompt, or ask an administrator.".into(),
+                )
+            } else if first.contains("not found") || first.contains("not loaded") {
+                AppError::ActionUnavailable("That service no longer exists.".into())
             } else {
-                AppError::SystemQueryFailed(format!("Could not run systemctl: {e}"))
+                AppError::SystemQueryFailed(first.to_string())
             }
-        })?;
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let first = stderr.lines().next().unwrap_or("").trim();
-    Err(
-        if first.contains("Access denied")
-            || first.contains("authentication")
-            || first.contains("Authentication")
-        {
-            AppError::PermissionDenied(
-                "Not authorized. Approve the system prompt, or ask an administrator.".into(),
-            )
-        } else if first.contains("not found") || first.contains("not loaded") {
-            AppError::ActionUnavailable("That service no longer exists.".into())
-        } else {
-            AppError::SystemQueryFailed(first.to_string())
         },
     )
 }
@@ -301,6 +347,10 @@ ssh.service                 disabled enabled
             "getty@tty1.service",
             "user@1000.service",
             "plymouth-start.service",
+            "org.gnome.Shell@wayland.service",
+            "gnome-session-manager@gnome.service",
+            "plasma-plasmashell.service",
+            "plasma-kwin_wayland.service",
         ] {
             assert!(protected(unit), "{unit}");
         }
@@ -309,8 +359,28 @@ ssh.service                 disabled enabled
             "bluetooth.service",
             "ssh.service",
             "docker.service",
+            "pipewire.service",
         ] {
             assert!(!protected(unit), "{unit}");
+        }
+    }
+
+    #[test]
+    fn session_and_remote_access_services_carry_a_caution() {
+        for unit in [
+            "ssh.service",
+            "sshd.service",
+            "accounts-daemon.service",
+            "pipewire.service",
+            "pipewire-pulse.service",
+            "wireplumber.service",
+            "xdg-desktop-portal-gnome.service",
+        ] {
+            assert!(service_caution(unit).is_some(), "{unit}");
+        }
+        assert!(service_caution("ssh.service").unwrap().contains("SSH"));
+        for unit in ["ssh-agent.service", "cups.service", "sshguard.service"] {
+            assert!(service_caution(unit).is_none(), "{unit}");
         }
     }
 

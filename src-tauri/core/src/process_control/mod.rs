@@ -83,6 +83,9 @@ pub fn perform(engine: &Engine, req: ActionRequest) -> AppResult<ActionOutcome> 
             if cfg!(windows) {
                 format!("Asked {name} (PID {pid}) to close. It may prompt to save first.")
             } else {
+                // The platform continues a stopped process so it can handle
+                // the request; if it survives, it is no longer suspended.
+                engine.set_suspended(pid, row.start_time, false);
                 format!("Sent a termination request to {name} (PID {pid}).")
             }
         }

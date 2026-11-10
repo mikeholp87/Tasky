@@ -120,6 +120,7 @@ pub fn sockets() -> AppResult<SocketList> {
                 connection: to_connection(&entry, protocol),
                 pid,
                 process_name,
+                start_time: None,
             });
         }
     }

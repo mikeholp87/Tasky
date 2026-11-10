@@ -10,7 +10,7 @@ use crate::platform::{self, DiskIoCounters};
 /// Fallback cadence for re-enumerating the mount list. On Linux a change to
 /// the mount table triggers it at once (see [`mount_table`]), so this only
 /// covers other platforms and the slow-moving disk type. Capacities are
-/// re-read on every tick (a `statvfs`/`GetDiskFreeSpaceEx` per mount) so
+/// re-read on every tick (a `statvfs`/`GetDiskFreeSpaceEx` per local mount) so
 /// deleting files is reflected immediately in the UI.
 const MOUNT_LIST_REFRESH: Duration = Duration::from_secs(30);
 
@@ -66,6 +66,32 @@ const IGNORED_FILE_SYSTEMS: &[&str] = &[
     "fuse.gvfsd-fuse",
 ];
 
+/// Network file systems. They are never shown and never `statvfs`ed: if the
+/// server goes away the call can block for minutes, stalling every metric.
+/// (sysinfo already skips NFS/CIFS on Linux; this covers the rest.)
+const REMOTE_FILE_SYSTEMS: &[&str] = &[
+    "nfs",
+    "nfs4",
+    "cifs",
+    "smb3",
+    "smbfs",
+    "9p",
+    "afs",
+    "ceph",
+    "glusterfs",
+    "lustre",
+    "davfs",
+    "fuse.sshfs",
+    "fuse.rclone",
+    "fuse.s3fs",
+    "fuse.glusterfs",
+    "fuse.davfs2",
+];
+
+fn is_remote(file_system: &str) -> bool {
+    REMOTE_FILE_SYSTEMS.contains(&file_system.to_ascii_lowercase().as_str())
+}
+
 pub struct DiskTracker {
     /// `None` when the platform cannot enumerate disks at all.
     disks: Option<Disks>,
@@ -100,13 +126,13 @@ impl DiskTracker {
         let table = mount_table();
         let since = now.duration_since(self.last_mount_refresh);
         if list_refresh_due(table.as_deref(), self.mount_table.as_deref(), since) {
-            disks.refresh_specifics(true, DiskRefreshKind::everything());
+            refresh_disks(disks, true, DiskRefreshKind::everything());
             self.last_mount_refresh = now;
             self.mount_table = table;
         } else {
             // Free space is cheap to query and changes when the user writes or
             // deletes files, so refresh it on every tick.
-            disks.refresh_specifics(false, tick_refresh_kind());
+            refresh_disks(disks, false, tick_refresh_kind());
         }
 
         let relevant: Vec<&sysinfo::Disk> = disks
@@ -202,13 +228,29 @@ fn tick_refresh_kind() -> DiskRefreshKind {
     DiskRefreshKind::nothing().with_storage().with_io_usage()
 }
 
-/// Filters out pseudo file systems, snap images and zero-sized mounts.
+/// Applies `kind` to every disk, except that free space (`statvfs`) is only
+/// read for local file systems.
+fn refresh_disks(disks: &mut Disks, list: bool, kind: DiskRefreshKind) {
+    disks.refresh_specifics(list, kind.without_storage());
+    if kind.storage() {
+        let storage = DiskRefreshKind::nothing().with_storage();
+        for disk in disks
+            .iter_mut()
+            .filter(|d| !is_remote(&d.file_system().to_string_lossy()))
+        {
+            disk.refresh_specifics(storage);
+        }
+    }
+}
+
+/// Filters out pseudo and network file systems, snap images and zero-sized
+/// mounts.
 pub fn is_relevant(file_system: &str, mount_point: &str, total_bytes: u64) -> bool {
     if total_bytes == 0 {
         return false;
     }
     let fs = file_system.to_ascii_lowercase();
-    if IGNORED_FILE_SYSTEMS.contains(&fs.as_str()) {
+    if IGNORED_FILE_SYSTEMS.contains(&fs.as_str()) || is_remote(&fs) {
         return false;
     }
     !(mount_point.starts_with("/snap/") || mount_point.starts_with("/var/lib/docker/"))
@@ -257,6 +299,15 @@ mod tests {
         assert!(!is_relevant("tmpfs", "/run", 500));
         assert!(!is_relevant("overlay", "/var/lib/docker/overlay2/x", 500));
         assert!(!is_relevant("ext4", "/mnt/empty", 0));
+    }
+
+    #[test]
+    fn network_mounts_are_never_shown() {
+        assert!(!is_relevant("fuse.sshfs", "/mnt/server", 500));
+        assert!(!is_relevant("smb3", "/mnt/share", 500));
+        assert!(!is_relevant("9p", "/mnt/host", 500));
+        assert!(is_remote("NFS4"));
+        assert!(!is_remote("ext4"));
     }
 
     /// Integration: the system drive reports capacity and, on Windows/Linux,

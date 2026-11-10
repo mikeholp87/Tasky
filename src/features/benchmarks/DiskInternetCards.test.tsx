@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runBenchmark } from "@/services/benchmarks";
+import { loadDiskTargets, runBenchmark } from "@/services/benchmarks";
 import { useBenchmarkStore } from "@/stores/benchmarkStore";
+import { useMetricsStore } from "@/stores/metricsStore";
 import type {
   BenchmarkResult,
   BenchmarkStatus,
@@ -10,8 +11,10 @@ import type {
   DiskPlan,
   DiskTargetInfo,
   InternetPlan,
+  MetricsTick,
 } from "@/types";
 import { BenchmarksPage } from "./BenchmarksPage";
+import { DiskCard } from "./DiskCard";
 
 const api = vi.hoisted(() => ({ diskPlan: vi.fn(), internetPlan: vi.fn() }));
 
@@ -225,6 +228,8 @@ const NET: BenchmarkResult = {
 
 beforeEach(() => {
   vi.mocked(runBenchmark).mockClear();
+  vi.mocked(loadDiskTargets).mockClear();
+  useMetricsStore.setState({ tick: null });
   api.diskPlan.mockReset().mockResolvedValue(PLAN);
   api.internetPlan.mockReset().mockResolvedValue(NET_PLAN);
   useBenchmarkStore.setState({
@@ -296,6 +301,20 @@ describe("Disk card", () => {
     ).toBeInTheDocument();
     expect(panel.getByText(/cache is part of what was measured/i)).toBeInTheDocument();
     expect(panel.getByText(/O_DIRECT is not supported here/)).toBeInTheDocument();
+  });
+
+  it("reloads the locations when the mount table changes, not when the first tick arrives", () => {
+    const tickWith = (...mounts: string[]) =>
+      useMetricsStore.setState({
+        tick: { disks: mounts.map((mountPoint) => ({ mountPoint })) } as unknown as MetricsTick,
+      });
+    render(<DiskCard result={null} history={[]} />);
+    expect(loadDiskTargets).toHaveBeenLastCalledWith({ reload: false });
+    act(() => tickWith("/"));
+    expect(loadDiskTargets).toHaveBeenLastCalledWith({ reload: false });
+    act(() => tickWith("/", "/run/media/me/USB"));
+    expect(loadDiskTargets).toHaveBeenLastCalledWith({ reload: true });
+    expect(loadDiskTargets).toHaveBeenCalledTimes(3);
   });
 
   it("explains when no location is available", () => {
@@ -377,6 +396,16 @@ describe("Internet card", () => {
     expect(panel.getByText(/via wlo1 \(Wi-Fi\)/)).toBeInTheDocument();
     expect(panel.getByText(/no internet score/i)).toBeInTheDocument();
     expect(panel.queryByText(/not scored/i)).not.toBeInTheDocument();
+  });
+
+  it("says why it cannot run when the plan cannot be made", async () => {
+    api.internetPlan.mockRejectedValue({
+      kind: "systemQueryFailed",
+      message: "No network connection.",
+    });
+    render(<BenchmarksPage />);
+    expect(await screen.findByText("No network connection.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /run internet test/i })).toBeDisabled();
   });
 
   it("shows a failed run's reason", () => {

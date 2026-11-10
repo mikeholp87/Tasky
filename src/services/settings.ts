@@ -27,6 +27,22 @@ export function columnsFromSettings(s: Pick<Settings, "visibleColumns" | "column
 }
 
 let unsubscribe: (() => void) | undefined;
+/** Set while one store is copying columns into the other, so the copy is not echoed back. */
+let syncing = false;
+
+type Columns = { visibleColumns: unknown; columnWidths: unknown };
+const sameColumns = (a: Columns, b: Columns) =>
+  a.visibleColumns === b.visibleColumns && a.columnWidths === b.columnWidths;
+
+function sync(copy: () => void): void {
+  if (syncing) return;
+  syncing = true;
+  try {
+    copy();
+  } finally {
+    syncing = false;
+  }
+}
 
 export async function loadSettings(): Promise<void> {
   if (!isBackendAvailable()) return;
@@ -39,15 +55,24 @@ export async function loadSettings(): Promise<void> {
   }
 
   unsubscribe?.();
-  unsubscribe = useProcessStore.subscribe((state, prev) => {
-    if (state.visibleColumns === prev.visibleColumns && state.columnWidths === prev.columnWidths) {
-      return;
-    }
-    useSettingsStore.getState().update({
-      visibleColumns: state.visibleColumns,
-      columnWidths: Object.fromEntries(
-        Object.entries(state.columnWidths).filter(([, w]) => w != null),
-      ) as Record<string, number>,
-    });
+  const fromTable = useProcessStore.subscribe((state, prev) => {
+    if (sameColumns(state, prev)) return;
+    sync(() =>
+      useSettingsStore.getState().update({
+        visibleColumns: state.visibleColumns,
+        columnWidths: Object.fromEntries(
+          Object.entries(state.columnWidths).filter(([, w]) => w != null),
+        ) as Record<string, number>,
+      }),
+    );
   });
+  // Settings change on their own after a reset or a rolled-back save.
+  const fromSettings = useSettingsStore.subscribe((state, prev) => {
+    if (sameColumns(state, prev)) return;
+    sync(() => useProcessStore.setState(columnsFromSettings(state)));
+  });
+  unsubscribe = () => {
+    fromTable();
+    fromSettings();
+  };
 }

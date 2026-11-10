@@ -2,53 +2,73 @@
 
 use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 use tm_core::errors::AppResult;
 use tm_core::models::{AlertEvent, MonitoringState, Settings};
 use tm_core::monitoring::engine::MAX_HISTORY_POINTS;
 
+use super::blocking::run as blocking;
 use crate::state::AppState;
 
+/// Reading the login entry touches the disk, so this runs off the UI thread.
 #[tauri::command]
-pub fn get_settings<R: Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, AppState>,
-) -> AppResult<Settings> {
-    let mut settings = state.settings.get();
-    settings.start_with_os = crate::autostart::is_enabled(&app)?;
-    Ok(settings)
+pub async fn get_settings<R: Runtime>(app: AppHandle<R>) -> AppResult<Settings> {
+    blocking(move || {
+        let mut settings = app.state::<AppState>().settings.get();
+        settings.start_with_os = crate::autostart::is_enabled(&app)?;
+        Ok(settings)
+    })
+    .await
 }
 
 /// Rolls autostart back if persistence fails; one store lock covers both changes.
 #[tauri::command]
-pub fn update_settings<R: Runtime>(
+pub async fn update_settings<R: Runtime>(
     app: AppHandle<R>,
-    state: State<'_, AppState>,
     settings: Settings,
 ) -> AppResult<Settings> {
-    save_settings(&app, &state, settings)
+    blocking(move || {
+        confirm_autostart_change(&app, settings.start_with_os)?;
+        save_settings(&app, |s| *s = settings)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn reset_settings<R: Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, AppState>,
-) -> AppResult<Settings> {
-    save_settings(&app, &state, Settings::default())
+pub async fn reset_settings<R: Runtime>(app: AppHandle<R>) -> AppResult<Settings> {
+    blocking(move || {
+        let defaults = Settings::default();
+        confirm_autostart_change(&app, defaults.start_with_os)?;
+        save_settings(&app, |s| *s = defaults)
+    })
+    .await
 }
 
+/// Starting Tasky at login is a startup entry like any other, so changing it
+/// asks first, exactly as on the Startup page.
+fn confirm_autostart_change<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> AppResult<()> {
+    if crate::autostart::is_enabled(app)? == enabled {
+        return Ok(());
+    }
+    super::confirm::confirm(
+        app,
+        &super::inspect::startup_confirmation(&crate::autostart::entry_id(app), enabled),
+    )
+}
+
+/// Read-modify-persist under the settings lock, then push the result into
+/// running components before the lock is released.
 pub fn save_settings<R: Runtime>(
     app: &AppHandle<R>,
-    state: &AppState,
-    settings: Settings,
+    change: impl FnOnce(&mut Settings),
 ) -> AppResult<Settings> {
-    let saved = state.settings.save_with_autostart(
-        settings,
+    let state = app.state::<AppState>();
+    state.settings.update_with_autostart(
+        change,
         || crate::autostart::is_enabled(app),
         |enabled| crate::autostart::set(app, enabled),
-    )?;
-    apply_runtime(state, &saved);
-    Ok(saved)
+        |saved| apply_runtime(&state, saved),
+    )
 }
 
 #[tauri::command]

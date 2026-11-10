@@ -32,7 +32,11 @@ const rate = (v: number) => (v > 0 ? formatBytesPerSecond(v) : "0 B/s");
 const opt = (v: number | null) => (v == null ? NOT_AVAILABLE : String(v));
 
 /** Display content for a cell. Kept separate from layout for reuse in exports/tree. */
-export function cellContent(column: ColumnId, row: ProcessRow, ctx: ProcessContext): ReactNode {
+export function cellContent(
+  column: ColumnId,
+  row: ProcessRow,
+  ctx: Pick<ProcessContext, "nowSecs" | "totalMemoryBytes">,
+): ReactNode {
   if (row.restricted && RESTRICTED_COLUMNS.has(column)) return NOT_AVAILABLE;
   switch (column) {
     case "name":

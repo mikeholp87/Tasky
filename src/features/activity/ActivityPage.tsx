@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { SearchBox } from "@/components/SearchBox";
 import { Card } from "@/components/ui/Card";
-import { cn } from "@/lib/cn";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useActivityStore } from "@/stores/activityStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -48,27 +48,14 @@ export function ActivityPage() {
           label="Search activity"
           placeholder="Process, PID, detail…"
         />
-        <div
-          role="radiogroup"
-          aria-label="Event type"
-          className="flex rounded-md border border-border p-0.5"
-        >
-          {FILTERS.map((f) => (
-            <button
-              key={f}
-              type="button"
-              role="radio"
-              aria-checked={filter === f}
-              onClick={() => setFilter(f)}
-              className={cn(
-                "h-7 rounded px-2.5 text-fg-muted",
-                filter === f && "bg-surface-2 text-fg",
-              )}
-            >
-              {FILTER_LABEL[f]}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Event type"
+          value={filter}
+          onChange={setFilter}
+          segments={FILTERS.map((f) => ({ value: f, label: FILTER_LABEL[f] }))}
+          className="gap-0 border border-border bg-transparent"
+          itemClassName="h-7 py-0 data-[state=checked]:bg-surface-2 data-[state=checked]:shadow-none"
+        />
         <span className="text-fg-muted">{shown.length} shown</span>
       </div>
 

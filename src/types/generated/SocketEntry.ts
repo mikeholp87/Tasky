@@ -9,4 +9,9 @@ export type SocketEntry = { connection: Connection,
  * `None` when the owner cannot be determined (another user's process
  * without privileges, or a closing socket the kernel no longer attributes).
  */
-pid: number | null, processName: string | null, };
+pid: number | null, processName: string | null, 
+/**
+ * Start time of the owner, as in `ProcessRow::start_time`, so the UI can
+ * tell it from a later process that reused the PID. `None` without an owner.
+ */
+startTime: number | null, };

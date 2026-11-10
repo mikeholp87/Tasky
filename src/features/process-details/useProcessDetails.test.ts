@@ -75,15 +75,8 @@ describe("useProcessDetails", () => {
     expect(result.current.error?.kind).toBe("processNotFound");
   });
 
-  it("does not collect an unknown lifetime's ticks before the first details response", async () => {
+  it("reports an unknown start time as not found without fetching or following ticks", () => {
     useMetricsStore.setState({ tick: makeTick([]) });
-    let resolve: (value: ProcessDetails) => void = () => {};
-    getProcessDetails.mockImplementationOnce(
-      () =>
-        new Promise((done) => {
-          resolve = done;
-        }),
-    );
     const { result } = renderHook(() => useProcessDetails(42));
     act(() =>
       useMetricsStore.getState().ingestTick({
@@ -92,11 +85,18 @@ describe("useProcessDetails", () => {
         processes: [{ ...opened, startTime: 5_000 }],
       }),
     );
+    expect(getProcessDetails).not.toHaveBeenCalled();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error?.kind).toBe("processNotFound");
+    expect(result.current.details).toBeNull();
     expect(result.current.live).toBeNull();
-    await act(async () => resolve(details));
-    await waitFor(() => expect(result.current.details).toBe(details));
     expect(result.current.history).toEqual([]);
-    expect(result.current.live).toBeNull();
+  });
+
+  it("asks for the exact instance it was opened with", async () => {
+    const { result } = renderHook(() => useProcessDetails(42, 1_000));
+    await waitFor(() => expect(result.current.details).toBe(details));
+    expect(getProcessDetails).toHaveBeenCalledWith(42, 1_000);
   });
 
   it("never follows replacement ticks with unknown zero creation times", async () => {

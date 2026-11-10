@@ -109,15 +109,17 @@ pub async fn start_benchmark(
     .await
 }
 
-/// Locations the disk benchmark may use.
+/// Locations the disk benchmark may use. Checking each one touches the
+/// filesystem (a slow or hung mount must not stall the UI thread).
 #[tauri::command]
-pub fn list_disk_targets(state: State<'_, AppState>) -> Vec<DiskTargetInfo> {
-    state.benchmarks.disk_targets()
+pub async fn list_disk_targets(state: State<'_, AppState>) -> AppResult<Vec<DiskTargetInfo>> {
+    let benchmarks = Arc::clone(&state.benchmarks);
+    super::blocking::run(move || Ok(benchmarks.disk_targets())).await
 }
 
 /// What a disk run would write, or why it cannot happen.
 #[tauri::command]
-pub fn disk_plan(
+pub async fn disk_plan(
     state: State<'_, AppState>,
     target: String,
     profile: BenchmarkProfile,
@@ -125,7 +127,8 @@ pub fn disk_plan(
     if !valid_id(&target) {
         return Err(AppError::InvalidArgument("Not a valid id.".into()));
     }
-    state.benchmarks.disk_plan(&target, profile)
+    let benchmarks = Arc::clone(&state.benchmarks);
+    super::blocking::run(move || benchmarks.disk_plan(&target, profile)).await
 }
 
 /// What an internet run would send and receive, and to whom.
@@ -152,9 +155,11 @@ pub fn get_benchmark_status(state: State<'_, AppState>) -> BenchmarkStatus {
     state.benchmarks.status()
 }
 
+/// Up to 200 full results; cloning them is kept off the UI thread.
 #[tauri::command]
-pub fn get_benchmark_history(state: State<'_, AppState>) -> Vec<BenchmarkResult> {
-    state.benchmarks.history()
+pub async fn get_benchmark_history(state: State<'_, AppState>) -> AppResult<Vec<BenchmarkResult>> {
+    let benchmarks = Arc::clone(&state.benchmarks);
+    super::blocking::run(move || Ok(benchmarks.history())).await
 }
 
 #[tauri::command]

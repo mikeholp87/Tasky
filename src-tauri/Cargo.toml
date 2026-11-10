@@ -27,7 +27,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
-tauri-plugin-autostart = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-dialog = "2"
 tracing-appender = "0.2"
@@ -38,10 +37,16 @@ tauri-plugin-single-instance = "2"
 gio = "0.18"
 gdk = "0.18"
 
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+# Linux writes its own XDG login entry instead (src/autostart.rs).
+tauri-plugin-autostart = "2"
+
 # https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+# Benchmarks rely on catch_unwind to turn a panic (e.g. in a GPU driver) into
+# a "Failed" result and release their locks; "abort" would kill the app.
+panic = "unwind"
 strip = true

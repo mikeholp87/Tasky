@@ -6,7 +6,7 @@ use super::blocking::run as blocking;
 use std::sync::Arc;
 use std::time::Instant;
 
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Runtime, State};
 use tauri_plugin_dialog::DialogExt;
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::{
@@ -34,24 +34,22 @@ pub async fn set_startup_enabled(app: AppHandle, id: String, enabled: bool) -> A
         ));
     }
     blocking(move || {
-        super::confirm::confirm(
-            &app,
-            &format!(
-                "{} startup entry {}? This changes what runs at your next login.",
-                if enabled { "Enable" } else { "Disable" },
-                id.escape_debug()
-            ),
-        )?;
+        super::confirm::confirm(&app, &startup_confirmation(&id, enabled))?;
         if id == crate::autostart::entry_id(&app) {
-            let state = app.state::<AppState>();
-            let mut settings = state.settings.get();
-            settings.start_with_os = enabled;
-            super::settings::save_settings(&app, &state, settings).map(|_| ())
+            super::settings::save_settings(&app, |s| s.start_with_os = enabled).map(|_| ())
         } else {
             platform::set_startup_enabled(&id, enabled)
         }
     })
     .await
+}
+
+pub fn startup_confirmation(id: &str, enabled: bool) -> String {
+    format!(
+        "{} startup entry {}? This changes what runs at your next login.",
+        if enabled { "Enable" } else { "Disable" },
+        id.escape_debug()
+    )
 }
 
 /// Every TCP/UDP socket with its owning process (Ports page).
@@ -122,7 +120,7 @@ pub async fn pick_path<R: Runtime>(
     app: AppHandle<R>,
     directory: bool,
 ) -> AppResult<Option<String>> {
-    blocking(move || {
+    super::blocking::dialog(move || {
         let dialog = app.dialog().file();
         let picked = if directory {
             dialog.blocking_pick_folder()

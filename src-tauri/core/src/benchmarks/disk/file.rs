@@ -173,21 +173,39 @@ fn direct_io_works(file: &File) -> bool {
     AlignedBuf::new(ALIGN).is_some_and(|b| file.write_at(b.as_slice(), 0).is_ok())
 }
 
+/// In a shared location such as `/tmp` another user could create the folder
+/// first, so an existing one is used only if it is ours and private.
 fn ensure_private_dir(dir: &Path) -> Result<(), BenchmarkError> {
-    match std::fs::symlink_metadata(dir) {
-        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
-            return Err(BenchmarkError::Failed(
-                "The benchmark folder is not a plain folder; refusing to use it.".into(),
-            ));
-        }
-        Ok(_) => {}
+    use std::os::unix::fs::MetadataExt;
+    let meta = match std::fs::symlink_metadata(dir) {
+        Ok(meta) => meta,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             DirBuilder::new()
                 .mode(0o700)
                 .create(dir)
                 .map_err(|e| io_error("create the benchmark folder", &e))?;
+            std::fs::symlink_metadata(dir)
+                .map_err(|e| io_error("inspect the benchmark folder", &e))?
         }
         Err(e) => return Err(io_error("inspect the benchmark folder", &e)),
+    };
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return Err(BenchmarkError::Failed(
+            "The benchmark folder is not a plain folder; refusing to use it.".into(),
+        ));
+    }
+    // SAFETY: getuid has no preconditions and cannot fail.
+    if meta.uid() != unsafe { libc::getuid() } {
+        return Err(BenchmarkError::Failed(format!(
+            "The benchmark folder {} belongs to another user; refusing to use it.",
+            dir.display()
+        )));
+    }
+    if meta.mode() & 0o777 != 0o700 {
+        return Err(BenchmarkError::Failed(format!(
+            "The benchmark folder {} can be opened by other users; refusing to use it. Remove it or make it private (chmod 700).",
+            dir.display()
+        )));
     }
     Ok(())
 }
@@ -312,11 +330,28 @@ mod tests {
     fn an_existing_file_is_never_opened_or_overwritten() {
         let d = tmp();
         let dir = d.path().join(DIR_NAME);
-        std::fs::create_dir(&dir).unwrap();
+        DirBuilder::new().mode(0o700).create(&dir).unwrap();
         let existing = dir.join(".tm-bench-disk-3-0.tmp");
         std::fs::write(&existing, b"precious").unwrap();
         assert!(BenchFile::create(d.path(), "disk-3-0", false).is_err());
         assert_eq!(std::fs::read(&existing).unwrap(), b"precious");
+    }
+
+    #[test]
+    fn an_existing_folder_others_can_open_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tmp();
+        let dir = d.path().join(DIR_NAME);
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let e = BenchFile::create(d.path(), "disk-3-1", false)
+            .err()
+            .expect("refused");
+        assert!(e.to_string().contains("other users"), "{e}");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(BenchFile::create(d.path(), "disk-3-1", false).is_ok());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { backend } from "@/services/ipc";
+import { backend, toAppError } from "@/services/ipc";
 import { runBenchmark } from "@/services/benchmarks";
 import { isActive, useBenchmarkStore } from "@/stores/benchmarkStore";
 import type {
@@ -49,6 +49,7 @@ export function InternetCard({
   const status = useBenchmarkStore((s) => s.status);
   const [profile, setProfile] = useState<BenchmarkProfile>("standard");
   const [plan, setPlan] = useState<InternetPlan | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
   const active = isActive(status);
   const mine = active && status.kind === "internet";
 
@@ -56,8 +57,16 @@ export function InternetCard({
     let stale = false;
     backend
       .internetPlan(profile)
-      .then((p) => !stale && setPlan(p))
-      .catch(() => !stale && setPlan(null));
+      .then((p) => {
+        if (stale) return;
+        setPlan(p);
+        setPlanError(null);
+      })
+      .catch((e) => {
+        if (stale) return;
+        setPlan(null);
+        setPlanError(toAppError(e).message);
+      });
     return () => {
       stale = true;
     };
@@ -81,6 +90,11 @@ export function InternetCard({
             computer are sent, but {plan.host} sees your public IP address, the timing of the
             requests and that this app made them. The server limits repeated large transfers, so run
             it sparingly. You are asked to confirm before it starts.
+          </p>
+        )}
+        {planError && (
+          <p role="alert" className="text-warn">
+            {planError}
           </p>
         )}
         <RunRow

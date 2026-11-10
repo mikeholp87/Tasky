@@ -1,6 +1,7 @@
 import { useEffect, type ComponentType } from "react";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { startMonitoring } from "@/services/monitoring";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/Toaster";
 import { ConfirmActionDialog } from "@/features/processes/ConfirmActionDialog";
 import { CommandPalette } from "./CommandPalette";
@@ -62,7 +63,9 @@ export function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main className="min-h-0 flex-1 overflow-auto p-5">
-          <Page />
+          <ErrorBoundary key={route}>
+            <Page />
+          </ErrorBoundary>
         </main>
       </div>
       <ConfirmActionDialog />

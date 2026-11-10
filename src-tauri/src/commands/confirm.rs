@@ -5,10 +5,8 @@ use tauri::{AppHandle, Runtime};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tm_core::errors::{AppError, AppResult};
 
-static DIALOG: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 pub fn confirm<R: Runtime>(app: &AppHandle<R>, message: &str) -> AppResult<()> {
-    let _guard = DIALOG.try_lock().map_err(|_| AppError::OperationBusy)?;
+    let _slot = super::blocking::dialog_slot()?;
     if app
         .dialog()
         .message(message)

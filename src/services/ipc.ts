@@ -137,8 +137,8 @@ export const backend = {
   /** Per-process shared-memory accounting; extra reads, so only while it is shown. */
   setMemoryDetail: (enabled: boolean) => call<void>("set_memory_detail", { enabled }),
 
-  getProcessDetails: (pid: number, startTime?: number) =>
-    call<ProcessDetails>("get_process_details", { pid, startTime: startTime ?? null }),
+  getProcessDetails: (pid: number, startTime: number) =>
+    call<ProcessDetails>("get_process_details", { pid, startTime }),
 
   assessProcessAction: (pid: number, action: ProcessAction) =>
     call<ProtectionAssessment>("assess_process_action", { pid, action }),

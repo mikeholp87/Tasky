@@ -3,6 +3,7 @@ import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { create } from "zustand";
 import { ConnectionNotice } from "@/components/ConnectionNotice";
 import { PageHeader } from "@/components/PageHeader";
+import { outlineButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import { useRemoteData } from "@/hooks/useRemoteData";
@@ -94,7 +95,7 @@ export function SystemInfoPage() {
           type="button"
           disabled={!isBackendAvailable()}
           onClick={() => void exportSummary()}
-          className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50"
+          className={outlineButton}
         >
           <Download size="0.875rem" aria-hidden /> Export summary…
         </button>

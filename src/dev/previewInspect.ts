@@ -34,6 +34,7 @@ const socket = (
     state,
   },
   pid,
+  startTime: null,
   processName,
 });
 

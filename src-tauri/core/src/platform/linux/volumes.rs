@@ -107,34 +107,32 @@ fn valid_device(device: &str) -> bool {
 
 fn udisksctl(args: &[&str]) -> AppResult<String> {
     let mut command = Command::new("udisksctl");
-    command.args(args).env("LC_ALL", "C");
+    command.args(args);
     // Never wait on a password prompt; `info` does not take the option.
     if args.first() != Some(&"info") {
         command.arg("--no-user-interaction");
     }
-    let output = command.output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
+    super::tool::run_tool(
+        &mut command,
+        || {
             AppError::ActionUnavailable(
                 "Mounting drives needs UDisks. Install the \"udisks2\" package.".into(),
             )
-        } else {
-            AppError::SystemQueryFailed(format!("Could not run udisksctl: {e}"))
-        }
-    })?;
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let first = stderr.lines().next().unwrap_or("").trim();
-    Err(if first.contains("busy") {
-        AppError::ActionUnavailable(
-            "The drive is in use. Close any program using it and try again.".into(),
-        )
-    } else if first.contains("Not authorized") || first.contains("not allowed") {
-        AppError::PermissionDenied("Your account is not allowed to do this to that drive.".into())
-    } else {
-        AppError::SystemQueryFailed(first.to_string())
-    })
+        },
+        |first| {
+            if first.contains("busy") {
+                AppError::ActionUnavailable(
+                    "The drive is in use. Close any program using it and try again.".into(),
+                )
+            } else if first.contains("Not authorized") || first.contains("not allowed") {
+                AppError::PermissionDenied(
+                    "Your account is not allowed to do this to that drive.".into(),
+                )
+            } else {
+                AppError::SystemQueryFailed(first.to_string())
+            }
+        },
+    )
 }
 
 fn candidates() -> AppResult<Vec<String>> {
@@ -228,11 +226,14 @@ pub fn mount_volume(device: &str) -> AppResult<Option<String>> {
 #[derive(Debug, PartialEq, Eq)]
 struct BlockRow {
     path: String,
+    /// `/dev/<kernel name>`; `parent` refers to this, not to `path`
+    /// (a LUKS volume at `/dev/mapper/luks-…` is `dm-0` to its children).
+    kernel: String,
     parent: Option<String>,
     mounted: bool,
 }
 
-/// Reads `lsblk -J -o PATH,PKNAME,MOUNTPOINTS` (a flat list of devices).
+/// Reads `lsblk -J --list -o PATH,KNAME,PKNAME,MOUNTPOINTS`.
 fn parse_block_rows(json: &str) -> Vec<BlockRow> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
@@ -242,8 +243,12 @@ fn parse_block_rows(json: &str) -> Vec<BlockRow> {
         .into_iter()
         .flatten()
         .filter_map(|d| {
+            let path = d["path"].as_str()?.to_string();
             Some(BlockRow {
-                path: d["path"].as_str()?.to_string(),
+                kernel: d["kname"]
+                    .as_str()
+                    .map_or_else(|| path.clone(), |k| format!("/dev/{k}")),
+                path,
                 parent: d["pkname"].as_str().map(|p| format!("/dev/{p}")),
                 mounted: d["mountpoints"]
                     .as_array()
@@ -254,17 +259,31 @@ fn parse_block_rows(json: &str) -> Vec<BlockRow> {
 }
 
 /// The whole-disk device for `device`, and whether anything on that disk is
-/// still mounted (the disk itself or any partition, system ones included).
-fn disk_of(rows: &[BlockRow], device: &str) -> (String, bool) {
-    let disk = rows
-        .iter()
-        .find(|r| r.path == device)
-        .and_then(|r| r.parent.clone())
-        .unwrap_or_else(|| device.to_string());
+/// still mounted: the disk itself or anything stacked on it (partitions,
+/// LUKS, LVM), system volumes included. `None` when `device` is not listed,
+/// so an incomplete listing never reads as "nothing mounted".
+fn disk_of(rows: &[BlockRow], device: &str) -> Option<(String, bool)> {
+    let row = rows.iter().find(|r| r.path == device)?;
+    let disk = row.parent.clone().unwrap_or_else(|| device.to_string());
+    // Stacked devices are listed once per parent, so grow the set of kernel
+    // names on this disk until it stops changing.
+    let mut on_disk = vec![disk.as_str()];
+    loop {
+        let before = on_disk.len();
+        for r in rows {
+            let child = r.parent.as_deref().is_some_and(|p| on_disk.contains(&p));
+            if child && !on_disk.contains(&r.kernel.as_str()) {
+                on_disk.push(&r.kernel);
+            }
+        }
+        if on_disk.len() == before {
+            break;
+        }
+    }
     let busy = rows
         .iter()
-        .any(|r| (r.path == disk || r.parent.as_deref() == Some(disk.as_str())) && r.mounted);
-    (disk, busy)
+        .any(|r| r.mounted && on_disk.contains(&r.kernel.as_str()));
+    Some((disk, busy))
 }
 
 /// Powers off the drive holding `device`, after all of its volumes are
@@ -282,14 +301,21 @@ pub fn power_off_volume(device: &str) -> AppResult<()> {
         ));
     }
     let output = Command::new("lsblk")
-        .args(["-J", "-o", "PATH,PKNAME,MOUNTPOINTS"])
+        .args(["-J", "--list", "-o", "PATH,KNAME,PKNAME,MOUNTPOINTS"])
         .env("LC_ALL", "C")
         .output()
         .map_err(|e| AppError::SystemQueryFailed(format!("Could not list drives: {e}")))?;
-    let (disk, busy) = disk_of(
-        &parse_block_rows(&String::from_utf8_lossy(&output.stdout)),
-        &volume.device,
-    );
+    // MOUNTPOINTS needs util-linux 2.37+; without it the drive can't be shown
+    // to be idle, so refuse rather than power off a disk that may be in use.
+    let rows = output
+        .status
+        .success()
+        .then(|| parse_block_rows(&String::from_utf8_lossy(&output.stdout)));
+    let Some((disk, busy)) = rows.and_then(|rows| disk_of(&rows, &volume.device)) else {
+        return Err(AppError::ActionUnavailable(
+            "Could not confirm that nothing on this drive is in use, so it was left on.".into(),
+        ));
+    };
     if busy {
         return Err(AppError::ActionUnavailable(
             "Another volume on this drive is still mounted. Unmount it first.".into(),
@@ -425,11 +451,47 @@ mod tests {
             ]}"#,
         );
         // A sibling partition is still mounted, so sdb1 cannot be powered off yet.
-        assert_eq!(disk_of(&rows, "/dev/sdb1"), ("/dev/sdb".to_string(), true));
+        assert_eq!(
+            disk_of(&rows, "/dev/sdb1"),
+            Some(("/dev/sdb".to_string(), true))
+        );
         // sdc has nothing mounted.
-        assert_eq!(disk_of(&rows, "/dev/sdc1"), ("/dev/sdc".to_string(), false));
+        assert_eq!(
+            disk_of(&rows, "/dev/sdc1"),
+            Some(("/dev/sdc".to_string(), false))
+        );
         // A volume that is the whole disk is its own drive.
-        assert_eq!(disk_of(&rows, "/dev/sdb"), ("/dev/sdb".to_string(), true));
+        assert_eq!(
+            disk_of(&rows, "/dev/sdb"),
+            Some(("/dev/sdb".to_string(), true))
+        );
+    }
+
+    #[test]
+    fn power_off_sees_volumes_stacked_on_a_partition() {
+        let rows = parse_block_rows(
+            r#"{"blockdevices":[
+              {"path":"/dev/sdb","pkname":null,"mountpoints":[null]},
+              {"path":"/dev/sdb1","pkname":"sdb","mountpoints":[null]},
+              {"path":"/dev/sdb2","kname":"sdb2","pkname":"sdb","mountpoints":[null]},
+              {"path":"/dev/mapper/luks-1","kname":"dm-0","pkname":"sdb2","mountpoints":[null]},
+              {"path":"/dev/mapper/vg-data","kname":"dm-1","pkname":"dm-0","mountpoints":["/data"]}
+            ]}"#,
+        );
+        assert_eq!(
+            disk_of(&rows, "/dev/sdb1"),
+            Some(("/dev/sdb".to_string(), true))
+        );
+    }
+
+    #[test]
+    fn power_off_refuses_when_the_device_is_not_listed() {
+        // An lsblk without MOUNTPOINTS support fails and yields no rows.
+        assert_eq!(disk_of(&parse_block_rows(""), "/dev/sdb1"), None);
+        let rows = parse_block_rows(
+            r#"{"blockdevices":[{"path":"/dev/sdc","pkname":null,"mountpoints":[null]}]}"#,
+        );
+        assert_eq!(disk_of(&rows, "/dev/sdb1"), None);
     }
 
     #[test]
