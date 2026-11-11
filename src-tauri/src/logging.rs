@@ -240,12 +240,13 @@ mod tests {
         writer.write_all(b"1234").unwrap();
         writer.write_all(b"discard this").unwrap();
         writer.flush().unwrap();
+        // Windows directory entries report stale sizes while a file is open.
+        drop(writer);
         let used: u64 = std::fs::read_dir(&dir)
             .unwrap()
-            .map(|e| e.unwrap().metadata().unwrap().len())
+            .map(|e| std::fs::metadata(e.unwrap().path()).unwrap().len())
             .sum();
         assert_eq!(used, 4);
-        drop(writer);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

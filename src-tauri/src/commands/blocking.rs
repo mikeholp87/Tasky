@@ -71,8 +71,19 @@ pub async fn dialog<T: Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The permit counter is process-global and tests run in parallel.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    fn serial() -> MutexGuard<'static, ()> {
+        SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[test]
     fn rejects_excess_work_and_releases_capacity_on_drop() {
+        let _serial = serial();
         let permits: Vec<_> = (0..MAX_ACTIVE)
             .map(|_| Permit::acquire().unwrap())
             .collect();
@@ -83,6 +94,7 @@ mod tests {
 
     #[test]
     fn one_dialog_at_a_time_independent_of_the_worker_cap() {
+        let _serial = serial();
         let permits: Vec<_> = (0..MAX_ACTIVE)
             .map(|_| Permit::acquire().unwrap())
             .collect();
