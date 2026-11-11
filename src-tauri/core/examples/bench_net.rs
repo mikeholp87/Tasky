@@ -33,7 +33,7 @@ fn main() {
         &InternetConfig::for_profile(profile),
         path,
         &CancelToken::new(),
-        &std::sync::atomic::AtomicU64::new(0),
+        &std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         &Quiet,
     );
     match out {

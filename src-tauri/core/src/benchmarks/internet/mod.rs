@@ -10,7 +10,8 @@ pub mod provider;
 pub mod route;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use super::cancel::CancelToken;
@@ -20,7 +21,12 @@ use super::model::{
     NetworkPath, TransferResult,
 };
 use super::{BenchmarkError, stats};
-use provider::{NetError, Provider};
+use provider::{NetError, Provider, Session};
+
+/// How often a wait on network work checks for cancellation.
+const CANCEL_POLL: Duration = Duration::from_millis(50);
+/// How long a finished phase waits for its connections to close.
+const WORKER_GRACE: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone)]
 pub struct InternetConfig {
@@ -130,6 +136,42 @@ fn latency_stats(ms: &[f64]) -> Option<LatencyStats> {
     })
 }
 
+/// Runs `f` on its own thread and waits for it, but stops waiting once
+/// `cancel` fires. Shutting a socket down does not wake a blocked read on
+/// every platform (Windows), so such a thread is left to reach its timeout.
+fn unless_cancelled<T: Send + 'static>(
+    cancel: &CancelToken,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, BenchmarkError> {
+    let (tx, rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    loop {
+        match rx.recv_timeout(CANCEL_POLL) {
+            Ok(value) => return Ok(value),
+            Err(RecvTimeoutError::Timeout) if cancel.is_cancelled() => {
+                return Err(BenchmarkError::Cancelled);
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => {
+                std::panic::resume_unwind(worker.join().unwrap_err())
+            }
+        }
+    }
+}
+
+/// The session, handed back for the next request, and the round trip.
+type Pinged = (Box<dyn Session>, Result<Duration, NetError>);
+
+fn ping(session: Box<dyn Session>, cancel: &CancelToken) -> Result<Pinged, BenchmarkError> {
+    unless_cancelled(cancel, move || {
+        let mut session = session;
+        let rtt = session.ping();
+        (session, rtt)
+    })
+}
+
 /// Round trips on an already-open connection. The first request pays for the
 /// connection set-up and is discarded.
 fn idle_latency(
@@ -142,16 +184,19 @@ fn idle_latency(
     if cancel.is_cancelled() {
         return Err(BenchmarkError::Cancelled);
     }
-    let mut session = provider
+    let session = provider
         .session(cancel)
         .map_err(|e| fail(host, &e, cancel))?;
-    session.ping().map_err(|e| fail(host, &e, cancel))?;
+    let (mut session, first) = ping(session, cancel)?;
+    first.map_err(|e| fail(host, &e, cancel))?;
     let mut rtts = Vec::with_capacity(cfg.idle_pings);
     for i in 0..cfg.idle_pings {
         if cancel.is_cancelled() {
             return Err(BenchmarkError::Cancelled);
         }
-        let rtt = session.ping().map_err(|e| fail(host, &e, cancel))?;
+        let (next, rtt) = ping(session, cancel)?;
+        session = next;
+        let rtt = rtt.map_err(|e| fail(host, &e, cancel))?;
         rtts.push(rtt.as_secs_f64() * 1000.0);
         observer.stage(
             BenchmarkState::Running,
@@ -163,6 +208,30 @@ fn idle_latency(
     Ok((rtts, session.server_location()))
 }
 
+/// State one transfer phase shares with its connection threads, which may
+/// outlive the phase (see [`unless_cancelled`]).
+struct Phase {
+    total: AtomicU64,
+    stop: AtomicBool,
+    failure: Mutex<Option<NetError>>,
+    pings: Mutex<Vec<(f64, f64)>>,
+    cancel: CancelToken,
+}
+
+impl Phase {
+    fn record(&self, e: NetError) {
+        let mut failure = self.failure.lock().unwrap_or_else(PoisonError::into_inner);
+        let interrupted =
+            self.cancel.is_cancelled() && matches!(e, NetError::Unreachable(_) | NetError::Timeout);
+        if !interrupted {
+            failure.get_or_insert(e);
+        }
+        self.stop.store(true, Ordering::Relaxed);
+        drop(failure);
+        self.cancel.cancel();
+    }
+}
+
 /// Saturates the link in one direction and samples throughput. `span` is the
 /// share of the progress bar this phase covers.
 fn transfer(
@@ -170,7 +239,7 @@ fn transfer(
     cfg: &InternetConfig,
     upload: bool,
     cancel: &CancelToken,
-    session_bytes: &AtomicU64,
+    session_bytes: &Arc<AtomicU64>,
     observer: &dyn Observer,
     span: (f32, f32),
 ) -> Result<TransferResult, BenchmarkError> {
@@ -181,106 +250,112 @@ fn transfer(
         (cfg.down_connections, cfg.max_down, cfg.chunk_down)
     };
     let label = if upload { "Upload" } else { "Download" };
-    let total = AtomicU64::new(0);
-    let phase = CancelToken::new();
-    let phase_cancel = phase.clone();
+    let phase = Arc::new(Phase {
+        total: AtomicU64::new(0),
+        stop: AtomicBool::new(false),
+        failure: Mutex::new(None),
+        pings: Mutex::new(Vec::new()),
+        cancel: CancelToken::new(),
+    });
+    let phase_cancel = phase.cancel.clone();
     cancel.on_cancel(move || phase_cancel.cancel());
-    let stop = AtomicBool::new(false);
-    let failure: Mutex<Option<NetError>> = Mutex::new(None);
-    let pings: Mutex<Vec<(f64, f64)>> = Mutex::new(Vec::new());
     let mut samples: Vec<(f64, f64)> = Vec::new();
     let start = Instant::now();
     let planned = (cfg.ramp + cfg.window).as_secs_f64();
+    // Each thread holds a sender; `finished` disconnects once all have exited.
+    let (running, finished) = mpsc::channel::<()>();
 
-    let record = |e: NetError| {
-        let mut failure = failure.lock().unwrap_or_else(PoisonError::into_inner);
-        let interrupted =
-            phase.is_cancelled() && matches!(e, NetError::Unreachable(_) | NetError::Timeout);
-        if !interrupted {
-            failure.get_or_insert(e);
-        }
-        stop.store(true, Ordering::Relaxed);
-        drop(failure);
-        phase.cancel();
-    };
-
-    std::thread::scope(|scope| {
-        for _ in 0..conns {
-            scope.spawn(|| {
-                let mut session = match provider.session(&phase) {
-                    Ok(s) => s,
-                    Err(e) => return record(e),
-                };
-                while !stop.load(Ordering::Relaxed) {
-                    let mut count = |n: usize| {
-                        let t = total.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
-                        session_bytes.fetch_add(n as u64, Ordering::Relaxed);
-                        if t >= cap || cancel.is_cancelled() {
-                            stop.store(true, Ordering::Relaxed);
-                        }
-                        !stop.load(Ordering::Relaxed)
-                    };
-                    let r = if upload {
-                        session.upload(chunk, &mut count)
-                    } else {
-                        session.download(chunk, &mut count)
-                    };
-                    if let Err(e) = r {
-                        return record(e);
-                    }
-                }
-            });
-        }
-        // Latency while the link is busy, on its own connection.
-        scope.spawn(|| {
-            let Ok(mut session) = provider.session(&phase) else {
-                return;
+    for _ in 0..conns {
+        let session = provider.session(&phase.cancel);
+        let (phase, cancel, session_bytes, running) = (
+            Arc::clone(&phase),
+            cancel.clone(),
+            Arc::clone(session_bytes),
+            running.clone(),
+        );
+        std::thread::spawn(move || {
+            let _running = running;
+            let mut session = match session {
+                Ok(s) => s,
+                Err(e) => return phase.record(e),
             };
+            while !phase.stop.load(Ordering::Relaxed) {
+                let mut count = |n: usize| {
+                    let t = phase.total.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
+                    session_bytes.fetch_add(n as u64, Ordering::Relaxed);
+                    if t >= cap || cancel.is_cancelled() {
+                        phase.stop.store(true, Ordering::Relaxed);
+                    }
+                    !phase.stop.load(Ordering::Relaxed)
+                };
+                let r = if upload {
+                    session.upload(chunk, &mut count)
+                } else {
+                    session.download(chunk, &mut count)
+                };
+                if let Err(e) = r {
+                    return phase.record(e);
+                }
+            }
+        });
+    }
+    // Latency while the link is busy, on its own connection.
+    if let Ok(mut session) = provider.session(&phase.cancel) {
+        let (phase, gap, running) = (Arc::clone(&phase), cfg.loaded_ping_gap, running.clone());
+        std::thread::spawn(move || {
+            let _running = running;
             if session.ping().is_err() {
                 return;
             }
-            while !stop.load(Ordering::Relaxed) {
+            while !phase.stop.load(Ordering::Relaxed) {
                 if let Ok(rtt) = session.ping() {
-                    pings
+                    phase
+                        .pings
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
                         .push((start.elapsed().as_secs_f64(), rtt.as_secs_f64() * 1000.0));
                 }
-                std::thread::sleep(cfg.loaded_ping_gap);
+                std::thread::sleep(gap);
             }
         });
-        let (mut last_t, mut last_bytes) = (0.0f64, 0u64);
-        loop {
-            std::thread::sleep(cfg.sample_interval);
-            let t = start.elapsed().as_secs_f64();
-            let bytes = total.load(Ordering::Relaxed);
-            if t > last_t {
-                let mbps = (bytes - last_bytes) as f64 * 8.0 / 1e6 / (t - last_t);
-                samples.push((t, mbps));
-                observer.live(Some(LiveReading {
-                    label: label.into(),
-                    value: mbps,
-                    unit: "Mbit/s".into(),
-                }));
-            }
-            (last_t, last_bytes) = (t, bytes);
-            observer.stage(
-                BenchmarkState::Running,
-                label,
-                span.0 + (span.1 - span.0) * (t / planned).min(1.0) as f32,
-            );
-            if t >= planned || stop.load(Ordering::Relaxed) || cancel.is_cancelled() {
-                break;
-            }
-        }
-        stop.store(true, Ordering::Relaxed);
-        phase.cancel();
-    });
+    }
+    drop(running);
 
+    let (mut last_t, mut last_bytes) = (0.0f64, 0u64);
+    loop {
+        std::thread::sleep(cfg.sample_interval);
+        let t = start.elapsed().as_secs_f64();
+        let bytes = phase.total.load(Ordering::Relaxed);
+        if t > last_t {
+            let mbps = (bytes - last_bytes) as f64 * 8.0 / 1e6 / (t - last_t);
+            samples.push((t, mbps));
+            observer.live(Some(LiveReading {
+                label: label.into(),
+                value: mbps,
+                unit: "Mbit/s".into(),
+            }));
+        }
+        (last_t, last_bytes) = (t, bytes);
+        observer.stage(
+            BenchmarkState::Running,
+            label,
+            span.0 + (span.1 - span.0) * (t / planned).min(1.0) as f32,
+        );
+        if t >= planned || phase.stop.load(Ordering::Relaxed) || cancel.is_cancelled() {
+            break;
+        }
+    }
+    phase.stop.store(true, Ordering::Relaxed);
+    phase.cancel.cancel();
+
+    if !cancel.is_cancelled() {
+        let _ = finished.recv_timeout(WORKER_GRACE);
+    }
     if cancel.is_cancelled() {
         return Err(BenchmarkError::Cancelled);
     }
-    if let Some(e) = failure
+    if let Some(e) = phase
+        .failure
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .take()
@@ -308,19 +383,18 @@ fn transfer(
                 label.to_lowercase()
             ))
         })?;
-    let loaded: Vec<f64> = pings
-        .into_inner()
-        .unwrap_or_else(PoisonError::into_inner)
-        .into_iter()
-        .filter(|(t, _)| *t > ramp)
-        .map(|(_, ms)| ms)
-        .collect();
+    let loaded: Vec<f64> =
+        std::mem::take(&mut *phase.pings.lock().unwrap_or_else(PoisonError::into_inner))
+            .into_iter()
+            .filter(|(t, _)| *t > ramp)
+            .map(|(_, ms)| ms)
+            .collect();
     Ok(TransferResult {
         median_mbps: s.median,
         mean_mbps: s.mean,
         peak_mbps: s.max,
         samples: mbps,
-        bytes: total.load(Ordering::Relaxed),
+        bytes: phase.total.load(Ordering::Relaxed),
         seconds: elapsed,
         connections: conns,
         loaded_latency: latency_stats(&loaded),
@@ -332,7 +406,7 @@ pub fn run_internet(
     cfg: &InternetConfig,
     path: NetworkPath,
     cancel: &CancelToken,
-    session_bytes: &AtomicU64,
+    session_bytes: &Arc<AtomicU64>,
     observer: &dyn Observer,
 ) -> Result<InternetResult, BenchmarkError> {
     observer.stage(BenchmarkState::Preflight, "Connecting", 0.0);
@@ -428,7 +502,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
-            &AtomicU64::new(0),
+            &Arc::new(AtomicU64::new(0)),
             &quiet(),
         )
         .expect("runs");
@@ -461,7 +535,7 @@ mod tests {
             &cfg,
             PATH,
             &CancelToken::new(),
-            &AtomicU64::new(0),
+            &Arc::new(AtomicU64::new(0)),
             &quiet(),
         )
         .expect("runs");
@@ -488,7 +562,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
-            &AtomicU64::new(0),
+            &Arc::new(AtomicU64::new(0)),
             &quiet(),
         )
         .expect_err("fails");
@@ -507,7 +581,7 @@ mod tests {
                 &InternetConfig::test(),
                 PATH,
                 &CancelToken::new(),
-                &AtomicU64::new(0),
+                &Arc::new(AtomicU64::new(0)),
                 &quiet(),
             )
             .expect_err("fails");
@@ -524,7 +598,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
-            &AtomicU64::new(0),
+            &Arc::new(AtomicU64::new(0)),
             &quiet(),
         )
         .expect_err("fails");
@@ -544,7 +618,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
-            &AtomicU64::new(0),
+            &Arc::new(AtomicU64::new(0)),
             &quiet(),
         )
         .expect_err("fails");
@@ -562,7 +636,7 @@ mod tests {
             &InternetConfig::test(),
             PATH,
             &CancelToken::new(),
-            &AtomicU64::new(0),
+            &Arc::new(AtomicU64::new(0)),
             &quiet(),
         )
         .expect_err("fails");
@@ -586,7 +660,7 @@ mod tests {
             &cfg,
             PATH,
             &cancel,
-            &AtomicU64::new(0),
+            &Arc::new(AtomicU64::new(0)),
             &quiet(),
         );
         t.join().unwrap();
@@ -619,7 +693,7 @@ mod tests {
                 &cfg,
                 PATH,
                 &cancel,
-                &AtomicU64::new(0),
+                &Arc::new(AtomicU64::new(0)),
                 &quiet(),
             );
             stop.join().unwrap();
@@ -647,7 +721,7 @@ mod tests {
             &cfg,
             false,
             &CancelToken::new(),
-            &AtomicU64::new(0),
+            &Arc::new(AtomicU64::new(0)),
             &quiet(),
             (0.0, 1.0),
         );
@@ -707,7 +781,7 @@ mod tests {
                 cancel: cancel.clone(),
                 cancelled,
             };
-            let used = AtomicU64::new(0);
+            let used = Arc::new(AtomicU64::new(0));
             let mut cfg = InternetConfig::test();
             cfg.down_connections = 1;
             cfg.max_down = cap;
