@@ -198,7 +198,13 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.5** (current)
+**0.1.6** (current)
+
+- **Internet benchmark:** cancelling a stalled test now stops it at once on
+  every platform. On Windows it could previously wait up to a minute for the
+  network timeout.
+
+**0.1.5**
 
 - **Safer process actions:** menus, the Ports page and Process Details links
   act only on the exact process you picked, never on a new one that reused
