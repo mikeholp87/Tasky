@@ -20,6 +20,7 @@ function socket(
       state,
     },
     pid,
+    startTime: pid == null ? null : 1_700_000_000,
     processName,
   };
 }

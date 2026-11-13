@@ -31,5 +31,5 @@ pub use startup::{set_startup_enabled, startup_items};
 
 mod services;
 mod volumes;
-pub use services::{control_service, services};
+pub use services::{control_service, service_caution, services};
 pub use volumes::{mount_volume, power_off_volume, unmount_volume, volumes};

@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight } from "lucide-react";
 import {
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
   memo,
   useCallback,
@@ -24,6 +25,7 @@ import {
   type ProcessContext,
   type SortState,
   isNewProcess,
+  rowDomId,
   memoryOf,
   runState,
   type RunState,
@@ -133,6 +135,42 @@ export function ProcessTable({
     [items, selectedPid, selectedStartTime],
   );
 
+  /** Opens the row context menu from the keyboard, positioned on the selected row. */
+  const openRowMenu = useCallback(() => {
+    if (selectedPid == null || selectedIndex < 0) return;
+    const fire = () => {
+      const el = document.getElementById(rowDomId(selectedPid));
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      el.dispatchEvent(
+        new globalThis.MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left + 24,
+          clientY: rect.top + rect.height / 2,
+        }),
+      );
+    };
+    if (document.getElementById(rowDomId(selectedPid))) {
+      fire();
+    } else {
+      virtualizer.scrollToIndex(selectedIndex, { align: "auto" });
+      requestAnimationFrame(fire);
+    }
+  }, [selectedPid, selectedIndex, virtualizer]);
+
+  // A keyboard-generated contextmenu event targets the grid itself, which
+  // has no row to act on; redirect it to the selected row.
+  const onContextMenuCapture = useCallback(
+    (e: MouseEvent<HTMLDivElement>) => {
+      if (e.target !== e.currentTarget || selectedIndex < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openRowMenu();
+    },
+    [openRowMenu, selectedIndex],
+  );
+
   const onKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
       if (items.length === 0) return;
@@ -141,6 +179,11 @@ export function ProcessTable({
         1,
         Math.floor((scrollRef.current?.clientHeight ?? 300) / rowHeight) - 1,
       );
+      if ((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu") {
+        e.preventDefault();
+        openRowMenu();
+        return;
+      }
       let next: number;
       switch (e.key) {
         case "ArrowDown":
@@ -198,6 +241,7 @@ export function ProcessTable({
       setCollapsed,
       openProcess,
       toggleCollapsed,
+      openRowMenu,
       onRequestTerminate,
       virtualizer,
     ],
@@ -208,6 +252,13 @@ export function ProcessTable({
     [items],
   );
 
+  const activeDescendant =
+    selectedIndex >= 0 &&
+    !items[selectedIndex]?.group &&
+    virtualizer.getVirtualItems().some((v) => v.index === selectedIndex)
+      ? rowDomId(selectedPid as number)
+      : undefined;
+
   const table = (
     <div
       ref={scrollRef}
@@ -216,7 +267,9 @@ export function ProcessTable({
       aria-rowcount={items.length + 1}
       aria-colcount={visibleColumns.length}
       tabIndex={0}
+      aria-activedescendant={activeDescendant}
       onKeyDown={onKeyDown}
+      onContextMenuCapture={onContextMenuCapture}
       className="relative min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface focus-visible:outline-2"
     >
       <div style={{ width: totalWidth, minWidth: "100%" }}>
@@ -282,6 +335,7 @@ const HeaderRow = memo(function HeaderRow({
           <div
             key={id}
             role="columnheader"
+            aria-label={col.label}
             aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
             className={cn(
               "flex min-w-0",
@@ -313,8 +367,12 @@ const HeaderRow = memo(function HeaderRow({
   );
 });
 
+/** Keyboard step for a focused column resize handle, in the store's width units. */
+const RESIZE_STEP = 8;
+
 function ResizeHandle({ column }: { column: ColumnId }) {
   const setWidth = useProcessStore((s) => s.setColumnWidth);
+  const width = useProcessStore((s) => columnWidth(s.columnWidths, column));
   const rootPx = useRootPx();
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -335,11 +393,26 @@ function ResizeHandle({ column }: { column: ColumnId }) {
     el.addEventListener("pointermove", move);
     el.addEventListener("lostpointercapture", end);
   };
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    // The grid also handles arrows (row expand/collapse).
+    e.preventDefault();
+    e.stopPropagation();
+    setWidth(column, width + (e.key === "ArrowRight" ? RESIZE_STEP : -RESIZE_STEP));
+  };
+  const label = COLUMN_BY_ID[column].label;
   return (
     <div
-      aria-hidden
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${label} column`}
+      aria-valuenow={width}
+      aria-valuemin={COLUMN_BY_ID[column].minWidth}
+      aria-valuetext={`${width} pixels`}
+      tabIndex={0}
       onPointerDown={onPointerDown}
-      className="absolute right-0 top-1 bottom-1 w-1.5 cursor-col-resize border-r border-border hover:border-accent"
+      onKeyDown={onKeyDown}
+      className="absolute right-0 top-1 bottom-1 w-1.5 cursor-col-resize border-r border-border hover:border-accent focus-visible:border-accent"
     />
   );
 }
@@ -391,6 +464,7 @@ const Row = memo(function Row({
       aria-selected={selected}
       aria-level={tree ? (item.depth ?? 0) + 1 : undefined}
       aria-expanded={tree && item.hasChildren ? item.expanded : undefined}
+      id={item.group ? undefined : rowDomId(row.pid)}
       data-pid={row.pid}
       data-group={item.group ? "" : undefined}
       data-run={heat ? runState(row) : undefined}

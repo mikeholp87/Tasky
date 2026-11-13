@@ -1,10 +1,12 @@
 import { usePersistedState } from "@/hooks/usePersistedState";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Copy, FileSearch, RefreshCw, Square } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { SearchBox } from "@/components/SearchBox";
+import { outlineButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/Card";
+import { type Segment, SegmentedControl } from "@/components/ui/SegmentedControl";
 import { cn } from "@/lib/cn";
 import { copyText, requestAction } from "@/features/processes/actions";
 import { useRemoteData } from "@/hooks/useRemoteData";
@@ -26,8 +28,10 @@ import {
 /** Resolving owners scans every process's descriptors, so poll gently. */
 const POLL_MS = 3_000;
 
-const btn =
-  "flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50";
+const VIEWS: readonly Segment<PortView>[] = [
+  { value: "listening", label: "Listening" },
+  { value: "all", label: "All connections" },
+];
 
 export function PortsPage() {
   const [query, setQuery] = useState("");
@@ -51,7 +55,7 @@ export function PortsPage() {
         title="Ports"
         description="Which program is listening on, or connected through, each port"
         actions={
-          <button type="button" className={btn} onClick={refresh}>
+          <button type="button" className={outlineButton} onClick={refresh}>
             <RefreshCw size="0.875rem" aria-hidden /> Refresh
           </button>
         }
@@ -63,27 +67,14 @@ export function PortsPage() {
           label="Search ports"
           placeholder="Port, process, PID, address…"
         />
-        <div
-          role="radiogroup"
-          aria-label="Which sockets"
-          className="flex rounded-md border border-border p-0.5"
-        >
-          {(["listening", "all"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              role="radio"
-              aria-checked={view === v}
-              onClick={() => setView(v)}
-              className={cn(
-                "h-7 rounded px-2.5 text-fg-muted",
-                view === v && "bg-surface-2 text-fg",
-              )}
-            >
-              {v === "listening" ? "Listening" : "All connections"}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Which sockets"
+          value={view}
+          onChange={setView}
+          segments={VIEWS}
+          className="gap-0 border border-border bg-transparent"
+          itemClassName="h-7 py-0 data-[state=checked]:bg-surface-2 data-[state=checked]:shadow-none"
+        />
         <span className="text-fg-muted">{shown.length} shown</span>
       </div>
 
@@ -142,7 +133,12 @@ export function PortsPage() {
   );
 }
 
-function PortRowView({ row }: { row: PortRow }) {
+/** Every poll delivers new row objects; compare their values instead. */
+function sameRow(prev: { row: PortRow }, next: { row: PortRow }): boolean {
+  return (Object.keys(next.row) as (keyof PortRow)[]).every((k) => prev.row[k] === next.row[k]);
+}
+
+const PortRowView = memo(function PortRowView({ row }: { row: PortRow }) {
   const openProcess = useUiStore((s) => s.openProcess);
   return (
     <tr className="border-t border-border/60">
@@ -156,7 +152,7 @@ function PortRowView({ row }: { row: PortRow }) {
           <button
             type="button"
             className="text-accent hover:underline"
-            onClick={() => openProcess(row.pid as number)}
+            onClick={() => openProcess(row.pid as number, row.startTime ?? undefined)}
           >
             {row.processName ?? "Unknown"}
           </button>
@@ -185,7 +181,7 @@ function PortRowView({ row }: { row: PortRow }) {
       </td>
     </tr>
   );
-}
+}, sameRow);
 
 /**
  * Shown when the search is exactly a port number. Describes who holds the
@@ -217,7 +213,12 @@ function ConflictBanner({
     >
       <p className="font-medium text-warn">Port {port} is already in use.</p>
       {owners.map((o) => {
-        const row = o.pid != null ? processes?.find((p) => p.pid === o.pid) : undefined;
+        // The socket list can be seconds old; only the same PID *and* start
+        // time is the process that holds the port.
+        const row =
+          o.pid != null && o.startTime != null
+            ? processes?.find((p) => p.pid === o.pid && p.startTime === o.startTime)
+            : undefined;
         return (
           <div key={o.pid ?? "unknown"} className="space-y-1.5">
             <p>
@@ -235,19 +236,23 @@ function ConflictBanner({
             )}
             {o.pid != null && (
               <div className="flex flex-wrap gap-2">
-                <button type="button" className={btn} onClick={() => openProcess(o.pid as number)}>
+                <button
+                  type="button"
+                  className={outlineButton}
+                  onClick={() => openProcess(o.pid as number, o.startTime ?? undefined)}
+                >
                   <FileSearch size="0.875rem" aria-hidden /> Open process details
                 </button>
                 <button
                   type="button"
-                  className={btn}
+                  className={outlineButton}
                   onClick={() => void copyText("PID", String(o.pid))}
                 >
                   <Copy size="0.875rem" aria-hidden /> Copy PID
                 </button>
                 <button
                   type="button"
-                  className={cn(btn, "text-crit hover:text-crit")}
+                  className={cn(outlineButton, "text-crit hover:text-crit")}
                   disabled={!row}
                   title={row ? undefined : "This process is no longer listed"}
                   onClick={() => row && void requestAction(row, { type: "terminate" })}

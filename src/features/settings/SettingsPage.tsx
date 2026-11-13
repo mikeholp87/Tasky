@@ -1,7 +1,9 @@
 import { Download, Monitor, Moon, RotateCcw, Sun } from "lucide-react";
+import { AlertDialog } from "radix-ui";
 import { useEffect, useState, type ReactNode } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/PageHeader";
+import { type Segment, SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
 import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
@@ -22,11 +24,19 @@ import type {
 import { useUiStore } from "@/stores/uiStore";
 import { formatBytes } from "@/utils/format";
 
-const THEMES: { id: ThemePreference; label: string; icon: typeof Sun }[] = [
-  { id: "system", label: "System", icon: Monitor },
-  { id: "light", label: "Light", icon: Sun },
-  { id: "dark", label: "Dark", icon: Moon },
+const THEMES: readonly Segment<ThemePreference>[] = [
+  { value: "system", label: themeLabel(Monitor, "System") },
+  { value: "light", label: themeLabel(Sun, "Light") },
+  { value: "dark", label: themeLabel(Moon, "Dark") },
 ];
+function themeLabel(Icon: typeof Sun, text: string) {
+  return (
+    <>
+      {" "}
+      <Icon size="0.875rem" aria-hidden /> {text}{" "}
+    </>
+  );
+}
 
 const INTERVALS = [
   { ms: 500, label: "500 ms" },
@@ -209,28 +219,14 @@ export function SettingsPage() {
 
         <Section title="Appearance">
           <Field label="Theme" id="theme-label">
-            <div
-              role="radiogroup"
-              aria-labelledby="theme-label"
-              className="inline-flex gap-1 rounded-lg bg-surface-2 p-1"
-            >
-              {THEMES.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={s.theme === id}
-                  onClick={() => s.update({ theme: id })}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-fg-muted",
-                    s.theme === id && "bg-surface text-fg shadow-sm",
-                  )}
-                >
-                  <Icon size="0.875rem" aria-hidden />
-                  {label}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              labelledBy="theme-label"
+              value={s.theme}
+              onChange={(theme) => s.update({ theme })}
+              segments={THEMES}
+              className="inline-flex gap-1 rounded-lg p-1"
+              itemClassName="flex items-center gap-1.5 rounded-md px-3 py-1.5"
+            />
           </Field>
           <Toggle
             label="Compact table"
@@ -275,15 +271,7 @@ export function SettingsPage() {
           />
           <DiagnosticsExport disabled={!backendReady} />
           <Field label="Reset all settings" description="Restores defaults, including alert rules.">
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm("Reset all settings to their defaults?")) void s.reset();
-              }}
-              className="flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-crit hover:bg-surface-2"
-            >
-              <RotateCcw size="0.875rem" aria-hidden /> Reset
-            </button>
+            <ResetSettings onReset={() => void s.reset()} />
           </Field>
         </Section>
       </div>
@@ -474,6 +462,50 @@ function BenchmarkSection() {
   );
 }
 
+function ResetSettings({ onReset }: { onReset: () => void }) {
+  return (
+    <AlertDialog.Root>
+      <AlertDialog.Trigger asChild>
+        <button
+          type="button"
+          className="flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-crit hover:bg-surface-2"
+        >
+          <RotateCcw size="0.875rem" aria-hidden /> Reset
+        </button>
+      </AlertDialog.Trigger>
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
+        <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 w-[440px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 shadow-xl">
+          <AlertDialog.Title className="text-base font-semibold">
+            Reset all settings?
+          </AlertDialog.Title>
+          <AlertDialog.Description className="mt-2 text-fg-muted">
+            Every preference returns to its default, including your alert rules.
+          </AlertDialog.Description>
+          <div className="mt-5 flex justify-end gap-2">
+            <AlertDialog.Cancel asChild>
+              <button
+                type="button"
+                className="h-8 rounded-md border border-border px-3 hover:bg-surface-2"
+              >
+                Cancel
+              </button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action asChild>
+              <button
+                type="button"
+                onClick={onReset}
+                className="h-8 rounded-md bg-danger px-3 font-medium text-white"
+              >
+                Reset settings
+              </button>
+            </AlertDialog.Action>
+          </div>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
+  );
+}
 function DiagnosticsExport({ disabled }: { disabled: boolean }) {
   const [processes, setProcesses] = useState(false);
   const [commandLines, setCommandLines] = useState(false);

@@ -35,6 +35,7 @@ const sockets: SocketList = {
   sockets: [
     {
       pid: 42,
+      startTime: 1_000,
       processName: "server.exe",
       connection: {
         protocol: "tcp",

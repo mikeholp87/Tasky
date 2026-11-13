@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useRef } from "react";
-import { cn } from "@/lib/cn";
-import { useProcessStore } from "@/stores/processStore";
+import { outlineButton } from "@/components/ui/button";
+import { type Segment, SegmentedControl } from "@/components/ui/SegmentedControl";
+import { type ProcessViewMode, useProcessStore } from "@/stores/processStore";
 import type { ProcessRow } from "@/types";
 import { COLUMNS, FILTER_PRESETS } from "./logic";
 import { ExportMenu } from "./ExportMenu";
@@ -32,7 +33,7 @@ export function ProcessToolbar({
     <div className="flex flex-wrap items-center gap-2 pb-3">
       <SearchBox />
       <PresetSelect />
-      <span className="num text-fg-muted" aria-live="polite">
+      <span className="num text-fg-muted">
         {mode !== "list" || shown === total
           ? `${total} processes`
           : `${shown} of ${total} processes`}
@@ -120,30 +121,26 @@ function PresetSelect() {
 function ModeToggle() {
   const mode = useProcessStore((s) => s.mode);
   const setMode = useProcessStore((s) => s.setMode);
-  const item = (id: typeof mode, label: string, Icon: typeof List) => (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={mode === id}
-      aria-label={label}
-      title={label}
-      onClick={() => setMode(id)}
-      className={cn(
-        "grid size-7 place-items-center rounded text-fg-muted",
-        mode === id && "bg-surface text-fg shadow-sm",
-      )}
-    >
-      <Icon size="0.9375rem" />
-    </button>
-  );
   return (
-    <div role="radiogroup" aria-label="View" className="flex gap-0.5 rounded-md bg-surface-2 p-0.5">
-      {item("list", "List view", List)}
-      {item("tree", "Tree view", ListTree)}
-      {item("apps", "Applications view (group processes by program)", Layers)}
-    </div>
+    <SegmentedControl
+      label="View"
+      value={mode}
+      onChange={setMode}
+      segments={MODES}
+      itemClassName="grid size-7 place-items-center p-0"
+    />
   );
 }
+
+const MODES: readonly Segment<ProcessViewMode>[] = [
+  { value: "list", title: "List view", label: <List size="0.9375rem" aria-hidden /> },
+  { value: "tree", title: "Tree view", label: <ListTree size="0.9375rem" aria-hidden /> },
+  {
+    value: "apps",
+    title: "Applications view (group processes by program)",
+    label: <Layers size="0.9375rem" aria-hidden />,
+  },
+];
 
 function ColumnMenu() {
   const visible = useProcessStore((s) => s.visibleColumns);
@@ -152,10 +149,7 @@ function ColumnMenu() {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button
-          type="button"
-          className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg"
-        >
+        <button type="button" className={outlineButton}>
           <Columns3 size="0.875rem" aria-hidden />
           Columns
         </button>

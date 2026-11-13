@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, type ComponentType } from "react";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { startMonitoring } from "@/services/monitoring";
 import { Toaster } from "@/components/Toaster";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConfirmActionDialog } from "@/features/processes/ConfirmActionDialog";
 import { CommandPalette } from "./CommandPalette";
 import { useUiStore } from "@/stores/uiStore";
@@ -65,9 +66,11 @@ export function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main className="min-h-0 flex-1 overflow-auto p-5">
-          <Suspense fallback={<div role="status">Loading page…</div>}>
-            <Page />
-          </Suspense>
+          <ErrorBoundary key={route}>
+            <Suspense fallback={<div role="status">Loading page…</div>}>
+              <Page />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
       <ConfirmActionDialog />

@@ -75,6 +75,15 @@ pub fn assess(
             ProtectionLevel::Blocked,
             "This is Task Manager itself. Close the window or use Quit instead.",
         );
+    } else if facts.parent_pid == Some(facts.self_pid)
+        && facts.name.eq_ignore_ascii_case("msedgewebview2.exe")
+        && disruptive
+    {
+        // Other children (e.g. a program opened from here) stay manageable.
+        a.add(
+            ProtectionLevel::Blocked,
+            "This is part of this app: it draws the window or fetches for it. Quit the app instead.",
+        );
     }
 
     match platform {
@@ -144,6 +153,10 @@ fn assess_windows(facts: &ProcessFacts<'_>, action: ProcessAction, a: &mut Prote
         "explorer.exe" => a.add(
             ProtectionLevel::Warning,
             "This is the Windows shell. The taskbar, Start menu and desktop will disappear until it restarts.",
+        ),
+        "sihost.exe" | "logonui.exe" if in_system32 => a.add(
+            ProtectionLevel::Warning,
+            "This runs part of your sign-in session. Ending it may lock or sign you out and close open programs.",
         ),
         "dwm.exe" => a.add(
             ProtectionLevel::Warning,
@@ -291,6 +304,34 @@ mod tests {
         // Non-disruptive actions are not warned about.
         assert_eq!(
             level(Platform::Windows, &svc, ProcessAction::Resume),
+            ProtectionLevel::Allowed
+        );
+    }
+
+    #[test]
+    fn own_webview_helpers_are_blocked_but_other_children_are_not() {
+        let mut helper = win("msedgewebview2.exe", None);
+        helper.parent_pid = Some(helper.self_pid);
+        for action in [
+            ProcessAction::Suspend,
+            ProcessAction::Terminate,
+            ProcessAction::ForceKill,
+        ] {
+            assert_eq!(
+                level(Platform::Windows, &helper, action),
+                ProtectionLevel::Blocked
+            );
+        }
+        let mut other = win("notepad.exe", None);
+        other.parent_pid = Some(other.self_pid);
+        assert_eq!(
+            level(Platform::Windows, &other, ProcessAction::Terminate),
+            ProtectionLevel::Allowed
+        );
+        // The same name elsewhere (another app's WebView2) is not ours.
+        let foreign = win("msedgewebview2.exe", None);
+        assert_eq!(
+            level(Platform::Windows, &foreign, ProcessAction::Terminate),
             ProtectionLevel::Allowed
         );
     }

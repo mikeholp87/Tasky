@@ -1,6 +1,31 @@
 # Windows feature parity with linux-port
 
-## Latest feature port — 2026-11-08
+## Latest feature port — 2026-11-13
+
+Source: `linux-port` at `5419680` (releases 0.1.3 to 0.1.6), compared against
+the previous port point `ae97bd6`. Ported by hand into `windows-app`; the
+Linux-only parts (packaging, APT, systemd, udisks, GNOME) and the independent
+Linux benchmark rewrite are not substituted.
+
+| Linux change                                  | Windows implementation                                                                                                                                                        |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Error boundary                                | A crashing page shows a recoverable message; the sidebar and top bar keep working.                                                                                            |
+| Shared keyboard-accessible segmented controls | View, range, event-type, port-scope and theme pickers use one radio group with arrow-key navigation.                                                                          |
+| Toasts                                        | Errors announce assertively; action toasts persist; timers pause on hover and focus; at most four are shown.                                                                  |
+| Reset confirmation                            | Reset settings uses an in-app dialog rather than a browser prompt.                                                                                                            |
+| Autostart confirmation                        | Changing "start with Windows" from Settings asks first. Settings commands run off the UI thread so the dialog cannot stall the window.                                        |
+| Process table accessibility                   | The selected row is announced (`aria-activedescendant`), Shift+F10 or the Menu key opens its menu, and column separators resize with the arrow keys.                          |
+| Ports                                         | Each socket carries its owner's start time, so Ports links and the conflict banner act only on the exact process, never on a later one that reused the PID.                   |
+| Own helpers protected                         | The app's WebView2 child processes cannot be suspended or ended; `sihost.exe` and `LogonUI.exe` warn about the sign-in session.                                               |
+| Services                                      | `UserManager` is locked. Stopping or restarting SSH, Remote Desktop, audio or Themes services adds a specific warning to the confirmation. Starting a service no longer asks. |
+| Startup reliability                           | A failure after subscribing no longer re-subscribes; history and alert loading failures are reported as toasts instead of failing startup.                                    |
+| Data hook                                     | `useRemoteData` can keep the previous list while reloading (used by removable drives) and never shows a previous process's data after an error.                               |
+
+Already present on Windows and unchanged: exact-process identity (PID plus start
+time) for menus and details, drive eject, atomic settings transactions, and
+blocking-work limits.
+
+## Earlier feature port — 2026-11-08
 
 Source: `linux-port` at `ae97bd6` (Services and drive power-off).
 Applied to the local `windows-app` branch, retaining the Windows benchmark

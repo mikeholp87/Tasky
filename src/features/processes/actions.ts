@@ -36,16 +36,21 @@ export const PRIORITY_LABELS: Record<PriorityLevel, string> = {
   high: "High",
 };
 
+/** Bumped per request so only the newest assessment opens a dialog or runs. */
+let latestRequest = 0;
+
 /** Starts an action. Shows the confirmation dialog when required. */
 export async function requestAction(row: ProcessRow, action: ProcessAction): Promise<void> {
-  if (!isBackendAvailable()) return;
+  if (!isBackendAvailable() || useActionStore.getState().busy) return;
+  const request = ++latestRequest;
   let assessment: ProtectionAssessment;
   try {
     assessment = await backend.assessProcessAction(row.pid, action);
   } catch (e) {
-    toast.error(toAppError(e).message);
+    if (request === latestRequest) toast.error(toAppError(e).message);
     return;
   }
+  if (request !== latestRequest || useActionStore.getState().busy) return;
   if (assessment.level !== "allowed" || needsConfirmation(action)) {
     useActionStore.setState({ pending: { row, action, assessment } });
     return;
@@ -59,11 +64,14 @@ export function cancelPending(): void {
 
 /** Confirms the pending dialog. Blocked actions cannot be confirmed. */
 export async function confirmPending(): Promise<void> {
-  const { pending } = useActionStore.getState();
-  if (!pending || pending.assessment.level === "blocked") return;
+  const { pending, busy } = useActionStore.getState();
+  if (!pending || busy || pending.assessment.level === "blocked") return;
   useActionStore.setState({ busy: true });
   await perform(pending.row, pending.action, pending.assessment.level === "warning");
-  useActionStore.setState({ busy: false, pending: null });
+  useActionStore.setState((s) => ({
+    busy: false,
+    pending: s.pending === pending ? null : s.pending,
+  }));
 }
 
 async function perform(row: ProcessRow, action: ProcessAction, acknowledge: boolean) {

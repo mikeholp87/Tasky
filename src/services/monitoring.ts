@@ -19,7 +19,11 @@ let started = false;
 let stopStateListener: (() => void) | undefined;
 let stopVisibilityListener: (() => void) | undefined;
 
-/** Connects to the engine once per page load. Safe to call repeatedly. */
+/**
+ * Connects to the engine once per page load. Safe to call repeatedly: a
+ * failure before the subscription allows a retry; after it, the stream is
+ * live and a retry would subscribe twice, so later failures are only reported.
+ */
 export async function startMonitoring(): Promise<void> {
   if (started) return;
   started = true;
@@ -30,6 +34,7 @@ export async function startMonitoring(): Promise<void> {
     return;
   }
 
+  let activityAfter: number | undefined;
   try {
     await loadSettings();
     stopStateListener?.();
@@ -43,22 +48,38 @@ export async function startMonitoring(): Promise<void> {
     store.setStaticInfo(info);
     store.setMonitoring(state);
 
-    const activityAfter = useActivityStore.getState().lastSeq;
+    activityAfter = useActivityStore.getState().lastSeq;
     const latest = await backend.subscribeMetrics(onTick);
     if (latest) store.ingestTick(latest);
     if (latest?.activity.length) useActivityStore.getState().add(latest.activity);
-
-    // Backfill after subscribing so no tick falls into a gap.
-    store.backfillHistory(await backend.getHistory(BACKFILL_SECONDS));
-    useAlertStore.getState().replace(await backend.getRecentAlerts());
-    backfillActivity(activityAfter);
-    watchVisibility();
   } catch (error) {
     stopStateListener?.();
     stopStateListener = undefined;
     started = false;
     store.setStatus("error", toAppError(error));
+    return;
   }
+
+  watchVisibility();
+  // Backfill after subscribing so no tick falls into a gap.
+  try {
+    store.backfillHistory(await backend.getHistory(BACKFILL_SECONDS));
+  } catch (error) {
+    report("Could not load earlier history", error);
+  }
+  try {
+    useAlertStore.getState().replace(await backend.getRecentAlerts());
+  } catch (error) {
+    report("Could not load recent alerts", error);
+  }
+  backfillActivity(activityAfter);
+}
+
+function report(what: string, error: unknown): void {
+  const store = useMetricsStore.getState();
+  const appError = toAppError(error);
+  store.setStatus(store.status, appError);
+  toast.error(`${what}: ${appError.message}`);
 }
 
 function onTick(incoming: MetricsTick): void {
@@ -132,7 +153,7 @@ async function applyState(next: MonitoringState): Promise<void> {
     store.setMonitoring(await backend.setMonitoringState(next));
   } catch (error) {
     store.setMonitoring(previous);
-    store.setStatus(store.status, toAppError(error));
+    report("Could not change monitoring", error);
   }
 }
 
@@ -141,17 +162,11 @@ export function togglePaused(): Promise<void> {
   return applyState({ ...monitoring, paused: !monitoring.paused });
 }
 
-export function setRefreshInterval(intervalMs: number): Promise<void> {
-  const { monitoring } = useMetricsStore.getState();
-  return applyState({ ...monitoring, intervalMs });
-}
-
 export async function refreshNow(): Promise<void> {
   if (!isBackendAvailable()) return;
   try {
     await backend.refreshNow();
   } catch (error) {
-    const store = useMetricsStore.getState();
-    store.setStatus(store.status, toAppError(error));
+    report("Could not refresh", error);
   }
 }

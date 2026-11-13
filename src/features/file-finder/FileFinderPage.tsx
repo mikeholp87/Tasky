@@ -2,15 +2,13 @@ import { useMemo, useState, type FormEvent } from "react";
 import { File, Folder, Search } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { outlineButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
 import { useUiStore } from "@/stores/uiStore";
 import { useMetricsStore } from "@/stores/metricsStore";
 import type { AppError, FileUserList } from "@/types";
 import { USAGE_LABEL, groupByProcess, summarize } from "./logic";
-
-const btn =
-  "flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50";
 
 export function FileFinderPage() {
   const windows = useMetricsStore((s) => s.staticInfo?.platform === "windows");
@@ -69,12 +67,16 @@ export function FileFinderPage() {
           spellCheck={false}
           className="h-8 min-w-72 flex-1 rounded-md border border-border bg-surface px-2.5 font-mono text-[0.8125rem] outline-none placeholder:font-sans placeholder:text-fg-subtle focus:border-accent"
         />
-        <button type="submit" className={btn} disabled={!available || busy || !path.trim()}>
+        <button
+          type="submit"
+          className={outlineButton}
+          disabled={!available || busy || !path.trim()}
+        >
           <Search size="0.875rem" aria-hidden /> Find
         </button>
         <button
           type="button"
-          className={btn}
+          className={outlineButton}
           disabled={!available || busy}
           onClick={() => void choose(false)}
         >
@@ -82,7 +84,7 @@ export function FileFinderPage() {
         </button>
         <button
           type="button"
-          className={btn}
+          className={outlineButton}
           disabled={!available || busy}
           onClick={() => void choose(true)}
         >
@@ -142,7 +144,11 @@ export function FileFinderPage() {
                   </>
                 }
                 action={
-                  <button type="button" className={btn} onClick={() => openProcess(g.pid)}>
+                  <button
+                    type="button"
+                    className={outlineButton}
+                    onClick={() => openProcess(g.pid)}
+                  >
                     Open process details
                   </button>
                 }

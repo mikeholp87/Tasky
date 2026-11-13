@@ -90,6 +90,14 @@ pub fn sockets() -> AppResult<SocketList> {
     let owned = owned_sockets()
         .ok_or_else(|| AppError::SystemQueryFailed("cannot read the TCP/UDP tables".into()))?;
     let names = process_names();
+    // Same source as the process table, so the UI can match owner and row.
+    let mut system =
+        sysinfo::System::new().map_err(|e| AppError::SystemQueryFailed(e.to_string()))?;
+    system.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::All,
+        true,
+        sysinfo::ProcessRefreshKind::nothing(),
+    );
     let truncated = owned.len() > MAX_SOCKETS;
     let sockets = owned
         .into_iter()
@@ -101,6 +109,11 @@ pub fn sockets() -> AppResult<SocketList> {
                 connection,
                 pid,
                 process_name: pid.and_then(|p| names.get(&p).cloned()),
+                start_time: pid.and_then(|p| {
+                    system
+                        .process(sysinfo::Pid::from_u32(p))
+                        .map(sysinfo::Process::start_time)
+                }),
             }
         })
         .collect();

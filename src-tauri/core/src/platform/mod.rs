@@ -370,7 +370,8 @@ mod fallback {
 /// External-drive and service operations use the native backend on Windows.
 #[cfg(windows)]
 pub use windows::{
-    control_service, mount_volume, power_off_volume, services, unmount_volume, volumes,
+    control_service, mount_volume, power_off_volume, service_caution, services, unmount_volume,
+    volumes,
 };
 #[cfg(not(windows))]
 mod management_fallback {
@@ -392,6 +393,9 @@ mod management_fallback {
     }
     pub fn power_off_volume(_: &str) -> AppResult<()> {
         Err(unsupported())
+    }
+    pub fn service_caution(_: &str) -> Option<&'static str> {
+        None
     }
     pub fn services(_: ServiceScope) -> AppResult<Vec<ServiceInfo>> {
         Err(unsupported())

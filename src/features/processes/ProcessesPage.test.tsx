@@ -157,6 +157,20 @@ describe("ProcessesPage", () => {
     spy.mockRestore();
   });
 
+  it("resizes a column from the keyboard", async () => {
+    useProcessStore.setState({ columnWidths: {} });
+    render(<ProcessesPage />);
+    const handle = screen.getByRole("separator", { name: "Resize PID column" });
+    const before = Number(handle.getAttribute("aria-valuenow"));
+    handle.focus();
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    expect(useProcessStore.getState().columnWidths.pid).toBe(before + 16);
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(handle).toHaveAttribute("aria-valuenow", String(before + 8));
+    // Arrows on the handle must not reach the grid's row navigation.
+    expect(useProcessStore.getState().selectedPid).toBeNull();
+  });
+
   it("renders a bounded viewport with 10,000 processes", () => {
     useMetricsStore.setState({ tick: makeTick(mockProcesses(10_000, NOW_MS / 1000)) });
     render(<ProcessesPage />);

@@ -227,7 +227,7 @@ export const DEFAULT_VISIBLE_COLUMNS: readonly ColumnId[] = COLUMNS.filter(
   (c) => c.defaultVisible,
 ).map((c) => c.id);
 
-export function runtimeSecs(row: ProcessRow, ctx: ProcessContext): number {
+export function runtimeSecs(row: ProcessRow, ctx: Pick<ProcessContext, "nowSecs">): number {
   return row.startTime > 0 ? Math.max(0, ctx.nowSecs - row.startTime) : -1;
 }
 
@@ -403,6 +403,11 @@ export function processView(
 export function userOf(rows: readonly ProcessRow[], pid: number | undefined): string | null {
   if (pid == null) return null;
   return rows.find((r) => r.pid === pid)?.user ?? null;
+}
+
+/** DOM id of a process table row, for `aria-activedescendant`. */
+export function rowDomId(pid: number): string {
+  return `proc-row-${pid}`;
 }
 
 /** Whether a process started within the last `windowSecs` (0 turns the highlight off). */

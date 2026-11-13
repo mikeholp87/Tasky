@@ -5,6 +5,8 @@ import { useMemoryDetail } from "@/features/memory/useMemoryDetail";
 import { requestAction } from "./actions";
 import { ProcessContextMenu } from "./ProcessContextMenu";
 import { ProcessTable } from "./ProcessTable";
+import { ProcessToolbar } from "./ProcessToolbar";
+import { useProcessView } from "./useProcessView";
 import type { ProcessRow } from "@/types";
 
 const withContextMenu = (
@@ -12,8 +14,6 @@ const withContextMenu = (
   find: (pid: number) => ProcessRow | undefined,
 ) => <ProcessContextMenu find={find}>{table}</ProcessContextMenu>;
 const requestTerminate = (row: ProcessRow) => void requestAction(row, { type: "terminate" });
-import { ProcessToolbar } from "./ProcessToolbar";
-import { useProcessView } from "./useProcessView";
 
 export function ProcessesPage() {
   // Proportional memory, so every view shows the figure the Memory page does.

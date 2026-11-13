@@ -15,6 +15,9 @@ pub struct SocketEntry {
     /// without privileges, or a closing socket the kernel no longer attributes).
     pub pid: Option<u32>,
     pub process_name: Option<String>,
+    /// Start time of the owner, as in `ProcessRow::start_time`, so the UI can
+    /// tell it from a later process that reused the PID. `None` without an owner.
+    pub start_time: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

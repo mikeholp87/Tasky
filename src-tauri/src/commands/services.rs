@@ -23,14 +23,18 @@ pub async fn control_service(
     blocking(move || {
         platform::control_service(scope, &unit, action, &|service| {
             let verb = match action {
-                ServiceAction::Start => "Start",
+                // Starting is never destructive, so it does not ask.
+                ServiceAction::Start => return Ok(()),
                 ServiceAction::Stop => "Stop",
                 ServiceAction::Restart => "Restart",
             };
+            let caution = platform::service_caution(&service.unit)
+                .map(|why| format!("\n{why}"))
+                .unwrap_or_default();
             super::confirm::confirm(
                 &app,
                 &format!(
-                    "{verb} {}?\n{}\nPrograms that depend on it may stop working.",
+                    "{verb} {}?\n{}\nPrograms that depend on it may stop working.{caution}",
                     service.unit, service.description
                 ),
             )

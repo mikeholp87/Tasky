@@ -88,7 +88,44 @@ fn protected_name(name: &str) -> bool {
             | "nsi"
             | "dhcp"
             | "dnscache"
+            | "usermanager"
     )
+}
+
+/// Services that may be stopped or restarted (restarting is often the fix),
+/// but whose loss the user should understand first.
+const CAUTIONS: &[(&str, &str)] = &[
+    (
+        "sshd",
+        "Remote logins depend on it. Anyone connected over SSH, including you, may be locked out.",
+    ),
+    (
+        "termservice",
+        "Remote Desktop depends on it. Anyone connected remotely, including you, may be disconnected.",
+    ),
+    (
+        "sessionenv",
+        "Remote Desktop depends on it. Anyone connected remotely, including you, may be disconnected.",
+    ),
+    (
+        "umrdpservice",
+        "Remote Desktop depends on it. Anyone connected remotely, including you, may be disconnected.",
+    ),
+    ("audiosrv", "Sound stops until it runs again."),
+    ("audioendpointbuilder", "Sound stops until it runs again."),
+    (
+        "themes",
+        "The desktop may lose its visual styles until it runs again.",
+    ),
+];
+
+/// Why stopping or restarting `unit` needs extra thought, if it does.
+pub fn service_caution(unit: &str) -> Option<&'static str> {
+    let name = unit.to_ascii_lowercase();
+    CAUTIONS
+        .iter()
+        .find(|(n, _)| name == *n)
+        .map(|(_, why)| *why)
 }
 
 fn status(handle: &ServiceHandle) -> AppResult<SERVICE_STATUS_PROCESS> {

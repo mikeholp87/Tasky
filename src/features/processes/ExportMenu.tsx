@@ -1,6 +1,7 @@
 import { Download } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
+import { outlineButton } from "@/components/ui/button";
 import { backend, isBackendAvailable, toAppError } from "@/services/ipc";
 import { toast } from "@/stores/toastStore";
 
@@ -26,7 +27,7 @@ export function ExportMenu() {
           type="button"
           disabled={!isBackendAvailable()}
           title={isBackendAvailable() ? undefined : "Export is available in the desktop app"}
-          className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-fg-muted hover:text-fg disabled:opacity-50"
+          className={outlineButton}
         >
           <Download size="0.875rem" aria-hidden />
           Export

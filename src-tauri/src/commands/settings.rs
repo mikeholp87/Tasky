@@ -2,66 +2,81 @@
 
 use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_autostart::ManagerExt;
 use tm_core::errors::{AppError, AppResult};
 use tm_core::models::{AlertEvent, MonitoringState, Settings};
 use tm_core::monitoring::engine::MAX_HISTORY_POINTS;
 
+use super::blocking::run as blocking;
 use crate::state::AppState;
 
+/// Reading the login entry touches the registry, so this runs off the UI thread.
 #[tauri::command]
-pub fn get_settings<R: Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, AppState>,
-) -> AppResult<Settings> {
-    let _guard = state.settings.operation();
-    let mut settings = state.settings.get();
-    settings.start_with_os = read_autostart(&app)?;
-    Ok(settings)
+pub async fn get_settings<R: Runtime>(app: AppHandle<R>) -> AppResult<Settings> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let _guard = state.settings.operation();
+        let mut settings = state.settings.get();
+        settings.start_with_os = read_autostart(&app)?;
+        Ok(settings)
+    })
+    .await
 }
 
 /// Validates, applies and persists new settings. Side effects that can fail
 /// (autostart registration) run before saving, so a failure leaves both the
-/// system and the stored settings unchanged.
+/// system and the stored settings unchanged. Changing "start with the OS"
+/// asks first, as the Startup page does for any startup entry.
 #[tauri::command]
-pub fn update_settings<R: Runtime>(
+pub async fn update_settings<R: Runtime>(
     app: AppHandle<R>,
-    state: State<'_, AppState>,
     settings: Settings,
 ) -> AppResult<Settings> {
-    settings.validate()?;
-    let _guard = state.settings.operation();
-    let mut previous = state.settings.get();
-    previous.start_with_os = read_autostart(&app)?;
-    let saved = save_with_autostart(
-        &previous,
-        settings,
-        |enabled| set_autostart(&app, enabled),
-        |next| state.settings.save(next),
-    )?;
-    apply_runtime(&state, &saved);
-    crate::desktop::update_pause_label(&app, state.engine.state().paused);
-    Ok(saved)
+    blocking(move || {
+        settings.validate()?;
+        confirm_autostart_change(&app, settings.start_with_os)?;
+        save(&app, settings)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn reset_settings<R: Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, AppState>,
-) -> AppResult<Settings> {
-    let defaults = Settings::default();
+pub async fn reset_settings<R: Runtime>(app: AppHandle<R>) -> AppResult<Settings> {
+    blocking(move || {
+        let defaults = Settings::default();
+        confirm_autostart_change(&app, defaults.start_with_os)?;
+        save(&app, defaults)
+    })
+    .await
+}
+
+fn confirm_autostart_change<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> AppResult<()> {
+    if read_autostart(app)? == enabled {
+        return Ok(());
+    }
+    super::confirm::confirm(
+        app,
+        &format!(
+            "{} this app when you sign in to Windows?",
+            if enabled { "Start" } else { "Stop starting" }
+        ),
+    )
+}
+
+fn save<R: Runtime>(app: &AppHandle<R>, next: Settings) -> AppResult<Settings> {
+    let state = app.state::<AppState>();
     let _guard = state.settings.operation();
     let mut previous = state.settings.get();
-    previous.start_with_os = read_autostart(&app)?;
+    previous.start_with_os = read_autostart(app)?;
     let saved = save_with_autostart(
         &previous,
-        defaults,
-        |enabled| set_autostart(&app, enabled),
+        next,
+        |enabled| set_autostart(app, enabled),
         |next| state.settings.save(next),
     )?;
     apply_runtime(&state, &saved);
-    crate::desktop::update_pause_label(&app, state.engine.state().paused);
+    crate::desktop::update_pause_label(app, state.engine.state().paused);
     Ok(saved)
 }
 
