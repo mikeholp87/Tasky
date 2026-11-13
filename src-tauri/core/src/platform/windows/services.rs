@@ -60,6 +60,9 @@ fn system_scope(scope: ServiceScope) -> AppResult<()> {
     Ok(())
 }
 
+/// `ERROR_SERVICE_NEVER_STARTED`: the service has not run since boot.
+const NEVER_STARTED: u32 = 1077;
+
 fn protected_name(name: &str) -> bool {
     // Core OS, authentication, security and session infrastructure. Drivers
     // are excluded entirely by SERVICE_WIN32 enumeration.
@@ -159,7 +162,11 @@ fn info(
         SERVICE_STOP_PENDING => ("deactivating", "stopping"),
         SERVICE_PAUSED => ("active", "paused"),
         SERVICE_PAUSE_PENDING | SERVICE_CONTINUE_PENDING => ("reloading", "pending"),
-        _ if status.dwWin32ExitCode != 0 => ("failed", "failed"),
+        // 1077 (ERROR_SERVICE_NEVER_STARTED) is what Windows reports for an
+        // idle on-demand or disabled service, not a failure.
+        _ if status.dwWin32ExitCode != 0 && status.dwWin32ExitCode != NEVER_STARTED => {
+            ("failed", "failed")
+        }
         _ => ("inactive", "dead"),
     };
     let mut protected = protected_name(&name)

@@ -3,27 +3,27 @@
 /**
  * One background service reported by the platform service manager.
  */
-export type ServiceInfo = {
+export type ServiceInfo = { 
 /**
  * Native identifier (Windows service name or Linux unit name).
  */
-unit: string, description: string,
+unit: string, description: string, 
 /**
  * Normalized state: active, inactive, failed, activating, ...
  */
-activeState: string,
+activeState: string, 
 /**
  * Finer state: running, exited, dead, failed, ...
  */
-subState: string,
+subState: string, 
 /**
  * Native startup policy, where readable.
  */
-startup: string | null,
+startup: string | null, 
 /**
  * Main process, when one is running.
  */
-mainPid: number | null,
+mainPid: number | null, 
 /**
  * Set for services the system depends on; they are shown but cannot be
  * stopped or restarted from the app.
