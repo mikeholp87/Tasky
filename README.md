@@ -198,7 +198,14 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.8** (current)
+**0.1.9** (current)
+
+- **Release pipeline hardening:** the Linux package is now built in a job
+  that cannot publish, with no shared build caches; a separate job checks its
+  checksum and attaches it to the release. The app itself is unchanged from
+  0.1.8.
+
+**0.1.8**
 
 - **Security hardening:** resuming a process, changing its priority (except
   back to normal), starting a service and mounting a drive now ask for
