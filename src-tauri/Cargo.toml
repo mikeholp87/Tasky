@@ -1,6 +1,6 @@
 [package]
 name = "taskmanager"
-version = "0.1.0"
+version = "0.1.7"
 description = "Cross-platform task manager and system monitor"
 authors = ["Task Manager contributors"]
 license = "MIT"
