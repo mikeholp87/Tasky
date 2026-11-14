@@ -8,10 +8,13 @@ permissions:
   contents: read
 
 jobs:
+  # Runs third-party build code (npm install scripts, build.rs, tests), so it
+  # gets a read-only token and no dependency caches: a compromised package or
+  # a poisoned cache entry must not be able to publish release assets.
   build:
     runs-on: ubuntu-22.04
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -30,14 +33,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
-          cache: npm
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
           components: clippy
           toolchain: 1.96.0
-      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
-        with:
-          workspaces: src-tauri
       - run: npm ci
       - name: Verify before publishing
         run: |
@@ -66,18 +65,33 @@ jobs:
             desktop-file-validate /usr/share/applications/Tasky.desktop
             apt-get remove -y tasky
           '
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deb-release
+          path: |
+            Tasky.deb
+            Tasky.deb.sha256
+
+  # The only job that can write to the repository. It runs no project or dependency code:
+  # it downloads the verified package and attaches it to the GitHub release.
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: deb-release
+      - run: sha256sum -c Tasky.deb.sha256
       - uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
         with:
           files: |
             Tasky.deb
             Tasky.deb.sha256
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: deb-release
-          path: Tasky.deb
 
   apt:
-    needs: build
+    needs: publish
     runs-on: ubuntu-22.04
     environment: apt-signing
     permissions:
