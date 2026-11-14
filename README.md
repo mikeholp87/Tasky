@@ -1,5 +1,7 @@
 # Tasky
 
+[![Latest release](https://img.shields.io/github/v/release/mikeholp87/Tasky)](https://github.com/mikeholp87/Tasky/releases/latest) [![License: MIT](https://img.shields.io/github/license/mikeholp87/Tasky)](LICENSE) [![Stars](https://img.shields.io/github/stars/mikeholp87/Tasky?style=flat)](https://github.com/mikeholp87/Tasky/stargazers) ![apt install tasky](https://img.shields.io/badge/apt%20install-tasky-A81D33?logo=debian&logoColor=white)
+
 A fast, private, cross-platform task manager and system monitor for Windows
 and Linux. It shows what your computer is doing in real time (processes, CPU,
 memory, storage and network) and lets you safely end, suspend or reprioritize
@@ -14,6 +16,19 @@ Screenshots are not committed because they reveal the host's process list,
 hostname and network addresses. To add some, capture them on a clean demo
 machine (or with **Mock processes** enabled in a development build: System
 Information → Monitoring diagnostics) and place them in `docs/screenshots/`.
+
+## Install
+
+**Debian, Ubuntu and derivatives** (signed apt repository; updates arrive through `apt upgrade`):
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://mikeholp87.github.io/apt/apt.asc | sudo tee /etc/apt/keyrings/mikeholp87-apt.asc >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/mikeholp87-apt.asc] https://mikeholp87.github.io/apt/ ./" | sudo tee /etc/apt/sources.list.d/mikeholp87-apt.list
+sudo apt update && sudo apt install tasky
+```
+
+**Windows:** download the `x64-setup.exe` installer from the [latest release](https://github.com/mikeholp87/Tasky/releases/latest).
 
 ## Features
 
