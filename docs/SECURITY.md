@@ -2,8 +2,10 @@
 
 Tasky treats the WebView and all OS-provided text as untrusted. It runs
 as the normal user and respects OS permission failures. Never run the GUI as
-root/Administrator to make a feature work. No elevation broker, shell runner,
-service-control command or arbitrary memory/file/HTTP command is provided.
+root/Administrator to make a feature work. No elevation broker, shell runner
+or arbitrary memory/file/HTTP command is provided. Service start/stop/restart
+and drive mount/unmount/power-off act only on listed items, and each asks
+for native confirmation.
 
 ## IPC and frontend
 
@@ -25,8 +27,9 @@ actions. No sensitive data is persisted in browser storage.
 Every action is a Rust enum; priority maps to fixed portable values, with no
 real-time class or arbitrary nice input. The backend validates positive PIDs,
 selection start time, current OS creation time, self/system protection and
-warning acknowledgement. A native dialog independently confirms disruptive
-and warned actions. A WebView boolean cannot replace that dialog.
+warning acknowledgement. A native dialog independently confirms every action
+except restoring normal priority, and every warned action. A WebView boolean
+cannot replace that dialog.
 
 Linux signals use a lifetime-bound pidfd and fail closed when unavailable.
 Windows force-kill/priority act through the creation-time-validated handle;

@@ -9,8 +9,9 @@
 
 #![cfg(unix)]
 
+use std::ffi::CString;
 use std::fs::{DirBuilder, File, OpenOptions};
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::{DirBuilderExt, FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -52,8 +53,13 @@ pub(super) fn io_error(what: &str, e: &std::io::Error) -> BenchmarkError {
     })
 }
 
+/// The file is created and removed relative to `dir_fd`, the directory that
+/// was checked, so replacing the directory's path with a symlink afterwards
+/// (possible in a shared location without the sticky bit) redirects nothing.
 pub struct BenchFile {
     file: File,
+    dir_fd: File,
+    name: CString,
     path: PathBuf,
     dir: PathBuf,
     mode: IoMode,
@@ -71,24 +77,23 @@ impl BenchFile {
             return Err(BenchmarkError::Failed("Invalid run id.".into()));
         }
         let dir = parent.join(DIR_NAME);
-        ensure_private_dir(&dir)?;
-        let path = dir.join(format!("{FILE_PREFIX}{run_id}{FILE_SUFFIX}"));
+        let dir_fd = open_private_dir(&dir)?;
+        let file_name = format!("{FILE_PREFIX}{run_id}{FILE_SUFFIX}");
+        let path = dir.join(&file_name);
+        let name = CString::new(file_name).expect("validated run id has no NUL");
 
         let mut note = None;
+        let mut mode = IoMode::Buffered;
+        let mut opened = None;
         if want_direct && cfg!(target_os = "linux") {
-            match open_new(&path, true) {
+            match open_new_at(&dir_fd, &name, true) {
                 Ok(file) if direct_io_works(&file) => {
-                    return Ok(Self {
-                        file,
-                        path,
-                        dir,
-                        mode: IoMode::Direct,
-                        mode_note: None,
-                    });
+                    opened = Some(file);
+                    mode = IoMode::Direct;
                 }
                 Ok(_) => {
                     // Opened, but real direct I/O fails here. Start clean.
-                    let _ = std::fs::remove_file(&path);
+                    unlink_at(&dir_fd, &name);
                     note = Some(NO_DIRECT.to_owned());
                 }
                 Err(e) if is_direct_unsupported(&e) => note = Some(NO_DIRECT.to_owned()),
@@ -97,12 +102,18 @@ impl BenchFile {
         } else if want_direct {
             note = Some("Direct I/O is not available on this platform.".into());
         }
-        let file = open_new(&path, false).map_err(|e| io_error("create the test file", &e))?;
+        let file = match opened {
+            Some(file) => file,
+            None => open_new_at(&dir_fd, &name, false)
+                .map_err(|e| io_error("create the test file", &e))?,
+        };
         Ok(Self {
             file,
+            dir_fd,
+            name,
             path,
             dir,
-            mode: IoMode::Buffered,
+            mode,
             mode_note: note,
         })
     }
@@ -143,8 +154,9 @@ impl BenchFile {
 
 impl Drop for BenchFile {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-        // Only succeeds when the directory is empty.
+        unlink_at(&self.dir_fd, &self.name);
+        // Only succeeds when the directory is empty; rmdir never follows a
+        // symlink.
         let _ = std::fs::remove_dir(&self.dir);
     }
 }
@@ -154,13 +166,28 @@ const O_DIRECT: i32 = libc::O_DIRECT;
 #[cfg(not(target_os = "linux"))]
 const O_DIRECT: i32 = 0;
 
-fn open_new(path: &Path, direct: bool) -> std::io::Result<File> {
-    let mut o = OpenOptions::new();
-    o.read(true).write(true).create_new(true).mode(0o600);
+/// Creates `name` exclusively inside the directory `dir`.
+fn open_new_at(dir: &File, name: &CString, direct: bool) -> std::io::Result<File> {
+    let mut flags =
+        libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
     if direct {
-        o.custom_flags(O_DIRECT);
+        flags |= O_DIRECT;
     }
-    o.open(path)
+    // SAFETY: `dir` is an open directory and `name` a NUL-terminated name;
+    // on success openat returns a new descriptor that we take ownership of.
+    let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags, 0o600 as libc::c_uint) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: `fd` is a valid descriptor owned by no one else.
+    Ok(unsafe { File::from_raw_fd(fd) })
+}
+
+fn unlink_at(dir: &File, name: &CString) {
+    // SAFETY: `dir` is an open directory and `name` a NUL-terminated name.
+    unsafe {
+        libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0);
+    }
 }
 
 fn is_direct_unsupported(e: &std::io::Error) -> bool {
@@ -174,25 +201,33 @@ fn direct_io_works(file: &File) -> bool {
 }
 
 /// In a shared location such as `/tmp` another user could create the folder
-/// first, so an existing one is used only if it is ours and private.
-fn ensure_private_dir(dir: &Path) -> Result<(), BenchmarkError> {
+/// first, so an existing one is used only if it is ours and private. The
+/// checks run on the opened directory, never on its path.
+fn open_private_dir(dir: &Path) -> Result<File, BenchmarkError> {
     use std::os::unix::fs::MetadataExt;
-    let meta = match std::fs::symlink_metadata(dir) {
-        Ok(meta) => meta,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            DirBuilder::new()
-                .mode(0o700)
-                .create(dir)
-                .map_err(|e| io_error("create the benchmark folder", &e))?;
-            std::fs::symlink_metadata(dir)
-                .map_err(|e| io_error("inspect the benchmark folder", &e))?
-        }
-        Err(e) => return Err(io_error("inspect the benchmark folder", &e)),
-    };
-    if meta.file_type().is_symlink() || !meta.is_dir() {
-        return Err(BenchmarkError::Failed(
+    match DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(io_error("create the benchmark folder", &e)),
+    }
+    let not_plain = || {
+        BenchmarkError::Failed(
             "The benchmark folder is not a plain folder; refusing to use it.".into(),
-        ));
+        )
+    };
+    let handle = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(dir)
+        .map_err(|e| match e.raw_os_error() {
+            Some(libc::ELOOP | libc::ENOTDIR) => not_plain(),
+            _ => io_error("open the benchmark folder", &e),
+        })?;
+    let meta = handle
+        .metadata()
+        .map_err(|e| io_error("inspect the benchmark folder", &e))?;
+    if !meta.is_dir() {
+        return Err(not_plain());
     }
     // SAFETY: getuid has no preconditions and cannot fail.
     if meta.uid() != unsafe { libc::getuid() } {
@@ -207,7 +242,7 @@ fn ensure_private_dir(dir: &Path) -> Result<(), BenchmarkError> {
             dir.display()
         )));
     }
-    Ok(())
+    Ok(handle)
 }
 
 /// Free space available to this user at `path`, in bytes.
@@ -235,14 +270,28 @@ pub fn is_writable(dir: &Path) -> bool {
 /// names match the exact pattern, inside the dedicated directory, and older
 /// than `min_age` are touched. Returns how many were removed.
 pub fn cleanup_stale(parent: &Path, min_age: Duration) -> usize {
+    use std::os::unix::fs::MetadataExt;
     let dir = parent.join(DIR_NAME);
-    match std::fs::symlink_metadata(&dir) {
-        Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {}
-        _ => return 0,
+    // Names are listed by path, but every check and removal goes through the
+    // opened directory, so a swapped path can only make us skip files.
+    let Ok(dir_fd) = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(&dir)
+    else {
+        return 0;
+    };
+    // SAFETY: getuid has no preconditions and cannot fail.
+    if dir_fd
+        .metadata()
+        .map_or(true, |m| m.uid() != unsafe { libc::getuid() })
+    {
+        return 0;
     }
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return 0;
     };
+    let now = SystemTime::now();
     let mut removed = 0;
     for entry in entries.flatten() {
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
@@ -251,20 +300,39 @@ pub fn cleanup_stale(parent: &Path, min_age: Duration) -> usize {
         if !is_benchmark_file_name(&name) {
             continue;
         }
-        let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+        let Ok(name) = CString::new(name) else {
             continue;
         };
-        let old = meta
-            .modified()
-            .ok()
-            .and_then(|m| SystemTime::now().duration_since(m).ok())
-            .is_some_and(|age| age >= min_age);
-        if meta.is_file() && old && std::fs::remove_file(entry.path()).is_ok() {
-            removed += 1;
+        let Some(st) = stat_at(&dir_fd, &name) else {
+            continue;
+        };
+        let modified = SystemTime::UNIX_EPOCH + Duration::from_secs(st.st_mtime.max(0) as u64);
+        let old = now.duration_since(modified).is_ok_and(|age| age >= min_age);
+        if st.st_mode & libc::S_IFMT == libc::S_IFREG && old {
+            // SAFETY: `dir_fd` is an open directory, `name` NUL-terminated.
+            if unsafe { libc::unlinkat(dir_fd.as_raw_fd(), name.as_ptr(), 0) } == 0 {
+                removed += 1;
+            }
         }
     }
     let _ = std::fs::remove_dir(&dir);
     removed
+}
+
+/// `lstat` of `name` inside `dir`.
+fn stat_at(dir: &File, name: &CString) -> Option<libc::stat> {
+    // SAFETY: `st` is a plain struct fstatat fully initialises on success;
+    // `dir` is an open directory and `name` NUL-terminated.
+    unsafe {
+        let mut st: libc::stat = std::mem::zeroed();
+        (libc::fstatat(
+            dir.as_raw_fd(),
+            name.as_ptr(),
+            &mut st,
+            libc::AT_SYMLINK_NOFOLLOW,
+        ) == 0)
+            .then_some(st)
+    }
 }
 
 #[cfg(test)]
@@ -377,6 +445,30 @@ mod tests {
             std::fs::read_dir(&target).unwrap().count(),
             0,
             "nothing written through it"
+        );
+    }
+
+    #[test]
+    fn swapping_the_folder_for_a_symlink_redirects_nothing() {
+        let d = tmp();
+        let dir = d.path().join(DIR_NAME);
+        let victim = d.path().join("victim");
+        std::fs::create_dir(&victim).unwrap();
+        let decoy = victim.join(".tm-bench-disk-8-0.tmp");
+        std::fs::write(&decoy, b"do not delete").unwrap();
+
+        let f = BenchFile::create(d.path(), "disk-8-0", false).unwrap();
+        f.file().write_all_at(b"ours", 0).unwrap();
+        let moved = d.path().join("moved");
+        std::fs::rename(&dir, &moved).unwrap();
+        symlink(&victim, &dir).unwrap();
+        drop(f);
+
+        assert_eq!(std::fs::read(&decoy).unwrap(), b"do not delete");
+        assert_eq!(
+            std::fs::read_dir(&moved).unwrap().count(),
+            0,
+            "our file went with the folder"
         );
     }
 

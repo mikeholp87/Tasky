@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 use tm_core::errors::{AppError, AppResult};
-use tm_core::models::{ActionOutcome, ProcessAction, ProtectionAssessment};
+use tm_core::models::{ActionOutcome, PriorityLevel, ProcessAction, ProtectionAssessment};
 use tm_core::process_control::{self, ActionRequest};
 
 use crate::commands::validate;
@@ -51,10 +51,20 @@ pub async fn perform_process_action(
         if assessment.level == tm_core::models::ProtectionLevel::Blocked {
             return Err(AppError::ProcessProtected(assessment.reasons.join(" ")));
         }
-        if req.action.is_disruptive() || assessment.level == tm_core::models::ProtectionLevel::Warning {
+        if req.action.needs_confirmation() || assessment.level == tm_core::models::ProtectionLevel::Warning {
+            let consequence = match req.action {
+                ProcessAction::Resume => "A process that was stopped on purpose will continue running.",
+                ProcessAction::SetPriority {
+                    priority: PriorityLevel::Idle | PriorityLevel::BelowNormal,
+                } => "Lowering priority can make it slow to respond, and only an administrator can raise it again.",
+                ProcessAction::SetPriority { .. } => {
+                    "Higher priority lets it take CPU time from other programs."
+                }
+                _ => "This may stop work, lose unsaved data, or make dependent programs unresponsive.",
+            };
             super::confirm::confirm(&app, &format!(
-                "Apply {:?} to {} (PID {})?\nThis may stop work, lose unsaved data, or make dependent programs unresponsive.\n{}",
-                req.action, row.name, req.pid, assessment.reasons.join(" ")
+                "Apply {:?} to {} (PID {})?\n{consequence}\n{}",
+                req.action, row.name.escape_debug(), req.pid, assessment.reasons.join(" ")
             ))?;
         }
         process_control::perform(&engine, req)

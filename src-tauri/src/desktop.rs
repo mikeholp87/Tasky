@@ -347,7 +347,7 @@ impl<R: Runtime> TickSink for DesktopSink<R> {
                         .notification()
                         .builder()
                         .title(&alert.rule_name)
-                        .body(&alert.message)
+                        .body(notification_body(&alert.message))
                         .show()
                     {
                         tracing::warn!("could not show notification: {e}");
@@ -359,9 +359,35 @@ impl<R: Runtime> TickSink for DesktopSink<R> {
     }
 }
 
+/// Freedesktop notification servers read the body as markup, and alert text
+/// carries OS strings such as mount points named after a drive's label.
+fn notification_body(text: &str) -> String {
+    if !cfg!(target_os = "linux") {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::{all_unscaled, gnome_wayland_with_xwayland as gnome};
+
+    #[test]
+    fn notification_bodies_carry_no_markup() {
+        assert_eq!(
+            super::notification_body("Drive /media/u/<a href=x>y&z</a> is 97% full."),
+            "Drive /media/u/&lt;a href=x&gt;y&amp;z&lt;/a&gt; is 97% full."
+        );
+    }
 
     const WAYLAND: Option<&str> = Some("wayland");
     const GNOME: Option<&str> = Some("ubuntu:GNOME");

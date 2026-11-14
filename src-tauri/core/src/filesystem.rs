@@ -33,6 +33,40 @@ pub fn write_private_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
 /// Rejects special files and symlinks and enforces the bound while reading,
 /// including when the file grows after it is opened.
 pub fn read_text(path: &Path, max_bytes: u64) -> io::Result<String> {
+    let (file, metadata) = open_regular(path)?;
+    if metadata.len() > max_bytes {
+        return Err(io::Error::other("not a regular file within the size limit"));
+    }
+    let mut text = String::new();
+    file.take(max_bytes.saturating_add(1))
+        .read_to_string(&mut text)?;
+    if text.len() as u64 > max_bytes {
+        return Err(io::Error::other("file exceeds the size limit"));
+    }
+    Ok(text)
+}
+
+/// Like [`read_text`], but a file over the bound yields its whole lines up to
+/// the bound and `true`, so callers can report the rest as left out.
+pub fn read_text_prefix(path: &Path, max_bytes: u64) -> io::Result<(String, bool)> {
+    let (file, _) = open_regular(path)?;
+    let mut bytes = Vec::new();
+    file.take(max_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    let truncated = bytes.len() as u64 > max_bytes;
+    if truncated {
+        let kept = bytes[..max_bytes as usize]
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map_or(0, |i| i + 1);
+        bytes.truncate(kept);
+    }
+    let text =
+        String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    Ok((text, truncated))
+}
+
+fn open_regular(path: &Path) -> io::Result<(std::fs::File, std::fs::Metadata)> {
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -54,16 +88,10 @@ pub fn read_text(path: &Path, max_bytes: u64) -> io::Result<String> {
             return Err(io::Error::other("reparse points are not accepted"));
         }
     }
-    if !metadata.is_file() || metadata.len() > max_bytes {
-        return Err(io::Error::other("not a regular file within the size limit"));
+    if !metadata.is_file() {
+        return Err(io::Error::other("not a regular file"));
     }
-    let mut text = String::new();
-    file.take(max_bytes.saturating_add(1))
-        .read_to_string(&mut text)?;
-    if text.len() as u64 > max_bytes {
-        return Err(io::Error::other("file exceeds the size limit"));
-    }
-    Ok(text)
+    Ok((file, metadata))
 }
 
 #[cfg(test)]
@@ -80,6 +108,22 @@ mod tests {
         write_private_atomic(&path, b"new").unwrap();
         assert_eq!(read_text(&path, 3).unwrap(), "new");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn an_oversized_file_yields_its_whole_lines_and_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("table");
+        std::fs::write(&path, "one\ntwo\nthree\n").unwrap();
+        assert_eq!(
+            read_text_prefix(&path, 100).unwrap(),
+            ("one\ntwo\nthree\n".into(), false)
+        );
+        assert_eq!(
+            read_text_prefix(&path, 10).unwrap(),
+            ("one\ntwo\n".into(), true)
+        );
+        assert_eq!(read_text_prefix(&path, 2).unwrap(), (String::new(), true));
     }
 
     #[cfg(unix)]

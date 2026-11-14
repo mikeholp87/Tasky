@@ -13,6 +13,11 @@ use crate::platform;
 /// Re-read the account list occasionally so new logins resolve.
 const USERS_REFRESH: Duration = Duration::from_secs(300);
 
+/// Longest command line kept per process. Other users choose theirs (up to
+/// several MiB each, shared by forked children), and every row is held,
+/// joined and serialized on each tick.
+const MAX_CMD_BYTES: usize = 4096;
+
 pub fn refresh_kind() -> ProcessRefreshKind {
     ProcessRefreshKind::nothing()
         // On Linux, tasks would list every thread as its own process.
@@ -21,18 +26,26 @@ pub fn refresh_kind() -> ProcessRefreshKind {
         .with_memory()
         .with_disk_usage()
         .with_exe(UpdateKind::OnlyIfNotSet)
-        .with_cmd(UpdateKind::OnlyIfNotSet)
+        // sysinfo reads a Linux command line whole; see `read_cmdline`.
+        .with_cmd(if cfg!(target_os = "linux") {
+            UpdateKind::Never
+        } else {
+            UpdateKind::OnlyIfNotSet
+        })
         .with_user(UpdateKind::OnlyIfNotSet)
 }
 
 pub struct ProcessTracker {
     users: UserResolver,
+    /// Bounded command lines by (pid, start time), read once per process.
+    cmds: HashMap<(u32, u64), Option<String>>,
 }
 
 impl ProcessTracker {
     pub fn new() -> Self {
         Self {
             users: UserResolver::new(),
+            cmds: HashMap::new(),
         }
     }
 
@@ -45,6 +58,12 @@ impl ProcessTracker {
         let cores = sys.cpus().len().max(1) as f32;
         let pids: Vec<u32> = sys.processes().keys().map(|p| p.as_u32()).collect();
         let extras = platform::process_extras(&pids);
+        let live: std::collections::HashSet<(u32, u64)> = sys
+            .processes()
+            .values()
+            .map(|p| (p.pid().as_u32(), p.start_time()))
+            .collect();
+        self.cmds.retain(|key, _| live.contains(key));
 
         sys.processes()
             .values()
@@ -91,7 +110,11 @@ impl ProcessTracker {
                     threads: extra.threads,
                     priority: extra.priority,
                     exe: p.exe().map(|e| e.to_string_lossy().into_owned()),
-                    cmd: join_cmd(p.cmd()),
+                    cmd: self
+                        .cmds
+                        .entry((pid, p.start_time()))
+                        .or_insert_with(|| command_line(p))
+                        .clone(),
                     session_id: p.session_id().map(|s| s.as_u32()),
                     kernel_thread: p.thread_kind() == Some(sysinfo::ThreadKind::Kernel),
                     pss_bytes: None,
@@ -139,15 +162,61 @@ pub fn normalize_cpu(raw: f32, cores: f32) -> f32 {
     (raw / cores).clamp(0.0, 100.0)
 }
 
+#[cfg(target_os = "linux")]
+fn command_line(p: &sysinfo::Process) -> Option<String> {
+    read_cmdline(p.pid().as_u32())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn command_line(p: &sysinfo::Process) -> Option<String> {
+    join_cmd(p.cmd())
+}
+
+/// Reads at most [`MAX_CMD_BYTES`] of `/proc/<pid>/cmdline`.
+#[cfg(target_os = "linux")]
+fn read_cmdline(pid: u32) -> Option<String> {
+    use std::io::Read;
+    let mut raw = Vec::new();
+    std::fs::File::open(format!("/proc/{pid}/cmdline"))
+        .ok()?
+        .take(MAX_CMD_BYTES as u64 + 1)
+        .read_to_end(&mut raw)
+        .ok()?;
+    let truncated = raw.len() > MAX_CMD_BYTES;
+    raw.truncate(MAX_CMD_BYTES);
+    let parts: Vec<_> = raw
+        .split(|&b| b == 0)
+        .filter(|part| !part.is_empty())
+        .map(String::from_utf8_lossy)
+        .collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let mut joined = parts.join(" ");
+    if truncated {
+        joined.push('…');
+    }
+    Some(joined)
+}
+
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn join_cmd(parts: &[std::ffi::OsString]) -> Option<String> {
     if parts.is_empty() {
         return None;
     }
-    let joined = parts
+    let mut joined = parts
         .iter()
         .map(|p| p.to_string_lossy())
         .collect::<Vec<_>>()
         .join(" ");
+    if joined.len() > MAX_CMD_BYTES {
+        let mut end = MAX_CMD_BYTES;
+        while !joined.is_char_boundary(end) {
+            end -= 1;
+        }
+        joined.truncate(end);
+        joined.push('…');
+    }
     Some(joined)
 }
 
@@ -258,6 +327,34 @@ mod tests {
             Some("node server.js --port=3000")
         );
         assert_eq!(join_cmd(&[]), None);
+        let long = join_cmd(&["é".repeat(MAX_CMD_BYTES).into()]).unwrap();
+        assert!(long.len() <= MAX_CMD_BYTES + '…'.len_utf8() && long.ends_with('…'));
+    }
+
+    /// Another user picks the length of their command line; Tasky keeps a
+    /// bounded prefix.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn long_command_lines_are_cut_to_the_bound() {
+        // A single argument may not exceed 128 KiB; use many.
+        let chunk = "x".repeat(16 * 1024);
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "sleep 60"])
+            .args(std::iter::repeat_n(&chunk, 16))
+            .spawn()
+            .unwrap();
+        let mut sys = System::new().unwrap();
+        let mut tracker = ProcessTracker::new();
+        let rows = tracker.sample(&mut sys, Duration::from_secs(1));
+        let _ = child.kill();
+        let _ = child.wait();
+        let cmd = rows
+            .iter()
+            .find(|r| r.pid == child.id())
+            .and_then(|r| r.cmd.clone())
+            .expect("child listed with a command line");
+        assert!(cmd.starts_with("sh -c sleep 60 xxx"), "{cmd:.40}");
+        assert!(cmd.len() <= MAX_CMD_BYTES + '…'.len_utf8() && cmd.ends_with('…'));
     }
 
     /// Developer measurement: `cargo test --release measure_ -- --ignored --nocapture`.

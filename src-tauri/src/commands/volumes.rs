@@ -1,6 +1,6 @@
 //! Mount and unmount external drives. The platform layer decides which
-//! volumes are eligible; these commands add the OS confirmation for the
-//! disruptive actions and run everything on a blocking worker.
+//! volumes are eligible; these commands add the OS confirmation for every
+//! action and run everything on a blocking worker.
 
 use super::blocking::run as blocking;
 use tauri::AppHandle;
@@ -14,10 +14,19 @@ pub async fn list_volumes() -> AppResult<Vec<Volume>> {
     blocking(platform::volumes).await
 }
 
-/// Mounts a listed drive; returns where it is mounted.
+/// Mounts a listed drive; returns where it is mounted. Asks first: the
+/// system then reads whatever filesystem the drive carries.
 #[tauri::command]
-pub async fn mount_volume(device: String) -> AppResult<Option<String>> {
-    blocking(move || platform::mount_volume(&device)).await
+pub async fn mount_volume(app: AppHandle, device: String) -> AppResult<Option<String>> {
+    blocking(move || {
+        let name = listed_name(&device)?;
+        super::confirm::confirm(
+            &app,
+            &format!("Mount {name}?\nOnly mount drives you trust."),
+        )?;
+        platform::mount_volume(&device)
+    })
+    .await
 }
 
 /// Powers off the drive holding an unmounted, listed volume. Asks first.

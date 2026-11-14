@@ -100,12 +100,21 @@ pub fn sockets() -> AppResult<SocketList> {
         ("udp", Protocol::Udp),
         ("udp6", Protocol::Udp6),
     ] {
-        let Ok(text) = crate::filesystem::read_text(
+        // Another user can fill these tables past the bound; keep what fits
+        // and say the list is incomplete rather than dropping the table.
+        let (text, cut) = match crate::filesystem::read_text_prefix(
             std::path::Path::new(&format!("/proc/net/{file}")),
             8 * 1024 * 1024,
-        ) else {
-            continue;
+        ) {
+            Ok(read) => read,
+            // tcp6/udp6 are absent when IPv6 is disabled.
+            Err(e) if e.kind() == ErrorKind::NotFound => continue,
+            Err(_) => {
+                truncated = true;
+                continue;
+            }
         };
+        truncated |= cut;
         for entry in text.lines().filter_map(procfs::parse_net_line) {
             if sockets.len() >= MAX_SOCKETS {
                 truncated = true;

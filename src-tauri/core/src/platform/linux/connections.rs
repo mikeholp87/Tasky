@@ -29,7 +29,7 @@ pub fn connections(pid: u32) -> Option<Vec<Connection>> {
         ("udp", Protocol::Udp),
         ("udp6", Protocol::Udp6),
     ] {
-        let Ok(text) = crate::filesystem::read_text(
+        let Ok((text, _)) = crate::filesystem::read_text_prefix(
             std::path::Path::new(&format!("/proc/{pid}/net/{file}")),
             8 * 1024 * 1024,
         ) else {
