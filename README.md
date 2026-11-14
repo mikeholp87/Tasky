@@ -198,7 +198,17 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.6** (current)
+**0.1.7** (current)
+
+- **Security hardening:** resuming a process, changing its priority (except
+  back to normal), starting a service and mounting a drive now ask for
+  confirmation in a system dialog. The disk benchmark can no longer be
+  redirected by someone swapping its folder in a shared location such as
+  `/tmp`. Very long command lines are shortened, the Ports page copes with
+  very large connection tables, and process names can no longer add formatting
+  to desktop notifications.
+
+**0.1.6**
 
 - **Internet benchmark:** cancelling a stalled test now stops it at once on
   every platform. On Windows it could previously wait up to a minute for the
