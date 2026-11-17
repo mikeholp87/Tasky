@@ -13,6 +13,11 @@ use crate::platform;
 /// Re-read the account list occasionally so new logins resolve.
 const USERS_REFRESH: Duration = Duration::from_secs(300);
 
+/// Longest command line kept per process. Other users choose theirs (up to
+/// several MiB each), and every row is held, joined and serialized on each
+/// tick.
+const MAX_CMD_BYTES: usize = 4096;
+
 pub fn refresh_kind() -> ProcessRefreshKind {
     ProcessRefreshKind::nothing()
         // On Linux, tasks would list every thread as its own process.
@@ -28,6 +33,8 @@ pub fn refresh_kind() -> ProcessRefreshKind {
 pub struct ProcessTracker {
     users: UserResolver,
     io: HashMap<(u32, u64), (u64, u64)>,
+    /// Bounded command lines by (pid, start time), built once per process.
+    cmds: HashMap<(u32, u64), Option<String>>,
 }
 
 impl ProcessTracker {
@@ -35,6 +42,7 @@ impl ProcessTracker {
         Self {
             users: UserResolver::new(),
             io: HashMap::new(),
+            cmds: HashMap::new(),
         }
     }
 
@@ -51,6 +59,13 @@ impl ProcessTracker {
             sys.process(sysinfo::Pid::from_u32(pid))
                 .is_some_and(|p| p.start_time() == start)
         });
+
+        let live: std::collections::HashSet<(u32, u64)> = sys
+            .processes()
+            .values()
+            .map(|p| (p.pid().as_u32(), p.start_time()))
+            .collect();
+        self.cmds.retain(|key, _| live.contains(key));
 
         sys.processes()
             .values()
@@ -100,7 +115,11 @@ impl ProcessTracker {
                     threads: extra.threads,
                     priority: extra.priority,
                     exe: p.exe().map(|e| e.to_string_lossy().into_owned()),
-                    cmd: join_cmd(p.cmd()),
+                    cmd: self
+                        .cmds
+                        .entry((pid, p.start_time()))
+                        .or_insert_with(|| join_cmd(p.cmd()))
+                        .clone(),
                     session_id: p.session_id().map(|s| s.as_u32()),
                     kernel_thread: p.thread_kind() == Some(sysinfo::ThreadKind::Kernel),
                     pss_bytes: None,
@@ -161,11 +180,19 @@ fn join_cmd(parts: &[std::ffi::OsString]) -> Option<String> {
     if parts.is_empty() {
         return None;
     }
-    let joined = parts
+    let mut joined = parts
         .iter()
         .map(|p| p.to_string_lossy())
         .collect::<Vec<_>>()
         .join(" ");
+    if joined.len() > MAX_CMD_BYTES {
+        let mut end = MAX_CMD_BYTES;
+        while !joined.is_char_boundary(end) {
+            end -= 1;
+        }
+        joined.truncate(end);
+        joined.push('…');
+    }
     Some(joined)
 }
 
@@ -291,6 +318,8 @@ mod tests {
             Some("node server.js --port=3000")
         );
         assert_eq!(join_cmd(&[]), None);
+        let long = join_cmd(&["é".repeat(MAX_CMD_BYTES).into()]).unwrap();
+        assert!(long.len() <= MAX_CMD_BYTES + '…'.len_utf8() && long.ends_with('…'));
     }
 
     /// Developer measurement: `cargo test --release measure_ -- --ignored --nocapture`.

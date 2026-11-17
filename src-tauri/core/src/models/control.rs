@@ -21,6 +21,46 @@ impl ProcessAction {
     pub fn is_disruptive(self) -> bool {
         matches!(self, Self::Terminate | Self::ForceKill | Self::Suspend)
     }
+
+    /// Actions the user confirms in a native dialog. Only restoring normal
+    /// priority is exempt: an unprivileged user cannot undo a lowered
+    /// priority, and resuming can restart work that was stopped on purpose.
+    pub fn needs_confirmation(self) -> bool {
+        self != Self::SetPriority {
+            priority: PriorityLevel::Normal,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_restoring_normal_priority_skips_confirmation() {
+        for priority in [
+            PriorityLevel::Idle,
+            PriorityLevel::BelowNormal,
+            PriorityLevel::AboveNormal,
+            PriorityLevel::High,
+        ] {
+            assert!(ProcessAction::SetPriority { priority }.needs_confirmation());
+        }
+        for action in [
+            ProcessAction::Terminate,
+            ProcessAction::ForceKill,
+            ProcessAction::Suspend,
+            ProcessAction::Resume,
+        ] {
+            assert!(action.needs_confirmation(), "{action:?}");
+        }
+        assert!(
+            !ProcessAction::SetPriority {
+                priority: PriorityLevel::Normal
+            }
+            .needs_confirmation()
+        );
+    }
 }
 
 /// Portable priority levels. Real-time is intentionally not offered: it can

@@ -12,7 +12,7 @@ pub async fn list_services(scope: ServiceScope) -> AppResult<Vec<ServiceInfo>> {
     blocking(move || platform::services(scope)).await
 }
 
-/// Start, stop or restart a service after native confirmation.
+/// Start, stop or restart a service after the user confirms.
 #[tauri::command]
 pub async fn control_service(
     app: AppHandle,
@@ -22,11 +22,14 @@ pub async fn control_service(
 ) -> AppResult<()> {
     blocking(move || {
         platform::control_service(scope, &unit, action, &|service| {
-            let verb = match action {
-                // Starting is never destructive, so it does not ask.
-                ServiceAction::Start => return Ok(()),
-                ServiceAction::Stop => "Stop",
-                ServiceAction::Restart => "Restart",
+            let (verb, consequence) = match action {
+                ServiceAction::Start => {
+                    ("Start", "It will run with this service's own permissions.")
+                }
+                ServiceAction::Stop => ("Stop", "Programs that depend on it may stop working."),
+                ServiceAction::Restart => {
+                    ("Restart", "Programs that depend on it may stop working.")
+                }
             };
             let caution = platform::service_caution(&service.unit)
                 .map(|why| format!("\n{why}"))
@@ -34,8 +37,9 @@ pub async fn control_service(
             super::confirm::confirm(
                 &app,
                 &format!(
-                    "{verb} {}?\n{}\nPrograms that depend on it may stop working.{caution}",
-                    service.unit, service.description
+                    "{verb} {}?\n{}\n{consequence}{caution}",
+                    service.unit,
+                    service.description.escape_debug()
                 ),
             )
         })
