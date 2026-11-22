@@ -9,7 +9,7 @@
     <title>Tasky: a private system monitor and task manager for Linux</title>
     <meta
       name="description"
-      content="Tasky is a free, open source system monitor and task manager for Linux and Windows. Live CPU, memory, disk and network graphs, a fast process table and benchmarks, with no telemetry. Install from a signed APT repository."
+      content="Tasky is a free, private task manager and system monitor for Linux and Windows. Live CPU, memory, disk and network graphs, process control, no telemetry."
     />
     <link rel="canonical" href="https://mikeholp87.github.io/Tasky/" />
     <link rel="icon" href="./tasky-icon.png" type="image/png" />
@@ -51,13 +51,19 @@
         "downloadUrl": "https://github.com/mikeholp87/Tasky/releases/latest",
         "license": "https://github.com/mikeholp87/Tasky/blob/main/LICENSE",
         "isAccessibleForFree": true,
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
         "author": {
           "@type": "Person",
           "name": "Mike Holp",
           "url": "https://www.ai-automation-station.com/about.html",
           "sameAs": ["https://github.com/mikeholp87", "https://www.ai-automation-station.com/"]
-        }
+        },
+        "softwareVersion": "0.1.10",
+        "dateModified": "2026-11-22"
       }
     </script>
     <style>
@@ -671,6 +677,24 @@
             </picture>
             <figcaption>The overview page, shown with sample data.</figcaption>
           </figure>
+        </section>
+        <section id="what-is" class="features" aria-labelledby="what-is-title">
+          <div class="section-head">
+            <h2 id="what-is-title">What is Tasky?</h2>
+            <p>
+              Tasky is a free, open source task manager and system monitor for Linux and Windows 11.
+              It shows live CPU, memory, disk and network use with 60-second graphs and history
+              views up to one hour, plus a fast process table you can search by name, PID, command
+              line or user. You can end, suspend, resume or reprioritize processes, while critical
+              system processes stay protected and risky actions ask first. Tasky also runs
+              repeatable CPU, GPU and disk benchmarks, applies alert rules such as CPU above 80% for
+              20 seconds, and on Linux manages systemd services and external drives. It is built
+              with Tauri, Rust and React, released under the MIT license, and sends no telemetry, so
+              nothing leaves your computer. On Debian 12 or newer and Ubuntu 22.04 or newer you
+              install it from a signed APT repository with sudo apt install tasky.
+            </p>
+            <p><small>Version 0.1.10 · Updated November 22, 2026</small></p>
+          </div>
         </section>
 
         <section id="features" class="features" aria-labelledby="features-title">
