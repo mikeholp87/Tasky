@@ -253,3 +253,7 @@ The roadmap is in [docs/ROADMAP.md](docs/ROADMAP.md).
 ## License
 
 MIT
+
+## Author
+
+Built by [Mike Holp](https://www.ai-automation-station.com/about.html) with AI coding tools. See the Claude Code build guide on [AI Automation Station](https://www.ai-automation-station.com/guides/claude-code-task-manager.html), and more projects at [github.com/mikeholp87](https://github.com/mikeholp87).
