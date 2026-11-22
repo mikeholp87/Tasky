@@ -46,6 +46,11 @@ aptly publish snapshot -batch -gpg-key="$APTLY_KEY_ID" -passphrase-file="$APTLY_
 
 cp -a "$HOME/.aptly/public/." "$stage/"
 cp docs/apt-landing.html "$stage/index.html"
+sed -i -e "s/@VERSION@/$version/g" -e "s/@DATE@/$(date -u +%F)/g" -e "s/@DATE_HUMAN@/$(date -u '+%B %-d, %Y')/g" "$stage/index.html"
+if grep -q '@VERSION@\|@DATE@\|@DATE_HUMAN@' "$stage/index.html"; then
+	echo "Placeholder left in the landing page" >&2
+	exit 1
+fi
 cp src-tauri/icons/128x128.png "$stage/tasky-icon.png"
 mkdir "$stage/assets"
 cp docs/landing/*.webp docs/landing/og.png "$stage/assets/"
