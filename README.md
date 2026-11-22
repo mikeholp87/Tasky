@@ -198,7 +198,13 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.9** (current)
+**0.1.11** (current)
+
+- **Project page:** the website at mikeholp87.github.io/Tasky now opens with a short
+  "What is Tasky?" summary and shows the current version and release date. The app
+  itself is unchanged from 0.1.9.
+
+**0.1.9**
 
 - **Release pipeline hardening:** the Linux package is now built in a job
   that cannot publish, with no shared build caches; a separate job checks its
