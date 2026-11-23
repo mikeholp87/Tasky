@@ -198,7 +198,12 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.13** (current)
+**0.1.14** (current)
+
+- **Project page:** the website at mikeholp87.github.io/Tasky now has a Sponsor button
+  and a short support section. The app itself is unchanged from 0.1.13.
+
+**0.1.13**
 
 - **Try it in your browser:** the website at mikeholp87.github.io/Tasky now has an
   interactive demo at /demo/ that runs the Tasky interface on sample data. The app
