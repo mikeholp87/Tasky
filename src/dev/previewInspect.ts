@@ -359,6 +359,14 @@ export function inspectPreview(cmd: string, args: unknown): unknown {
       return fileUsers((args as { path: string }).path);
     case "get_hardware_info":
       return HARDWARE;
+    case "assess_process_action":
+      return { level: "allowed", reasons: [] };
+    case "perform_process_action": {
+      const { pid } = args as { pid: number };
+      return {
+        message: `Sample data: nothing was changed. The real app would act on PID ${pid} now.`,
+      };
+    }
     case "pick_path":
       return "/home/demo/Videos/video.mp4";
     case "get_activity":

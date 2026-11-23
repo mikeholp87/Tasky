@@ -516,6 +516,7 @@ export function installBenchmarkPreview(info: StaticSystemInfo, tick: MetricsTic
         case "subscribe_metrics":
           return tick;
         case "get_history":
+        case "get_recent_alerts":
           return [];
         case "get_benchmark_status":
           return status;

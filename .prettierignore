@@ -4,3 +4,4 @@ src-tauri/target
 src-tauri/gen
 src/types/generated
 package-lock.json
+docs/demo
