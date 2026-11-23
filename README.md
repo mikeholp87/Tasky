@@ -198,7 +198,13 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.12** (current)
+**0.1.13** (current)
+
+- **Try it in your browser:** the website at mikeholp87.github.io/Tasky now has an
+  interactive demo at /demo/ that runs the Tasky interface on sample data. The app
+  itself is unchanged from 0.1.12.
+
+**0.1.12**
 
 - **Project page:** screenshots on the website at mikeholp87.github.io/Tasky now open in
   a larger pop-up viewer with previous and next controls. The app itself is unchanged
