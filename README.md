@@ -198,7 +198,13 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.11** (current)
+**0.1.12** (current)
+
+- **Project page:** screenshots on the website at mikeholp87.github.io/Tasky now open in
+  a larger pop-up viewer with previous and next controls. The app itself is unchanged
+  from 0.1.11.
+
+**0.1.11**
 
 - **Project page:** the website at mikeholp87.github.io/Tasky now opens with a short
   "What is Tasky?" summary and shows the current version and release date. The app
