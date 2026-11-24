@@ -198,7 +198,13 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.14** (current)
+**0.1.15** (current)
+
+- **Project page:** the interactive demo now runs right in the page header instead of on
+  a separate page. The app itself is unchanged from 0.1.14.
+
+**0.1.14**
+
 
 - **Project page:** the website at mikeholp87.github.io/Tasky now has a Sponsor button
   and a short support section, and the interactive demo runs right in the page header
