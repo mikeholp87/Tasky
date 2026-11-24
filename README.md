@@ -201,7 +201,8 @@ Platform differences are documented in
 **0.1.14** (current)
 
 - **Project page:** the website at mikeholp87.github.io/Tasky now has a Sponsor button
-  and a short support section. The app itself is unchanged from 0.1.13.
+  and a short support section, and the interactive demo runs right in the page header
+  instead of on a separate page. The app itself is unchanged from 0.1.13.
 
 **0.1.13**
 
