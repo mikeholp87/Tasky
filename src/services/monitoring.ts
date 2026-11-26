@@ -105,21 +105,35 @@ function withMockProcesses(tick: MetricsTick): MetricsTick {
 
 /**
  * While the window is hidden the backend stops streaming to it; when it
- * becomes visible again, fill the gap from the backend's history.
+ * becomes visible again, re-attach the channel (in case a deliver failed
+ * while the webview was suspended) and fill the gap from history.
  */
 function watchVisibility(): void {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
-    void backend
-      .getHistory(BACKFILL_SECONDS)
-      .then((points) => useMetricsStore.getState().backfillHistory(points))
-      .catch(() => {});
-    void backend
-      .getRecentAlerts()
-      .then((events) => useAlertStore.getState().replace(events))
-      .catch(() => {});
-    backfillActivity();
+    void catchUpAfterShow();
   });
+}
+
+async function catchUpAfterShow(): Promise<void> {
+  try {
+    // Replaces the sink keyed by webview label; safe to call again.
+    const latest = await backend.subscribeMetrics(onTick);
+    if (latest) useMetricsStore.getState().ingestTick(latest);
+  } catch {
+    // Backfill below still runs; the next show can retry the channel.
+  }
+  try {
+    useMetricsStore.getState().backfillHistory(await backend.getHistory(BACKFILL_SECONDS));
+  } catch {
+    /* ignore: charts keep whatever they already have */
+  }
+  try {
+    useAlertStore.getState().replace(await backend.getRecentAlerts());
+  } catch {
+    /* ignore */
+  }
+  backfillActivity();
 }
 
 async function applyState(next: MonitoringState): Promise<void> {

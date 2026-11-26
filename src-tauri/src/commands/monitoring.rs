@@ -29,10 +29,15 @@ impl TickSink for ChannelSink {
     }
 
     fn deliver(&self, _tick: &MetricsTick, json: Option<String>) -> bool {
-        match json {
-            Some(json) => self.channel.send(InvokeResponseBody::Json(json)).is_ok(),
-            None => true,
+        if let Some(json) = json
+            && let Err(e) = self.channel.send(InvokeResponseBody::Json(json))
+        {
+            // Keep the sink: a transient eval failure after minimize/restore
+            // must not permanently stop metrics until the next page load.
+            // The frontend also re-subscribes when the window becomes visible.
+            tracing::warn!("metrics channel send failed: {e}");
         }
+        true
     }
 }
 

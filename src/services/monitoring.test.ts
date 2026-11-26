@@ -51,6 +51,7 @@ describe("startMonitoring", () => {
     expect(api.subscribeMetrics).toHaveBeenCalledTimes(1);
 
     document.dispatchEvent(new Event("visibilitychange"));
+    await vi.waitFor(() => expect(api.subscribeMetrics).toHaveBeenCalledTimes(2));
     expect(api.getHistory).toHaveBeenCalledTimes(2);
   });
 

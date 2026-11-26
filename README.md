@@ -198,7 +198,12 @@ Platform differences are documented in
 
 ### Release notes
 
-**0.1.15** (current)
+**0.1.16** (current)
+
+- **Linux:** work around a WebKitGTK freeze after long minimize on Wayland, and
+  re-attach the metrics stream when the window becomes visible again.
+
+**0.1.15**
 
 - **Project page:** the interactive demo now runs right in the page header instead of on
   a separate page. The app itself is unchanged from 0.1.14.
